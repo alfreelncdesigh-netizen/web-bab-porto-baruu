@@ -1,0 +1,8 @@
+{
+  "name": "Portofolio Desain Minimalis",
+  "description": "Website portofolio desain minimalis dan responsif dengan fitur galeri proyek interaktif serta integrasi formulir kontak.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

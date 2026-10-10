@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html data-theme="tiffany" class="dark">
+<head>
+  <style>
+    @import "tailwindcss";
+    @custom-variant dark (&:where(.dark, .dark *));
+    html[data-theme="tiffany"] {
+      --color-white: #21F1A8;
+      --color-zinc-50: #21F1A8;
+      --color-black: #171717;
+      --color-zinc-900: #171717;
+      --color-zinc-950: #171717;
+    }
+    html[data-theme="tiffany"] .bg-\[\#0A0A0A\] { background-color: #171717 !important; }
+    html[data-theme="tiffany"] .bg-\[\#111111\] { background-color: #1f1f1f !important; }
+  </style>
+</head>
+<body class="bg-[#0A0A0A] text-white">
+  Hello
+</body>
+</html>

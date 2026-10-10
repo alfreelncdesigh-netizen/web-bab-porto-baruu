@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "A portfolio project entry.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 100 },
+        "image": { "type": "string", "maxLength": 1000 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "date": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["title", "category", "image", "description"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global website and CV settings.",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "maxLength": 200 },
+        "cvRole": { "type": "string", "maxLength": 200 },
+        "cvPdfFile": { "type": "string", "maxLength": 2000 },
+        "cvSections": { "type": "array", "description": "List of CV sections with text and image arrays." },
+        "contactEmail": { "type": "string", "maxLength": 200 },
+        "contactPhone": { "type": "string", "maxLength": 50 },
+        "contactLocation": { "type": "string", "maxLength": 200 }
+      }
+    }
+  },
+  "firestore": {
+    "projects": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Stores the portfolio projects."
+    },
+    "settings": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Stores global site settings and CV data."
+    }
+  }
+}
