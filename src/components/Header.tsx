@@ -145,12 +145,12 @@ export default function Header({ setView, currentView }: HeaderProps) {
     )}
    </AnimatePresence>
 
-   <header className="fixed top-0 left-0 right-0 z-50 pt-2.5 md:pt-4 px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 pointer-events-none flex justify-center max-w-[1440px] mx-auto">
+   <header className="fixed top-0 left-0 right-0 z-50 pt-1.5 sm:pt-2 md:pt-2.5 px-3 sm:px-5 md:px-8 pointer-events-none flex justify-center max-w-[1280px] mx-auto">
     <motion.div 
      initial={{ y: -100, opacity: 0 }}
      animate={{ y: 0, opacity: 1 }}
      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-     className={`pointer-events-auto flex items-center justify-between w-full rounded-full px-4 py-2.5 md:px-6 md:py-3 transition-all duration-300 ${
+     className={`pointer-events-auto flex items-center justify-between w-full rounded-full px-3.5 py-1.5 sm:px-4 sm:py-1.5 md:px-5 md:py-2 transition-all duration-300 ${
       isScrolled 
        ? 'bg-white/90 dark:bg-[#111111]/90 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 shadow-md' 
        : 'bg-white/75 dark:bg-[#0A0A0A]/75 backdrop-blur-md border border-zinc-200/30 dark:border-zinc-800/30 shadow-sm'
@@ -162,11 +162,11 @@ export default function Header({ setView, currentView }: HeaderProps) {
       className="group relative flex items-center justify-center hover:opacity-85 active:scale-95 transition-all select-none focus:outline-none shrink-0"
       aria-label="ALFREELNC Beranda"
      >
-      <BrandLogo className="h-6 sm:h-7.5 md:h-8.5" />
+      <BrandLogo className="h-5.5 sm:h-6.5 md:h-7" />
      </button>
 
      {/* Desktop Nav */}
-     <nav className="hidden md:flex gap-7 text-[13px] items-center">
+     <nav className="hidden md:flex gap-5 lg:gap-6 text-[12.5px] items-center">
       {navLinks.map((link) => {
        const isActive = currentView === link.view;
        return (
@@ -187,11 +187,11 @@ export default function Header({ setView, currentView }: HeaderProps) {
          onClick={() => {
            setIsThemeDropdownOpen(!isThemeDropdownOpen);
          }} 
-         className="text-black hover:opacity-70 dark:text-white dark:hover:opacity-70 transition-colors p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 focus:outline-none"
+         className="text-black hover:opacity-70 dark:text-white dark:hover:opacity-70 transition-colors p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 focus:outline-none"
          aria-label="Ganti Tema" 
          title={`Tema Saat Ini: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`}
         >
-         {theme === 'light' ? <Moon size={16} /> : theme === 'dark' ? <Sun size={16} /> : <Palette size={16} />}
+         {theme === 'light' ? <Moon size={15} /> : theme === 'dark' ? <Sun size={15} /> : <Palette size={15} />}
         </button>
         
         <AnimatePresence>
@@ -224,14 +224,14 @@ export default function Header({ setView, currentView }: HeaderProps) {
         setIsThemeDropdownOpen(false);
         setView('contact'); 
        }} 
-       className="bg-black text-white dark:bg-white dark:text-black px-5 py-2.5 rounded-full font-bold hover:opacity-90 transition-opacity active:scale-95 duration-200"
+       className="bg-black text-white dark:bg-white dark:text-black px-4 py-1.5 rounded-full text-xs font-bold hover:opacity-90 transition-opacity active:scale-95 duration-200 shadow-xs"
       >
        Kontak
       </button>
      </nav>
 
      {/* Mobile Toggle Icons (Theme + Hamburger) */}
-     <div className="md:hidden flex items-center gap-1.5 sm:gap-2">
+     <div className="md:hidden flex items-center gap-1 sm:gap-1.5">
       <div className="relative">
         <button 
          ref={mobileThemeToggleRef}
@@ -239,7 +239,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
            setIsMobileMenuOpen(false);
            setIsThemeDropdownOpen(!isThemeDropdownOpen);
          }} 
-         className="text-black dark:text-white p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors flex items-center justify-center focus:outline-none"
+         className="text-black dark:text-white p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors flex items-center justify-center focus:outline-none"
          aria-label="Ganti Tema"
         >
          {theme === 'light' ? <Moon className="w-4 h-4" /> : theme === 'dark' ? <Sun className="w-4 h-4" /> : <Palette className="w-4 h-4" />}
@@ -271,14 +271,14 @@ export default function Header({ setView, currentView }: HeaderProps) {
 
       <button 
        ref={mobileToggleRef}
-       className="text-black dark:text-white p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors focus:outline-none flex items-center justify-center" 
+       className="text-black dark:text-white p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors focus:outline-none flex items-center justify-center" 
        onClick={() => {
          setIsThemeDropdownOpen(false);
          setIsMobileMenuOpen(!isMobileMenuOpen);
        }}
        aria-label={isMobileMenuOpen ? "Tutup Menu" : "Buka Menu"}
       >
-       {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+       {isMobileMenuOpen ? <X className="w-4.5 h-4.5" /> : <Menu className="w-4.5 h-4.5" />}
       </button>
      </div>
     </motion.div>
@@ -292,7 +292,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
        animate={{ opacity: 1, y: 0, scale: 1 }}
        exit={{ opacity: 0, y: -15, scale: 0.95 }}
        transition={{ duration: 0.15, ease: 'easeOut' }}
-       className="md:hidden pointer-events-auto absolute top-[58px] right-3 w-52 bg-white/95 dark:bg-[#111111]/95 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 rounded-2xl p-4 flex flex-col gap-1 shadow-2xl z-50"
+       className="md:hidden pointer-events-auto absolute top-[48px] sm:top-[50px] right-3 w-52 bg-white/95 dark:bg-[#111111]/95 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 rounded-2xl p-4 flex flex-col gap-1 shadow-2xl z-50"
       >
        {navLinks.map((link) => {
         return (

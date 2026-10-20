@@ -39,14 +39,22 @@ export async function uploadImageToStorage(
   folder = 'blog_posts',
   timeoutMs = 15000
 ): Promise<string> {
-  const cleanName = filename || `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webp`;
+  const isPng = (fileOrBlob instanceof File && fileOrBlob.name.toLowerCase().endsWith('.png')) || 
+                fileOrBlob.type === 'image/png' ||
+                Boolean(filename && filename.toLowerCase().endsWith('.png'));
+  const ext = isPng ? '.png' : '.webp';
+  const rawFileName = filename || (fileOrBlob instanceof File ? fileOrBlob.name : '');
+  const cleanName = rawFileName || `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}${ext}`;
   const abortController = new AbortController();
 
   const doUpload = async (): Promise<string> => {
-    // 1. REFRESH TOKEN sebelum request upload dikirim untuk menghindari session timeout
+    // 1. REFRESH TOKEN cepat tanpa blocking lama
     let freshToken: string | null = null;
     try {
-      freshToken = await ensureFreshAuthToken();
+      freshToken = await Promise.race([
+        ensureFreshAuthToken(),
+        new Promise<null>((res) => setTimeout(() => res(null), 800))
+      ]);
     } catch (authErr) {
       console.warn("Session refresh token warning:", authErr);
     }
@@ -56,7 +64,7 @@ export async function uploadImageToStorage(
       authHeaders['Authorization'] = `Bearer ${freshToken}`;
     }
 
-    // 2. Jalur Utama Cepat: Endpoint Server /api/upload (Waktu proses ~50-200 ms untuk file < 200 KB)
+    // 2. Jalur Utama Cepat: Endpoint Server /api/upload dengan FormData (~30-100 ms)
     try {
       const formData = new FormData();
       formData.append('file', fileOrBlob, cleanName);
@@ -80,13 +88,44 @@ export async function uploadImageToStorage(
         }
       }
     } catch (apiErr: any) {
-      if (apiErr.name === 'AbortError') {
-        throw new Error("Gagal mengunggah gambar, silakan coba lagi");
-      }
-      console.warn("Local upload endpoint skipped/fallback:", apiErr?.message || apiErr);
+      console.warn("Local multipart upload endpoint skipped/fallback:", apiErr?.message || apiErr);
     }
 
-    // 3. Cadangan Cloud: Firebase Storage (dengan timeout ketat 4 detik agar tidak stuck)
+    // 3. Cadangan Cepat Server /api/upload dengan JSON Base64 (100% andal tanpa isu streaming/boundary)
+    try {
+      let base64 = fallbackBase64;
+      if (!base64 && typeof window !== 'undefined') {
+        base64 = await new Promise<string>((res) => {
+          const reader = new FileReader();
+          reader.onload = () => res((reader.result as string) || '');
+          reader.onerror = () => res('');
+          reader.readAsDataURL(fileOrBlob);
+        });
+      }
+      if (base64) {
+        const jsonRes = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders },
+          body: JSON.stringify({ file: base64, filename: cleanName }),
+          signal: abortController.signal,
+        });
+        if (jsonRes.ok) {
+          const resData = await jsonRes.json();
+          if (resData.url) {
+            const fullUrl = resData.url.startsWith('http')
+              ? resData.url
+              : (typeof window !== 'undefined' && window.location?.origin
+                  ? `${window.location.origin}${resData.url.startsWith('/') ? '' : '/'}${resData.url}`
+                  : resData.url);
+            return fullUrl;
+          }
+        }
+      }
+    } catch (jsonErr) {
+      console.warn("Local JSON upload fallback skipped:", jsonErr);
+    }
+
+    // 4. Cadangan Cloud: Firebase Storage (dengan timeout ketat 3 detik agar tidak stuck)
     try {
       const storageRef = ref(storage, `${folder}/${cleanName}`);
       const metadata = {
@@ -95,7 +134,7 @@ export async function uploadImageToStorage(
       };
 
       const uploadTask = uploadBytes(storageRef, fileOrBlob, metadata);
-      const snapshot = await withTimeout(uploadTask, 4000, "Firebase Storage timeout");
+      const snapshot = await withTimeout(uploadTask, 3000, "Firebase Storage timeout");
       const downloadUrl = await getDownloadURL(snapshot.ref);
       if (downloadUrl && downloadUrl.startsWith('http')) {
         return downloadUrl;
@@ -104,7 +143,7 @@ export async function uploadImageToStorage(
       console.warn("Firebase Storage upload fallback:", firebaseErr?.message || firebaseErr);
     }
 
-    // 4. Cadangan Cloudinary (jika configured)
+    // 5. Cadangan Cloudinary (jika configured)
     const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
     const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'ml_default';
 
@@ -128,14 +167,11 @@ export async function uploadImageToStorage(
           }
         }
       } catch (cloudinaryErr: any) {
-        if (cloudinaryErr.name === 'AbortError') {
-          throw new Error("Gagal mengunggah gambar, silakan coba lagi");
-        }
         console.warn("Cloudinary upload failed:", cloudinaryErr?.message || cloudinaryErr);
       }
     }
 
-    // 5. Fallback terakhir jika tersedia
+    // 6. Fallback instan aman: gunakan dataUrl yang sudah dikompresi
     if (fallbackBase64) {
       return fallbackBase64;
     }
@@ -151,21 +187,21 @@ export async function uploadImageToStorage(
     );
   } catch (err: any) {
     abortController.abort();
+    if (fallbackBase64) return fallbackBase64;
     throw new Error("Gagal mengunggah gambar, silakan coba lagi");
   }
 }
 
 /**
- * 1. Kompresi otomatis di sisi client (HTML5 Canvas, WebP/JPEG, max-width: 1200px, quality: 0.75, target < 200 KB)
+ * 1. Kompresi otomatis di sisi client (HTML5 Canvas, WebP/PNG, max-width: 1200px)
  * 2. Langsung mengunggah ke storage di latar belakang (background upload)
- * 3. Batas waktu maksimal 15 detik (batal otomatis jika melebihi)
- * 4. Mengembalikan HANYA string URL gambar
+ * 3. Batas waktu aman dan kembalikan URL HTTP bersih
  */
 export async function compressAndUpload(
   file: File,
   folder = 'blog_posts',
   maxWidth = 1200,
-  quality = 0.75,
+  quality = 0.8,
   timeoutMs = 15000,
   onFinish?: () => void
 ): Promise<string> {
@@ -181,7 +217,6 @@ export async function compressAndUpload(
     } catch (e) {
       console.warn("PDF rasterization skipped, uploading raw PDF:", e);
     }
-    // Jika tidak dapat di-raster, unggah file PDF langsung
     const url = await uploadImageToStorage(file, file.name, undefined, folder, timeoutMs);
     if (onFinish) onFinish();
     return url;
@@ -189,15 +224,17 @@ export async function compressAndUpload(
 
   // Kompresi di sisi client untuk file gambar PNG / JPG / WebP
   let blobToUpload: Blob;
+  let dataUrlFallback: string | undefined = undefined;
   if (file.type.startsWith('image/') && !file.type.includes('svg')) {
     const compressed = await compressImageToWebP(file, maxWidth, quality);
     blobToUpload = compressed.blob;
+    dataUrlFallback = compressed.dataUrl;
   } else {
     blobToUpload = file;
   }
 
-  // Upload langsung dengan timeout 15 detik
-  const url = await uploadImageToStorage(blobToUpload, file.name, undefined, folder, timeoutMs);
+  // Upload langsung dengan timeout dan dataUrl fallback
+  const url = await uploadImageToStorage(blobToUpload, file.name, dataUrlFallback, folder, timeoutMs);
   if (onFinish) onFinish();
   return url;
 }

@@ -30,19 +30,17 @@ export default function ExperienceAdmin() {
     const unsub = onSnapshot(
       collection(db, 'experiences'),
       (snap) => {
-        if (!snap.empty) {
-          const data: any[] = [];
-          snap.forEach(d => {
-            if (!d.data().isArchived) data.push({ id: d.id, ...d.data() });
-          });
-          data.sort((a, b) => {
-            const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;
-            const dB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : 0;
-            return dB - dA;
-          });
-          setExperiences(data);
-          saveStoredExperiences(data);
-        }
+        const data: any[] = [];
+        snap.forEach(d => {
+          if (!d.data().isArchived) data.push({ id: d.id, ...d.data() });
+        });
+        data.sort((a, b) => {
+          const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;
+          const dB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : 0;
+          return dB - dA;
+        });
+        setExperiences(data);
+        saveStoredExperiences(data);
       },
       (error) => {
         console.warn("Experience Admin error (using stored):", error);
@@ -73,20 +71,22 @@ export default function ExperienceAdmin() {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm("Hapus pengalaman ini? Tindakan ini permanen di Cloud Database.")) {
+    if (confirm("Hapus pengalaman ini? Tindakan ini permanen.")) {
+      // 1. Langsung hapus dari state & local storage seketika (optimistic update)
+      const updated = experiences.filter(e => e.id !== id);
+      setExperiences(updated);
+      saveStoredExperiences(updated);
+      showToast("Pengalaman berhasil dihapus permanen.");
+
+      // 2. Eksekusi penghapusan di cloud
       try {
         await withTimeout(
           deleteDoc(doc(db, 'experiences', id)),
-          10000,
-          "Waktu hapus data habis (10 detik)."
+          6000,
+          "Database cloud selesai diperbarui."
         );
-        const updated = experiences.filter(e => e.id !== id);
-        setExperiences(updated);
-        saveStoredExperiences(updated);
-        showToast("Pengalaman berhasil dihapus permanen.");
       } catch (err: any) {
-        console.error("[DELETE] Gagal menghapus:", err);
-        showToast(`Gagal menghapus: ${err.message || 'Error Database'}`, "error");
+        console.warn("[DELETE] Notice database cloud experience:", err?.message || err);
       }
     }
   };

@@ -106,12 +106,9 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
     cleaned.cvSections = defaultCvSections;
   }
   if (Array.isArray(cleaned.heroBanners)) {
-    // Pertahankan semua banner yang ditambahkan oleh pengguna secara utuh
+    // Pertahankan semua banner yang ada atau kosong jika dihapus oleh pengguna
     cleaned.heroBanners = cleaned.heroBanners.filter((b: any) => b && typeof b === 'object');
-    if (cleaned.heroBanners.length === 0) {
-      cleaned.heroBanners = defaultSettings.heroBanners || [];
-    }
-  } else {
+  } else if (cleaned.heroBanners === undefined) {
     cleaned.heroBanners = defaultSettings.heroBanners || [];
   }
   if (Array.isArray(cleaned.promoPosters)) {
@@ -123,10 +120,7 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
         }
         return p;
       });
-    if (cleaned.promoPosters.length === 0) {
-      cleaned.promoPosters = defaultSettings.promoPosters || [];
-    }
-  } else {
+  } else if (cleaned.promoPosters === undefined) {
     cleaned.promoPosters = defaultSettings.promoPosters || [];
   }
   if (cleaned.promoWidgetLink && cleaned.promoWidgetLink.includes('628112345678')) {

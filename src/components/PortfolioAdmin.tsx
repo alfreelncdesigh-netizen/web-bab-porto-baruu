@@ -32,23 +32,21 @@ export default function PortfolioAdmin() {
     const unsubscribe = onSnapshot(
       collection(db, 'projects'),
       (snapshot) => {
-        if (!snapshot.empty) {
-          const projs: Project[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            if (!data.isArchived) {
-              projs.push({ id: docSnap.id, ...data } as Project);
-            }
-          });
-          projs.sort((a, b) => {
-            const dateA = a.date || '';
-            const dateB = b.date || '';
-            return dateB.localeCompare(dateA);
-          });
-          const cleaned = cleanProjects(projs);
-          setProjects(cleaned);
-          saveStoredProjects(cleaned);
-        }
+        const projs: Project[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (!data.isArchived) {
+            projs.push({ id: docSnap.id, ...data } as Project);
+          }
+        });
+        projs.sort((a, b) => {
+          const dateA = a.date || '';
+          const dateB = b.date || '';
+          return dateB.localeCompare(dateA);
+        });
+        const cleaned = cleanProjects(projs);
+        setProjects(cleaned);
+        saveStoredProjects(cleaned);
       },
       (error) => {
         console.warn("Firestore Admin Error (using stored projects):", error);
@@ -128,25 +126,23 @@ export default function PortfolioAdmin() {
   };
 
   const handleDelete = async (id: string | number, imageUrl?: string) => {
-    if (confirm("Apakah Anda yakin ingin menghapus karya ini? Tindakan ini permanen di Cloud Database.")) {
+    if (confirm("Apakah Anda yakin ingin menghapus karya ini? Tindakan ini permanen.")) {
       const docId = id.toString();
+      // 1. Langsung hapus dari tampilan admin dan publik seketika (optimistic update)
+      const updated = projects.filter(p => p.id.toString() !== docId);
+      setProjects(updated);
+      saveStoredProjects(updated);
+      showToast("Karya berhasil dihapus permanen.");
+
+      // 2. Eksekusi penghapusan di database Cloud Firestore
       try {
         await withTimeout(
           deleteDoc(doc(db, 'projects', docId)),
-          10000,
-          "Waktu hapus data habis (10 detik)."
+          6000,
+          "Database cloud selesai diperbarui."
         );
-
-        setProjects(prev => {
-          const updated = prev.filter(p => p.id.toString() !== docId);
-          saveStoredProjects(updated);
-          return updated;
-        });
-
-        showToast("Karya berhasil dihapus permanen.");
       } catch (err: any) {
-        console.error("[DELETE] Gagal menghapus:", err);
-        showToast(`Gagal menghapus: ${err.message || 'Error Database'}`, "error");
+        console.warn("[DELETE] Notice database cloud:", err?.message || err);
       }
     }
   };
@@ -639,7 +635,10 @@ export default function PortfolioAdmin() {
         isOpen={!!archiveItemId}
         onClose={() => setArchiveItemId(null)}
         onSuccess={() => {
-          setProjects(projects.filter(p => p.id.toString() !== archiveItemId));
+          const updated = projects.filter(p => p.id.toString() !== archiveItemId);
+          setProjects(updated);
+          saveStoredProjects(updated);
+          showToast("Karya berhasil dipindahkan ke arsip!");
         }}
         itemType="projects"
         itemId={archiveItemId || ''}

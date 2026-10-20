@@ -193,30 +193,22 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     const unsubscribe = onSnapshot(
       collection(db, 'projects'),
       (snapshot) => {
-        if (!snapshot.empty) {
-          const projData: Project[] = [];
-          snapshot.forEach((doc) => {
-            const data = doc.data() as any;
-            if (!data.isArchived) projData.push({ id: doc.id, ...data });
-          });
-          projData.sort((a, b) => {
-            const dateA = a.date || '';
-            const dateB = b.date || '';
-            return dateB.localeCompare(dateA);
-          });
-          const cleaned = cleanProjects(projData);
-          setProjects(cleaned);
-          saveStoredProjects(cleaned);
-          preloadImages(cleaned).then(() => {
-            if (isMounted) setLoading(false);
-          });
-        } else {
-          const stored = getStoredProjects();
-          setProjects(stored);
-          preloadImages(stored).then(() => {
-            if (isMounted) setLoading(false);
-          });
-        }
+        const projData: Project[] = [];
+        snapshot.forEach((doc) => {
+          const data = doc.data() as any;
+          if (!data.isArchived) projData.push({ id: doc.id, ...data });
+        });
+        projData.sort((a, b) => {
+          const dateA = a.date || '';
+          const dateB = b.date || '';
+          return dateB.localeCompare(dateA);
+        });
+        const cleaned = cleanProjects(projData);
+        setProjects(cleaned);
+        saveStoredProjects(cleaned);
+        preloadImages(cleaned).then(() => {
+          if (isMounted) setLoading(false);
+        });
       },
       (error) => {
         console.warn("Firestore Portfolio Error (using stored projects):", error);
@@ -932,7 +924,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+                  <div className="columns-2 gap-2 [column-fill:_balance]">
                     {displayRecommendations.map((item) => {
                       const isUnread = !readProjectIds.has(String(item.id));
 
@@ -940,22 +932,24 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                         <div 
                           key={item.id} 
                           onClick={() => handleOpenArticle(item)}
-                          className="group cursor-pointer relative transition-transform duration-150 active:scale-[0.96]"
+                          className="break-inside-avoid mb-2 group cursor-pointer relative rounded-lg sm:rounded-xl overflow-hidden border border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-100 dark:bg-zinc-900 shadow-2xs hover:border-zinc-400 dark:hover:border-zinc-600 transition-all duration-200 active:scale-[0.97]"
                         >
                           {item.image ? (
-                            <div className="relative rounded-lg sm:rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800">
+                            <div className="relative w-full overflow-hidden">
                               <img 
                                 src={resolveImageUrl(item.image)} 
                                 alt={item.title || 'Karya'} 
-                                className="w-full h-24 sm:h-28 object-cover shadow-xs transition-transform duration-200 group-hover:scale-105" 
+                                className="w-full h-auto block object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]" 
                                 onError={handleImageError} 
+                                loading="lazy"
                               />
                               {isUnread && (
-                                <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-blue-500 ring-2 ring-white dark:ring-black"></span>
+                                <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-blue-500 ring-2 ring-white dark:ring-black shadow-xs"></span>
                               )}
+                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 dark:group-hover:bg-white/5 transition-colors pointer-events-none" />
                             </div>
                           ) : (
-                            <div className="w-full aspect-video rounded-lg sm:rounded-xl bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 text-xs">
+                            <div className="w-full aspect-[4/3] bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 text-xs">
                               Karya
                             </div>
                           )}

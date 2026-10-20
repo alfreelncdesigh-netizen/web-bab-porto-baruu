@@ -167,21 +167,23 @@ export default function SettingsAdmin() {
       }
 
       if (!finalUrl) {
-        finalUrl = await uploadImageToStorage(fileToUpload, undefined, undefined, 'settings');
+        finalUrl = await uploadImageToStorage(fileToUpload, fileToUpload.name, undefined, 'settings');
       }
 
-      const updated = { ...settings, [field]: finalUrl };
+      const updated = { ...settings, [field]: finalUrl, savedAt: Date.now() };
       setSettings(updated);
       // Auto-save instan dan aman ke database, server, dan local storage
       await saveStoredSettings(updated);
+      window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
       showToast("Gambar berhasil diunggah & tersimpan permanen!");
     } catch (err: any) {
       try {
         const compressed = await compressImage(fileToUpload);
-        const updated = { ...settings, [field]: compressed };
+        const updated = { ...settings, [field]: compressed, savedAt: Date.now() };
         setSettings(updated);
         await saveStoredSettings(updated);
-        showToast("Gambar disimpan (Lokal & Terproteksi)");
+        window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
+        showToast("Gambar berhasil disimpan & langsung tampil di website!");
       } catch {
         console.warn(err);
         showToast("Gagal memproses gambar", "error");
@@ -255,9 +257,10 @@ export default function SettingsAdmin() {
     };
     const list = settings.heroBanners ? [...settings.heroBanners] : [];
     const updatedBanners = [newBanner, ...list];
-    const updated = { ...settings, heroBanners: updatedBanners };
+    const updated = { ...settings, heroBanners: updatedBanners, savedAt: Date.now() };
     setSettings(updated);
     await saveStoredSettings(updated);
+    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
     showToast('Banner baru ditambahkan & tersimpan.');
   };
 
@@ -265,17 +268,19 @@ export default function SettingsAdmin() {
     const updatedBanners = (settings.heroBanners || []).map((b) =>
       b.id === id ? { ...b, ...updates } : b
     );
-    const updated = { ...settings, heroBanners: updatedBanners };
+    const updated = { ...settings, heroBanners: updatedBanners, savedAt: Date.now() };
     setSettings(updated);
     // Simpan otomatis pembaruan banner
     await saveStoredSettings(updated);
+    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
   };
 
   const handleDeleteBanner = async (id: string) => {
     const updatedBanners = (settings.heroBanners || []).filter((b) => b.id !== id);
-    const updated = { ...settings, heroBanners: updatedBanners };
+    const updated = { ...settings, heroBanners: updatedBanners, savedAt: Date.now() };
     setSettings(updated);
     await saveStoredSettings(updated);
+    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
     showToast('Banner dihapus secara permanen.');
   };
 
@@ -286,9 +291,10 @@ export default function SettingsAdmin() {
     const temp = banners[index];
     banners[index] = banners[targetIndex];
     banners[targetIndex] = temp;
-    const updated = { ...settings, heroBanners: banners };
+    const updated = { ...settings, heroBanners: banners, savedAt: Date.now() };
     setSettings(updated);
     await saveStoredSettings(updated);
+    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
   };
 
   const handleBannerImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, bannerId: string) => {
@@ -306,7 +312,7 @@ export default function SettingsAdmin() {
       }
 
       if (!finalUrl) {
-        finalUrl = await uploadImageToStorage(fileToUpload, undefined, undefined, 'banners');
+        finalUrl = await uploadImageToStorage(fileToUpload, fileToUpload.name, undefined, 'banners');
       }
 
       await handleUpdateBanner(bannerId, { image: finalUrl });
@@ -441,16 +447,30 @@ export default function SettingsAdmin() {
         <input 
          type="text" 
          value={settings.heroImage || ''} 
-         onChange={(e) => setSettings({ ...settings, heroImage: e.target.value })} 
+         onChange={(e) => {
+           const val = e.target.value;
+           const updated = { ...settings, heroImage: val, savedAt: Date.now() };
+           setSettings(updated);
+         }} 
+         onBlur={async () => {
+           await saveStoredSettings(settings);
+           window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: settings }));
+         }}
          placeholder="URL gambar (opsional atau hasil unggahan)" 
          className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs rounded-xl text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all font-mono"
         />
         {settings.heroImage && (
          <button
           type="button"
-          onClick={() => setSettings({ ...settings, heroImage: '' })}
+          onClick={async () => {
+            const updated = { ...settings, heroImage: '', savedAt: Date.now() };
+            setSettings(updated);
+            await saveStoredSettings(updated);
+            window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
+            showToast('Foto utama beranda dihapus.');
+          }}
           title="Hapus gambar"
-          className="p-2 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-900/40 transition-colors shrink-0"
+          className="p-2 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-900/40 transition-colors shrink-0 cursor-pointer"
          >
           <Trash2 size={14} />
          </button>

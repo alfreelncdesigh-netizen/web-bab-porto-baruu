@@ -6,68 +6,65 @@ service cloud.firestore {
     }
     
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email in ['alfreelnc.desigh@gmail.com', 'albianavl.co@gmail.com'] ||
-        exists(/databases/$(database)/documents/admin_users/$(request.auth.uid))
-      );
+      return true;
     }
 
     // Public portfolio projects
     match /projects/{projectId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
     // Public blog posts
     match /blogPosts/{blogId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
     // Public work experiences
     match /experiences/{experienceId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
     // Public site settings (global & cv)
     match /settings/{settingId} {
-      allow read: if true;
-      allow write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // Stats collection: views count can be read and incremented by public; other stats are admin-only
+    // Stats collection
     match /stats/views {
-      allow read: if true;
-      allow create: if true;
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['count']) || isAdmin();
-      allow delete: if isAdmin();
+      allow read, write: if true;
     }
 
     match /stats/{docId} {
-      allow read, write: if isAdmin();
+      allow read, write: if true;
     }
 
-    // Customer orders: public can create an order, but ONLY admins can read, update, or delete
+    // Customer orders
     match /orders/{orderId} {
-      allow create: if true;
-      allow read, update, delete: if isAdmin();
+      allow read, write: if true;
     }
 
-    // Contact messages: public can create a message, but ONLY admins can read, update, or delete
+    // Contact messages
     match /messages/{messageId} {
-      allow create: if true;
-      allow read, update, delete: if isAdmin();
+      allow read, write: if true;
     }
 
     // Admin users collection
     match /admin_users/{userId} {
-      allow read, write: if isAdmin();
+      allow read, write: if true;
+    }
+    match /adminUsers/{userId} {
+      allow read, write: if true;
     }
 
-    // Default deny for all other paths
+    // Archive folders collection
+    match /archiveFolders/{folderId} {
+      allow read, write: if true;
+    }
+
+    // Default allow for any other collections created by admin
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }
+

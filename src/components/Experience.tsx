@@ -27,22 +27,18 @@ export default function Experience() {
     const unsub = onSnapshot(
       collection(db, 'experiences'),
       (snap) => {
-        if (!snap.empty) {
-          const data: any[] = [];
-          snap.forEach(d => {
-            const dataDoc = d.data() as any;
-            if (!dataDoc.isArchived) data.push({ id: d.id, ...dataDoc });
-          });
-          data.sort((a, b) => {
-            const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;
-            const dB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : 0;
-            return dB - dA;
-          });
-          setExperiences(data);
-          saveStoredExperiences(data);
-        } else {
-          setExperiences(getStoredExperiences());
-        }
+        const data: any[] = [];
+        snap.forEach(d => {
+          const dataDoc = d.data() as any;
+          if (!dataDoc.isArchived) data.push({ id: d.id, ...dataDoc });
+        });
+        data.sort((a, b) => {
+          const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;
+          const dB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : 0;
+          return dB - dA;
+        });
+        setExperiences(data);
+        saveStoredExperiences(data);
         setLoading(false);
       },
       (error) => {

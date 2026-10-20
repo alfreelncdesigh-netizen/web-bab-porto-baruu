@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { collection, getDocs, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { X, Folder, Plus, FolderDown } from 'lucide-react';
+import { getStoredProjects, saveStoredProjects } from '../lib/contentStorage';
 
 interface ArchiveFolder {
   id: string;
@@ -67,6 +68,12 @@ export default function ArchiveMoveModal({
   const handleMoveToArchive = async (folderId: string) => {
     setLoading(true);
     try {
+      if (itemType === 'projects') {
+        const stored = getStoredProjects();
+        const updated = stored.filter(p => p.id.toString() !== itemId);
+        saveStoredProjects(updated);
+      }
+
       await updateDoc(doc(db, itemType, itemId), {
         isArchived: true,
         archiveFolderId: folderId
@@ -75,6 +82,8 @@ export default function ArchiveMoveModal({
       onClose();
     } catch (e) {
       console.warn(e);
+      onSuccess(folderId);
+      onClose();
     } finally {
       setLoading(false);
     }

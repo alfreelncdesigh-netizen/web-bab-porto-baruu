@@ -41,27 +41,28 @@ const AppSkeleton = () => (
     className="fixed inset-0 z-[99999] bg-[#F0EEEE] dark:bg-[#0A0A0A] overflow-y-auto overflow-x-hidden flex flex-col pointer-events-auto [scrollbar-width:none]"
   >
     {/* Header Skeleton Bar */}
-    <div className="w-full pt-2.5 md:pt-4 px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 flex justify-center shrink-0 max-w-[1440px] mx-auto">
-      <div className={`w-full h-[52px] md:h-[62px] rounded-full px-4 md:px-6 flex items-center justify-between ${skeletonCard} shadow-sm backdrop-blur-md`}>
+    <div className="w-full pt-1.5 sm:pt-2 md:pt-2.5 px-3 sm:px-5 md:px-8 flex justify-center shrink-0 max-w-[1280px] mx-auto">
+      <div className={`w-full h-[44px] md:h-[48px] rounded-full px-3.5 sm:px-4 md:px-5 flex items-center justify-between ${skeletonCard} shadow-sm backdrop-blur-md`}>
         {/* Brand / Logo */}
         <div className="flex items-center gap-2.5">
-          <div className={`h-7 w-7 rounded-lg ${skeletonGradient}`} />
-          <div className={`h-5 w-32 md:w-40 rounded-md ${skeletonGradient}`} />
+          <div className={`h-6 w-6 rounded-lg ${skeletonGradient}`} />
+          <div className={`h-4.5 w-28 md:w-36 rounded-md ${skeletonGradient}`} />
         </div>
 
         {/* Nav Links (Desktop) */}
-        <div className="hidden md:flex gap-6 lg:gap-8 items-center">
+        <div className="hidden md:flex gap-5 lg:gap-6 items-center">
           {['Tentang Saya', 'Beranda', 'Karya', 'Pengalaman', 'Order', 'Blog', 'Statistik', 'Admin'].map((_, i) => (
-            <div key={i} className={`h-3.5 w-14 lg:w-16 rounded-full ${skeletonGradient}`} />
+            <div key={i} className={`h-3 w-12 lg:w-14 rounded-full ${skeletonGradient}`} />
           ))}
-          <div className="w-px h-5 bg-zinc-300 dark:bg-zinc-700 mx-1" />
-          <div className={`h-8 w-8 rounded-full ${skeletonGradient}`} />
+          <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700 mx-1" />
+          <div className={`h-7 w-7 rounded-full ${skeletonGradient}`} />
+          <div className={`h-7 w-16 rounded-full ${skeletonGradient}`} />
         </div>
 
         {/* Mobile menu trigger */}
-        <div className="flex md:hidden items-center gap-2">
+        <div className="flex md:hidden items-center gap-1.5">
           <div className={`h-7 w-7 rounded-full ${skeletonGradient}`} />
-          <div className={`h-8 w-8 rounded-xl ${skeletonGradient}`} />
+          <div className={`h-7 w-7 rounded-xl ${skeletonGradient}`} />
         </div>
       </div>
     </div>

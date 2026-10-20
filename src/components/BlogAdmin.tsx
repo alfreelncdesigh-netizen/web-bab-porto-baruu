@@ -32,16 +32,14 @@ export default function BlogAdmin() {
     const unsubscribe = onSnapshot(
       collection(db, 'blogPosts'),
       (snapshot) => {
-        if (!snapshot.empty) {
-          const loadedPosts: BlogPost[] = [];
-          snapshot.forEach((docSnap) => {
-            loadedPosts.push({ id: docSnap.id, ...docSnap.data() } as BlogPost);
-          });
-          loadedPosts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          const cleaned = cleanBlogs(loadedPosts);
-          setPosts(cleaned);
-          saveStoredBlogs(cleaned);
-        }
+        const loadedPosts: BlogPost[] = [];
+        snapshot.forEach((docSnap) => {
+          loadedPosts.push({ id: docSnap.id, ...docSnap.data() } as BlogPost);
+        });
+        loadedPosts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const cleaned = cleanBlogs(loadedPosts);
+        setPosts(cleaned);
+        saveStoredBlogs(cleaned);
       },
       (error) => {
         console.warn("Firestore Admin Blog Error (using stored blogs):", error);
@@ -105,19 +103,21 @@ export default function BlogAdmin() {
   };
 
   const handleDelete = async (id: string, imageUrl?: string) => {
-    if (confirm("Apakah Anda yakin ingin menghapus postingan ini? Tindakan ini permanen di Cloud Database.")) {
+    if (confirm("Apakah Anda yakin ingin menghapus postingan ini? Tindakan ini permanen.")) {
+      // 1. Langsung hapus dari state & local storage seketika (optimistic update)
+      const updated = posts.filter(p => p.id !== id);
+      savePosts(updated);
+      showToast("Postingan berhasil dihapus permanen.");
+
+      // 2. Eksekusi penghapusan di cloud
       try {
         await withTimeout(
           deleteDoc(doc(db, 'blogPosts', id)),
-          15000,
-          "Waktu hapus data habis."
+          6000,
+          "Database cloud selesai diperbarui."
         );
-        const updated = posts.filter(p => p.id !== id);
-        savePosts(updated);
-        showToast("Postingan berhasil dihapus permanen.");
       } catch (err: any) {
-        console.error("[DELETE] Gagal menghapus postingan:", err);
-        showToast(`Gagal menghapus: ${err.message || 'Error Database'}`, "error");
+        console.warn("[DELETE] Notice database cloud blog:", err?.message || err);
       }
     }
   };

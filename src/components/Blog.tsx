@@ -152,26 +152,18 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
     const unsubscribe = onSnapshot(
       collection(db, 'blogPosts'),
       (snapshot) => {
-        if (!snapshot.empty) {
-          const loadedPosts: BlogPost[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data() as any;
-            if (!data.isArchived) loadedPosts.push({ id: docSnap.id, ...data });
-          });
-          const cleaned = cleanBlogs(loadedPosts);
-          const published = cleaned.filter(p => p.published).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          setPosts(published);
-          saveStoredBlogs(cleaned);
-          preloadBlogImages(published).then(() => {
-            if (isMounted) setLoading(false);
-          });
-        } else {
-          const stored = getStoredBlogs().filter(p => p.published);
-          setPosts(stored);
-          preloadBlogImages(stored).then(() => {
-            if (isMounted) setLoading(false);
-          });
-        }
+        const loadedPosts: BlogPost[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (!data.isArchived) loadedPosts.push({ id: docSnap.id, ...data });
+        });
+        const cleaned = cleanBlogs(loadedPosts);
+        const published = cleaned.filter(p => p.published).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setPosts(published);
+        saveStoredBlogs(cleaned);
+        preloadBlogImages(published).then(() => {
+          if (isMounted) setLoading(false);
+        });
       },
       (error) => {
         console.warn("Firestore Blog Error (using stored blogs):", error);

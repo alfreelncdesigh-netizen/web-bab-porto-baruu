@@ -135,26 +135,21 @@ export default function Hero() {
           </div>
         </motion.div>
 
-        {/* Foto Desainer Mobile: Dinaikkan posisinya mendekati teks & tombol */}
+        {/* Foto Desainer Mobile: Tampil bersih, transparan, tanpa garis bingkai */}
         <motion.div 
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.12, ease: "easeOut" }}
-          className="w-full mt-0 sm:mt-1 px-6 sm:px-8 flex items-center justify-center relative overflow-hidden bg-transparent -translate-y-3 sm:-translate-y-4"
+          className="w-full mt-0 sm:mt-1 px-6 sm:px-8 flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none -translate-y-2 sm:-translate-y-3"
         >
-          <div className="relative w-full max-w-[340px] sm:max-w-[360px] aspect-[4/5] flex items-center justify-center bg-transparent">
-            {/* Dekorasi Lingkaran & Garis Biru Halus */}
-            <div className="absolute w-[250px] h-[250px] sm:w-[260px] sm:h-[260px] rounded-full bg-blue-500/10 dark:bg-blue-600/15 blur-2xl pointer-events-none -z-10" />
-            <div className="absolute w-[210px] h-[210px] sm:w-[220px] sm:h-[220px] rounded-full border border-blue-500/20 dark:border-blue-400/25 pointer-events-none -z-10" />
-            <svg className="absolute -right-2 -bottom-2 w-24 h-24 text-blue-500/30 dark:text-blue-400/30 pointer-events-none -z-10" viewBox="0 0 100 100" fill="none">
-              <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 4" />
-              <path d="M12 50 Q 50 12 88 50" stroke="currentColor" strokeWidth="1.5" />
-            </svg>
+          <div className="relative w-full max-w-[340px] sm:max-w-[360px] aspect-[4/5] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
+            {/* Ambient subtle glow tanpa garis bingkai apapun */}
+            <div className="absolute w-[220px] h-[220px] sm:w-[240px] sm:h-[240px] rounded-full bg-blue-500/10 dark:bg-blue-600/15 blur-3xl pointer-events-none -z-10" />
 
             <img 
               src={resolveImageUrl(settings.heroImage || "/images/editing_tools_3d_1787123977793.jpg")} 
               alt="Muhammad Albiansyah - Creative Designer"
-              className="w-full h-full object-contain object-center select-none bg-transparent border-0 shadow-none outline-none"
+              className="w-full h-full object-contain object-center select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-sm"
               fetchPriority="high"
               loading="eager"
               onError={handleImageError}
@@ -223,33 +218,22 @@ export default function Hero() {
             </div>
           </motion.div>
 
-          {/* Kolom Kanan: Foto Profil Diperbesar 1,3–1,5x dengan Dekorasi Lingkaran dan Garis Biru (45%) */}
+          {/* Kolom Kanan: Foto Profil Diperbesar 1,3–1,5x, Bersih, Transparan Tanpa Garis Bingkai (45%) */}
           <motion.div 
-            className="w-full flex items-center justify-center relative bg-transparent border-0 shadow-none"
+            className="w-full flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none"
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.7, delay: 0.08, ease: "easeOut" }}
           >
-            <div className="relative w-full max-w-[520px] lg:max-w-[580px] xl:max-w-[620px] aspect-[4/5] max-h-[640px] lg:max-h-[700px] xl:max-h-[740px] flex items-center justify-center bg-transparent border-0 shadow-none">
-              {/* Dekorasi Lingkaran Biru Ambient & Border Ring (diperbesar sesuai foto baru) */}
-              <div className="absolute w-[380px] h-[380px] lg:w-[460px] lg:h-[460px] xl:w-[500px] xl:h-[500px] rounded-full bg-blue-500/15 dark:bg-blue-600/20 blur-3xl pointer-events-none -z-10" />
-              <div className="absolute w-[320px] h-[320px] lg:w-[400px] lg:h-[400px] xl:w-[440px] xl:h-[440px] rounded-full border border-blue-500/25 dark:border-blue-400/30 pointer-events-none -z-10" />
+            <div className="relative w-full max-w-[520px] lg:max-w-[580px] xl:max-w-[620px] aspect-[4/5] max-h-[640px] lg:max-h-[700px] xl:max-h-[740px] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
+              {/* Ambient subtle glow tanpa garis bingkai apapun */}
+              <div className="absolute w-[360px] h-[360px] lg:w-[440px] lg:h-[440px] xl:w-[480px] xl:h-[480px] rounded-full bg-blue-500/12 dark:bg-blue-600/15 blur-3xl pointer-events-none -z-10" />
 
-              {/* Dekorasi Garis Abstrak Biru Geometris */}
-              <svg 
-                className="absolute -right-2 -bottom-2 lg:-right-4 lg:-bottom-4 w-44 h-44 lg:w-56 lg:h-56 xl:w-60 xl:h-60 text-blue-500/35 dark:text-blue-400/35 pointer-events-none -z-10 select-none" 
-                viewBox="0 0 100 100" 
-                fill="none"
-              >
-                <circle cx="50" cy="50" r="42" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 6" />
-                <path d="M12 48 Q 50 12 88 52" stroke="currentColor" strokeWidth="1.5" />
-              </svg>
-
-              {/* Foto Profil Asli (Diperbesar 1,3–1,5x, jernih & proporsional) */}
+              {/* Foto Profil Asli (Transparan, Jernih, Tanpa Garis Bingkai) */}
               <img 
                 src={resolveImageUrl(settings.heroImage || "/images/editing_tools_3d_1787123977793.jpg")} 
                 alt="Muhammad Albiansyah - Creative Designer"
-                className="w-full h-full object-contain object-bottom select-none bg-transparent border-none shadow-none filter drop-shadow-md transition-transform duration-500 hover:scale-[1.01]"
+                className="w-full h-full object-contain object-bottom select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-md transition-transform duration-500 hover:scale-[1.01]"
                 fetchPriority="high"
                 loading="eager"
                 onError={handleImageError}

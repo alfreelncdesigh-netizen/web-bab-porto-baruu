@@ -196,7 +196,7 @@ app.post('/api/upload', (req: Request, res: Response): void => {
 
       if (contentType.includes('multipart/form-data')) {
         const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
-        const boundary = boundaryMatch ? (boundaryMatch[1] || boundaryMatch[2]) : '';
+        const boundary = boundaryMatch ? (boundaryMatch[1] || boundaryMatch[2]).trim() : '';
         if (boundary) {
           const boundaryBuffer = Buffer.from(`--${boundary}`);
           let startIdx = fullBuffer.indexOf(boundaryBuffer);
@@ -205,16 +205,24 @@ app.post('/api/upload', (req: Request, res: Response): void => {
             if (nextIdx === -1) break;
 
             const part = fullBuffer.slice(startIdx, nextIdx);
-            const headerEndIdx = part.indexOf(Buffer.from('\r\n\r\n'));
+            let headerEndIdx = part.indexOf(Buffer.from('\r\n\r\n'));
+            let headerOffset = 4;
+            if (headerEndIdx === -1) {
+              headerEndIdx = part.indexOf(Buffer.from('\n\n'));
+              headerOffset = 2;
+            }
+
             if (headerEndIdx !== -1) {
               const headerStr = part.slice(0, headerEndIdx).toString('utf-8');
               if (headerStr.includes('filename="')) {
                 const fnMatch = headerStr.match(/filename="([^"]+)"/);
                 if (fnMatch) filename = fnMatch[1];
-                let dataStart = headerEndIdx + 4;
+                let dataStart = headerEndIdx + headerOffset;
                 let dataEnd = part.length;
                 if (part.slice(dataEnd - 2).equals(Buffer.from('\r\n'))) {
                   dataEnd -= 2;
+                } else if (part.slice(dataEnd - 1).equals(Buffer.from('\n'))) {
+                  dataEnd -= 1;
                 }
                 fileBuffer = part.slice(dataStart, dataEnd);
                 break;
