@@ -239,7 +239,19 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
           ))}
         </div>
       ) : posts.length === 0 ? (
-        <p className="text-black dark:text-zinc-400 text-[10px] md:text-sm bg-zinc-50 dark:bg-[#111111] p-10 rounded-none sm:rounded-2xl md:rounded-[2rem] border border-zinc-200/50 dark:border-zinc-800/50 text-center font-medium">Belum ada tulisan baru saat ini. Nanti mampir lagi ya!</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 md:gap-5 lg:gap-6">
+          {[1, 2, 3, 4].map((n) => (
+            <div key={n} className="w-full flex flex-col p-3.5 sm:p-4.5 rounded-2xl sm:rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 bg-white/40 dark:bg-zinc-900/40">
+              <div className="w-full aspect-[16/10] rounded-xl sm:rounded-2xl animate-shimmer mb-3" />
+              <div className="w-20 h-3.5 rounded-full animate-shimmer mb-2.5" />
+              <div className="w-full h-4 rounded-lg animate-shimmer mb-1.5" />
+              <div className="w-4/5 h-4 rounded-lg animate-shimmer mb-2.5" />
+              <div className="w-full h-2.5 rounded-full animate-shimmer mb-1" />
+              <div className="w-2/3 h-2.5 rounded-full animate-shimmer mb-3" />
+              <div className="w-full h-8 rounded-xl animate-shimmer mt-auto" />
+            </div>
+          ))}
+        </div>
       ) : (
         <motion.div 
           variants={childGridContainer}
@@ -366,13 +378,14 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                   else modalImg = '/images/promo_poster_1789471291192.jpg';
                 }
                 return (
-                  <div className="w-full md:w-[50%] lg:w-[54%] xl:w-[56%] shrink-0 bg-zinc-50 dark:bg-[#111111] relative flex items-center justify-center p-3 sm:p-5 lg:p-8 border-b md:border-b-0 md:border-r border-zinc-200/60 dark:border-zinc-800/60">
-                    <div className="w-full h-auto max-h-[50vh] md:max-h-[82vh] flex items-center justify-center overflow-hidden rounded-xl">
-                      <img 
-                        src={resolveImageUrl(modalImg)} 
-                        onError={handleImageError}
-                        className="w-full h-auto max-h-[50vh] md:max-h-[82vh] object-contain block mx-auto rounded-lg shadow-sm" 
+                  <div className="w-full md:w-[50%] lg:w-[54%] xl:w-[56%] shrink-0 bg-black md:bg-zinc-50 dark:bg-black md:dark:bg-[#111111] relative flex items-center justify-center p-0 sm:p-5 lg:p-8 border-b md:border-b-0 md:border-r border-zinc-200/60 dark:border-zinc-800/60">
+                    <div className="w-full h-auto flex items-center justify-center overflow-hidden rounded-none sm:rounded-xl">
+                      <ImageWithSkeleton 
+                        src={modalImg} 
                         alt={selectedPost.title} 
+                        className="w-full h-auto max-h-[85vh] md:max-h-[88vh] object-contain block mx-auto rounded-none sm:rounded-lg shadow-sm"
+                        containerClassName="relative w-full h-auto flex items-center justify-center overflow-hidden"
+                        skeletonClassName="rounded-none sm:rounded-xl"
                       />
                     </div>
                   </div>

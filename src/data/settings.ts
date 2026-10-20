@@ -28,23 +28,33 @@ export interface CvSectionItem {
 
 export const defaultCvSections: CvSectionItem[] = [
   {
-    title: "Professional Summary",
-    content: "Desainer Grafis & UI/UX dengan dedikasi tinggi dalam menciptakan identitas visual yang presisi, estetis, dan fungsional. Berpengalaman menangani proyek branding, publikasi media, hingga antarmuka sistem digital.",
+    title: "PROFESIONAL SUMMARY",
+    content: "Seorang Desainer Garis dengan pengalaman dalam menciptakan solusi visual yang fungsional dan estetis.",
     images: []
   },
   {
-    title: "Pendidikan",
-    content: "<b>SMK Negeri 1 Sinjai</b><br/>Teknik Komputer dan Jaringan (TKJ)<br/>Fokus pada dasar rekayasa sistem komputer, logika jaringan, dan pengembangan kreativitas desain digital.",
+    title: "PENDIDKAN",
+    content: "<b>UPT SMK NEGERI 1 Sinjai</b> - Sinjai Utara<br/>Jurusan Teknik Komputer dan Jaringan.",
     images: []
   },
   {
-    title: "Pengalaman Kerja & Proyek",
-    content: "<b>Freelance Graphic Designer & UI/UX</b> (2021 - Sekarang)<br/>Merancang materi promosi, poster acara, identitas visual brand, serta antarmuka prototipe web/mobile.<br/><br/><b>Creative Visual Contributor</b><br/>Merancang materi promosi visual dan konten media sosial kreatif.",
+    title: "PENGALAMAN KERJA & PROYEK",
+    content: "<b>Jasa Desain Grafis Freelance</b> - Sekarang<br/>Merancang materi visual, branding, dan poster.",
     images: []
   },
   {
-    title: "Keahlian",
-    content: "<b>Visual & Design:</b> Adobe Photoshop, Adobe Illustrator, Figma, Canva, Affinity Designer.<br/><b>Prinsip:</b> Tipografi Modern, Komposisi Grid, Teori Warna, Layout Editorial, UI/UX Design.",
+    title: "KEAHLIAN",
+    content: "<b>Hard Skills</b><br/>Desain Grafis : Poster, Sertifikat, Identitas Visual, Kemasan.",
+    images: []
+  },
+  {
+    title: "SERTIFIKASI",
+    content: "<b>Workshop Video Editing</b> - 2024",
+    images: []
+  },
+  {
+    title: "PROYEK UNGGULAN",
+    content: "<b>Branding Media Sosial</b>",
     images: []
   }
 ];

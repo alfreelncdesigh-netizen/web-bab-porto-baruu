@@ -481,6 +481,16 @@ export default function App() {
           if (img) imagePromises.push(preloadImage(img));
         });
 
+        if (currentSettings.cvSections && Array.isArray(currentSettings.cvSections)) {
+          currentSettings.cvSections.forEach(s => {
+            if (Array.isArray(s.images)) {
+              s.images.forEach(img => { if (img) imagePromises.push(preloadImage(img)); });
+            } else if (s.image) {
+              imagePromises.push(preloadImage(s.image));
+            }
+          });
+        }
+
         // 2. Sync from Firebase Firestore and propagate to state/listeners
         const cloudSync = async () => {
           try {

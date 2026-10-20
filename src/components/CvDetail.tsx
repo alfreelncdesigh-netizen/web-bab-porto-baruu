@@ -47,11 +47,14 @@ export function IrregularPhotoCollage({
 }: IrregularPhotoCollageProps) {
   // Error state per image index
   const [error, setError] = useState<Record<number, boolean>>({});
+  // Loaded state per image index for skeleton shimmer
+  const [loadedMap, setLoadedMap] = useState<Record<number, boolean>>({});
   // Hover/tap state untuk memicu transform scale(1.08) rotate(0deg) dan z-index terdepan
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
   const handleImageError = (index: number) => {
     setError((prev) => ({ ...prev, [index]: true }));
+    setLoadedMap((prev) => ({ ...prev, [index]: true }));
   };
 
   if (!images || images.length === 0) return null;
@@ -75,6 +78,7 @@ export function IrregularPhotoCollage({
       <div className="flex items-center overflow-visible pl-1.5 py-1.5">
         {images.map((imgUrl, imgIdx) => {
           const isError = Boolean(error[imgIdx]);
+          const isImgLoaded = Boolean(loadedMap[imgIdx]);
           const rotation = STACK_ROTATIONS[imgIdx % STACK_ROTATIONS.length];
           const isInteracting = activeIdx === imgIdx;
 
@@ -114,14 +118,22 @@ export function IrregularPhotoCollage({
               }`}
               title={isError ? "Gambar gagal dimuat" : `Foto ${imgIdx + 1} - Ketuk untuk memperbesar`}
             >
+              {/* Skeleton loading shimmer saat gambar sedang dimuat */}
+              {!isImgLoaded && !isError && (
+                <div className="absolute inset-0 z-0 bg-zinc-200 dark:bg-zinc-800 animate-shimmer" />
+              )}
+
               {isError ? (
                 renderPlaceholder("w-4 h-4 sm:w-5 sm:h-5")
               ) : (
                 <img
                   src={imgUrl}
                   alt={`${title} ${imgIdx + 1}`}
-                  className="w-full h-full object-cover select-none pointer-events-none"
+                  className={`w-full h-full object-cover select-none pointer-events-none relative z-[1] transition-opacity duration-300 ${
+                    isImgLoaded ? 'opacity-100' : 'opacity-0'
+                  }`}
                   loading="lazy"
+                  onLoad={() => setLoadedMap((prev) => ({ ...prev, [imgIdx]: true }))}
                   onError={() => handleImageError(imgIdx)}
                 />
               )}
@@ -151,6 +163,7 @@ export default function CvDetail() {
     title: string;
   } | null>(null);
   const [lightboxError, setLightboxError] = useState(false);
+  const [lightboxLoaded, setLightboxLoaded] = useState(false);
 
   useEffect(() => {
     // 1. Dengarkan event lokal untuk update seketika di tab yang sama
@@ -262,6 +275,7 @@ export default function CvDetail() {
 
   const openLightbox = (images: string[], index: number, title: string) => {
     setLightboxError(false);
+    setLightboxLoaded(false);
     setLightbox({ images, index, title });
   };
 
@@ -538,18 +552,18 @@ export default function CvDetail() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setLightbox(null)}
-              className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 cursor-zoom-out"
+              className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4 md:p-6 cursor-zoom-out"
             >
               <motion.div
-                initial={{ scale: 0.92, opacity: 0 }}
+                initial={{ scale: 0.94, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.92, opacity: 0 }}
+                exit={{ scale: 0.94, opacity: 0 }}
                 transition={{ type: "spring", stiffness: 300, damping: 25 }}
                 onClick={(e) => e.stopPropagation()}
-                className="relative max-w-4xl max-h-[92vh] w-full bg-zinc-950 border border-zinc-800 rounded-3xl p-3 sm:p-5 shadow-2xl flex flex-col items-center cursor-default overflow-hidden"
+                className="relative max-w-5xl max-h-[96vh] w-full bg-zinc-950 border-0 sm:border border-zinc-800 rounded-none sm:rounded-3xl p-0 sm:p-5 shadow-2xl flex flex-col items-center cursor-default overflow-hidden"
               >
                 {/* Header Lightbox */}
-                <div className="w-full flex items-center justify-between pb-3 px-2 border-b border-zinc-800/80 mb-3 text-white">
+                <div className="w-full flex items-center justify-between p-3 sm:pb-3 sm:px-2 border-b border-zinc-800/80 mb-0 sm:mb-3 text-white shrink-0 bg-black/40 sm:bg-transparent">
                   <div className="flex items-center gap-2 truncate pr-4">
                     <span className="text-xs sm:text-sm font-bold truncate">
                       {lightbox.title}
@@ -563,27 +577,37 @@ export default function CvDetail() {
 
                   <button
                     onClick={() => setLightbox(null)}
-                    className="p-1.5 sm:p-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors shrink-0"
+                    className="p-1.5 sm:p-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition-colors shrink-0 cursor-pointer"
                     title="Tutup (Esc)"
                   >
                     <X className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
                 </div>
 
-                {/* Display Gambar Penuh */}
-                <div className="relative w-full flex-1 flex items-center justify-center p-1 sm:p-2 min-h-[260px] max-h-[74vh]">
+                {/* Display Gambar Penuh: Rasio Utuh & Memenuhi Kanan Kiri di Mobile */}
+                <div className="relative w-full flex-1 flex items-center justify-center p-0 sm:p-2 min-h-[260px] max-h-[85vh] bg-black">
+                  {!lightboxLoaded && !lightboxError && (
+                    <div className="absolute inset-0 bg-zinc-900 animate-shimmer z-0" />
+                  )}
                   {lightboxError ? (
-                    <div className="w-64 h-64 flex flex-col items-center justify-center bg-zinc-900 border border-dashed border-zinc-800 rounded-2xl text-zinc-400 p-4 text-center select-none">
+                    <div className="w-64 h-64 flex flex-col items-center justify-center bg-zinc-900 border border-dashed border-zinc-800 rounded-2xl text-zinc-400 p-4 text-center select-none z-10 m-auto">
                       <ImageOff className="w-10 h-10 opacity-50 mb-2" />
                       <span className="text-sm font-semibold">Gambar Gagal Dimuat</span>
                       <span className="text-xs text-zinc-500 mt-1">Sumber file tidak dapat diakses</span>
                     </div>
                   ) : (
                     <img
+                      key={lightbox.index + '_' + lightbox.images[lightbox.index]}
                       src={formatImageUrl(lightbox.images[lightbox.index])}
                       alt={`Foto ${lightbox.index + 1}`}
-                      className="max-h-[72vh] max-w-full object-contain rounded-xl select-none shadow-lg"
-                      onError={() => setLightboxError(true)}
+                      className={`w-full sm:w-auto h-auto max-h-[82vh] object-contain rounded-none sm:rounded-xl select-none shadow-lg relative z-[1] transition-opacity duration-300 block mx-auto ${
+                        lightboxLoaded ? 'opacity-100' : 'opacity-0'
+                      }`}
+                      onLoad={() => setLightboxLoaded(true)}
+                      onError={() => {
+                        setLightboxError(true);
+                        setLightboxLoaded(true);
+                      }}
                     />
                   )}
 
@@ -592,6 +616,7 @@ export default function CvDetail() {
                     <button
                       onClick={() => {
                         setLightboxError(false);
+                        setLightboxLoaded(false);
                         setLightbox(prev => prev ? ({ ...prev, index: (prev.index - 1 + prev.images.length) % prev.images.length }) : null);
                       }}
                       className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 p-2 sm:p-3 rounded-full bg-black/60 hover:bg-black/90 text-white border border-white/10 backdrop-blur-sm transition-transform active:scale-95 shadow-md"
@@ -606,6 +631,7 @@ export default function CvDetail() {
                     <button
                       onClick={() => {
                         setLightboxError(false);
+                        setLightboxLoaded(false);
                         setLightbox(prev => prev ? ({ ...prev, index: (prev.index + 1) % prev.images.length }) : null);
                       }}
                       className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 p-2 sm:p-3 rounded-full bg-black/60 hover:bg-black/90 text-white border border-white/10 backdrop-blur-sm transition-transform active:scale-95 shadow-md"

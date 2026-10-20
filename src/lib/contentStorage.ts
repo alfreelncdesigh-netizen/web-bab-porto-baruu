@@ -7,6 +7,8 @@ import { db, auth } from './firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { logFirestoreError, OperationType } from './firestoreErrorHandler';
 
+const DUMMY_PROJECT_IDS = new Set(['2', '3', '4', '5', '6', '7', 'poster-lks-smkn1-sinjai', 'branding-kemasan-teh-hijau', 'poster-promosi-diskon-kreatif', 'showcase-visual-3d-minimalis', 'banner-informasi-bca-finansial', 'visual-sosial-media-konten-kreatif', 'workspace-editing-tools-3d']);
+
 const DUMMY_PROJECT_TITLES = new Set([
   "Aplikasi Keuangan FinSmart",
   "Poster Pameran Seni Kontemporer",
@@ -15,20 +17,31 @@ const DUMMY_PROJECT_TITLES = new Set([
   "Poster Festival Musik Indie",
   "Website Studio Arsitektur",
   "Redesain Aplikasi Travel",
-  "Aplikasi Kesehatan SehatKu"
+  "Aplikasi Kesehatan SehatKu",
+  "Poster LKS Desain Grafis SMKN 1 Sinjai",
+  "Desain Kemasan & Identitas Visual Teh Hijau",
+  "Poster Promosi & Diskon Branding Digital",
+  "Eksplorasi Antarmuka Digital & 3D Minimalis",
+  "Banner Layanan Transaksi Finansial Digital",
+  "Koleksi Visual Kreatif Media Sosial",
+  "Suite Kreatif & Workspace Tools 3D"
 ]);
 
 const DUMMY_BLOG_IDS = new Set([
   "filosofi-desain-minimalis",
   "beralih-ke-affinity-designer",
-  "hierarki-tipografi-modern"
+  "hierarki-tipografi-modern",
+  "proses-desain-kemasan-teh-hijau"
 ]);
 
-const DUMMY_TEMPLATE_IDS = new Set([
-  "affinity-brand-kit",
-  "ui-ux-wireframe-system",
-  "brutalist-editorial-posters",
-  "minimalist-social-carousel"
+const DUMMY_BLOG_TITLES = new Set([
+  "Filosofi Desain Minimalis & Fungsional",
+  "Filosofi Desain Minimalis: Ketika Kurang Berarti Lebih",
+  "Studi Kasus: Desain Kemasan & Identitas Visual Teh Hijau",
+  "Pengalaman & Efisiensi Menggunakan Affinity Suite untuk Desain Digital",
+  "Beralih ke Affinity Designer: Workflow Vektor Masa Depan",
+  "Hierarki Tipografi Modern untuk Poster dan Desain Antarmuka",
+  "Hierarki Tipografi dalam Desain Antarmuka Modern"
 ]);
 
 export function cleanForFirestore<T>(data: T): T {
@@ -42,12 +55,13 @@ export function cleanForFirestore<T>(data: T): T {
 export function cleanProjects(projs: Project[]): Project[] {
   return (projs || []).filter((p: Project) => {
     if (!p) return false;
-    if (!p.title && !p.id) return false;
-    // Only exclude legacy seed dummy items if not modified or added by user
-    const pAny = p as any;
-    if (p.title && DUMMY_PROJECT_TITLES.has(p.title.trim()) && !pAny.updatedAt && !pAny.dateAdded) {
-      return false;
-    }
+    const idStr = String(p.id || '').trim();
+    const titleStr = (p.title || '').trim();
+    if (!titleStr && !idStr) return false;
+    if (DUMMY_PROJECT_IDS.has(idStr)) return false;
+    if (DUMMY_PROJECT_TITLES.has(titleStr)) return false;
+    // Hanya muat konten gambar yang ditambahkan pengguna
+    if (!p.image || typeof p.image !== 'string' || !p.image.trim()) return false;
     return true;
   });
 }
@@ -55,10 +69,13 @@ export function cleanProjects(projs: Project[]): Project[] {
 export function cleanBlogs(blogs: BlogPost[]): BlogPost[] {
   return (blogs || []).filter((b: BlogPost) => {
     if (!b) return false;
-    if (!b.title && !b.id) return false;
-    // Only exclude legacy seed dummy items if not modified or added by user
-    const bAny = b as any;
-    if (DUMMY_BLOG_IDS.has(String(b.id)) && !bAny.updatedAt && !bAny.dateAdded) return false;
+    const idStr = String(b.id || '').trim();
+    const titleStr = (b.title || '').trim();
+    if (!titleStr && !idStr) return false;
+    if (DUMMY_BLOG_IDS.has(idStr)) return false;
+    if (DUMMY_BLOG_TITLES.has(titleStr)) return false;
+    const rawImg = b.image || (b as any).coverImage;
+    if (!rawImg || typeof rawImg !== 'string' || !rawImg.trim()) return false;
     return true;
   });
 }
@@ -242,13 +259,18 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
 export function getStoredProjects(): Project[] {
   try {
     const saved = localStorage.getItem('user_projects');
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return cleanProjects(parsed);
+      }
+    }
   } catch(e) {}
   return [];
 }
 
 export async function saveStoredProjects(newProjects: Project[]): Promise<void> {
-  const clean = (newProjects || []).filter((p: Project) => p && (p.title || p.id));
+  const clean = cleanProjects(newProjects || []);
   window.dispatchEvent(new CustomEvent('user_projects_updated', { detail: clean }));
   try { localStorage.setItem('user_projects', JSON.stringify(clean)); } catch(e) {}
   try {
@@ -264,7 +286,12 @@ export async function saveStoredProjects(newProjects: Project[]): Promise<void> 
 export function getStoredBlogs(): BlogPost[] {
   try {
     const saved = localStorage.getItem('blogPosts');
-    if (saved) return JSON.parse(saved);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return cleanBlogs(parsed);
+      }
+    }
   } catch(e) {}
   return [];
 }

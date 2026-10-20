@@ -6,4 +6,7 @@ export interface BlogPost {
   category: string;
   published: boolean;
   image?: string;
+  excerpt?: string;
+  readTime?: string;
+  tags?: string[];
 }

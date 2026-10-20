@@ -112,25 +112,25 @@ export default function Hero() {
               letterSpacing: '-0.025em',
               lineHeight: 1.1,
             }}
-            className="font-black text-[34px] sm:text-[40px] text-zinc-950 dark:text-white mb-3 select-none w-full"
+            className="font-black text-[34px] sm:text-[40px] text-zinc-950 dark:text-white mb-1.5 select-none w-full"
           >
             <span className="block text-zinc-950 dark:text-white font-black">{title1Text}</span>
             <span className="block text-zinc-950 dark:text-white font-black mt-1">{title2Text}</span>
           </h1>
 
-          {/* Group Tombol CTA Mobile: Menyatu dalam satu capsule horizontal & lebih kecil */}
-          <div className="inline-flex items-center p-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-1 max-w-full select-none">
+          {/* Group Tombol CTA Mobile: Diperkecil & dinaikkan posisinya lebih dekat ke teks judul */}
+          <div className="inline-flex items-center p-0.5 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-0 max-w-full select-none">
             <button 
               onClick={() => scrollTo('portfolio')}
-              className="h-[34px] px-3.5 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-[11px] font-bold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
+              className="h-[26px] sm:h-[28px] px-2.5 sm:px-3 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-[10px] sm:text-[10.5px] font-bold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
             >
-              Lihat Karya <ArrowRight className="w-3 h-3 shrink-0" />
+              Lihat Karya <ArrowRight className="w-2.5 h-2.5 shrink-0" />
             </button>
             <button 
               onClick={() => scrollTo('contact')}
-              className="h-[34px] px-3.5 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-[11px] font-bold cursor-pointer active:scale-95 transition-all shrink-0"
+              className="h-[26px] sm:h-[28px] px-2.5 sm:px-3 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-[10px] sm:text-[10.5px] font-bold cursor-pointer active:scale-95 transition-all shrink-0"
             >
-              Kontak Saya
+              Kontak
             </button>
           </div>
         </motion.div>
@@ -205,20 +205,20 @@ export default function Hero() {
               </span>
             </h1>
 
-            {/* Group Tombol CTA Desktop: Rapi tepat di bawah judul dengan jarak konsisten */}
-            <div className="flex flex-row items-center gap-3.5 w-fit font-semibold mt-6 md:mt-7">
+            {/* Group Tombol CTA Desktop: Diperkecil & diposisikan sedikit ke atas, dekat dengan text judul */}
+            <div className="flex flex-row items-center gap-2.5 w-fit font-semibold mt-2 md:mt-2.5">
               <button 
                 onClick={() => scrollTo('portfolio')}
-                className="h-[48px] md:h-[50px] px-7 md:px-8 inline-flex items-center justify-center gap-2.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-full text-xs md:text-sm font-bold shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
+                className="h-[31px] md:h-[33px] px-3.5 md:px-4 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-full text-[11px] md:text-xs font-bold shadow-xs hover:shadow-sm hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
               >
-                Lihat Karya <ArrowRight className="w-4 h-4 shrink-0" />
+                Lihat Karya <ArrowRight className="w-3 h-3 shrink-0" />
               </button>
 
               <button 
                 onClick={() => scrollTo('contact')}
-                className="h-[48px] md:h-[50px] px-7 md:px-8 inline-flex items-center justify-center gap-2 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 border border-zinc-200/80 dark:bg-zinc-900 dark:text-white dark:border-zinc-800 dark:hover:bg-zinc-800 rounded-full text-xs md:text-sm font-bold shadow-xs hover:shadow-sm hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
+                className="h-[31px] md:h-[33px] px-3.5 md:px-4 inline-flex items-center justify-center gap-1 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 border border-zinc-200/80 dark:bg-zinc-900 dark:text-white dark:border-zinc-800 dark:hover:bg-zinc-800 rounded-full text-[11px] md:text-xs font-bold shadow-xs hover:shadow-sm hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
               >
-                Kontak Saya
+                Kontak
               </button>
             </div>
           </motion.div>

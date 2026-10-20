@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
-import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRight, Sparkles, Search, MessageCircle, ChevronLeft, ChevronRight, Eye, Clock, Wrench, CalendarCheck, Activity } from 'lucide-react';
+import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRight, Sparkles, Search, MessageCircle, ChevronLeft, ChevronRight, Eye, Clock, Wrench, CalendarCheck, Activity, ChevronDown, Maximize2, Minimize2 } from 'lucide-react';
 import { Project } from '../data/projects';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -36,14 +36,14 @@ const cardItemVariants: Variants = {
     y: 0, 
     scale: 1,
     transition: { 
-      duration: 0.5, 
-      ease: [0.22, 1, 0.36, 1] as const
+      duration: 0.35, 
+      ease: [0.16, 1, 0.3, 1] as const
     } 
   },
   exit: { 
     opacity: 0, 
     scale: 0.94, 
-    transition: { duration: 0.2 } 
+    transition: { duration: 0.15 } 
   },
 };
 
@@ -119,6 +119,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [showProjectMetrics, setShowProjectMetrics] = useState(false);
+  const [imageFitMode, setImageFitMode] = useState<'cover' | 'contain'>('contain');
   const [copied, setCopied] = useState(false);
   const [showSharePopup, setShowSharePopup] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -288,6 +290,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     markAsRead(projectToOpen.id);
     setSelectedProject(projectToOpen);
     setActiveImageIndex(0);
+    setShowProjectMetrics(false);
+    setImageFitMode('cover');
     setShowSharePopup(false);
 
     // Scroll instan dan halus
@@ -295,7 +299,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       if (modalRootRef.current) modalRootRef.current.scrollTop = 0;
       if (modalContentRef.current) modalContentRef.current.scrollTop = 0;
       modalTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 30);
+    }, 20);
   };
 
   // Daftar artikel yang belum dibaca (tidak termasuk artikel yang sedang dibuka)
@@ -486,19 +490,34 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
             })()}
             
             {filteredProjects.length === 0 && (
-              <div className="col-span-full py-20 text-center">
-                <p className="text-black dark:text-zinc-400 text-xs md:text-sm font-medium">
-                  {searchQuery ? `Tidak ada karya yang sesuai dengan "${searchQuery}".` : 'Belum ada karya di kategori ini. Coba cek kategori lainnya ya.'}
-                </p>
-                {searchQuery && (
+              searchQuery ? (
+                <div className="col-span-full py-20 text-center">
+                  <p className="text-black dark:text-zinc-400 text-xs md:text-sm font-medium">
+                    Tidak ada karya yang sesuai dengan "{searchQuery}".
+                  </p>
                   <button
                     onClick={() => setSearchQuery('')}
                     className="mt-3 px-4 py-1.5 rounded-full text-xs font-semibold bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition-all cursor-pointer"
                   >
                     Reset Pencarian
                   </button>
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="col-span-full columns-1 sm:columns-2 lg:columns-2 xl:columns-3 2xl:columns-3 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-12 space-y-6 sm:space-y-8 md:space-y-10 lg:space-y-10 xl:space-y-12">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <div 
+                      key={i} 
+                      className={`w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 animate-shimmer ${
+                        i % 3 === 0 
+                          ? 'aspect-[3/4] min-h-[440px]' 
+                          : i % 3 === 1 
+                          ? 'aspect-[4/5] min-h-[380px]' 
+                          : 'aspect-[1/1] min-h-[340px]'
+                      }`}
+                    />
+                  ))}
+                </div>
+              )
             )}
           </motion.div>
         )}
@@ -527,7 +546,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               initial={{ scale: 0.98, opacity: 0 }} 
               animate={{ scale: 1, opacity: 1 }} 
               exit={{ scale: 0.98, opacity: 0 }} 
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
               ref={modalRootRef}
               id="portfolio-modal-root" 
               className="w-full h-[100dvh] md:w-[98vw] lg:w-[98vw] xl:w-[98vw] 2xl:w-[98vw] md:max-w-none md:h-[94vh] md:max-h-[96vh] overflow-y-auto md:overflow-hidden rounded-none md:rounded-3xl flex flex-col md:flex-row shadow-2xl relative bg-white dark:bg-[#0A0A0A] border-0 md:border md:border-zinc-200/60 dark:md:border-zinc-800/60"
@@ -537,34 +556,41 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               <div ref={modalTopRef} id="portfolio-modal-top" className="w-full h-0 opacity-0 pointer-events-none absolute top-0 left-0" />
 
               {/* AREA GAMBAR & GALERI:
-                  - Menampilkan gambar aktif
+                  - Gambar memenuhi bingkai kanan dan kiri (tanpa ruang kosong di kanan & kiri bingkai)
+                  - Transisi super halus dan cepat
                   - Carousel galeri jika memiliki lebih dari 1 gambar
-                  - Dukungan navigasi prev / next
+                  - Dukungan kontrol muat utuh / penuhi bingkai
               */}
-              <div className="w-full md:w-[68%] lg:w-[72%] xl:w-[74%] relative border-b md:border-b-0 md:border-r flex flex-col items-center justify-between h-auto md:h-full shrink-0 bg-zinc-100/90 dark:bg-[#0d0d0d] border-zinc-200/60 dark:border-zinc-800/60 p-3 sm:p-4 md:p-6 lg:p-8">
-                <div className="w-full flex-1 flex items-center justify-center relative min-h-[260px] sm:min-h-[320px] md:min-h-0">
+              <div className="w-full md:w-[64%] lg:w-[66%] xl:w-[68%] relative border-b md:border-b-0 md:border-r flex flex-col items-center justify-between h-auto min-h-[300px] md:h-full shrink-0 bg-black dark:bg-[#050505] border-zinc-200/60 dark:border-zinc-800/60 p-0 overflow-hidden select-none">
+                <div className="w-full h-full flex-1 flex items-center justify-center relative overflow-hidden bg-black">
                   {activeImage ? (
                     activeImage.includes('.pdf') || activeImage.includes('.ai') || activeImage.includes('.eps') ? (
                       <div className="text-center p-8">
-                        <p className="text-xs md:text-sm font-medium mb-6 text-black dark:text-white">
+                        <p className="text-xs md:text-sm font-medium mb-6 text-white">
                           File ini adalah Dokumen / Vektor ({activeImage.split('.').pop()?.toUpperCase()})
                         </p>
                         <a 
                           href={resolveImageUrl(activeImage)} 
                           target="_blank" 
                           rel="noopener noreferrer" 
-                          className="px-6 py-3 text-xs font-semibold inline-flex items-center justify-center gap-2 rounded-full hover:opacity-90 active:scale-95 shadow-md bg-black text-white dark:bg-white dark:text-black transition-all cursor-pointer"
+                          className="px-6 py-3 text-xs font-semibold inline-flex items-center justify-center gap-2 rounded-full hover:opacity-90 active:scale-95 shadow-md bg-white text-black transition-all cursor-pointer"
                         >
                           <ExternalLink size={14} /> Buka / Unduh File
                         </a>
                       </div>
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center relative">
-                        <img 
-                          key={activeImage}
+                      <div className="w-full h-full flex items-center justify-center relative overflow-hidden bg-black p-0">
+                        {/* Skeleton Shimmer Background saat gambar sedang dimuat / berpindah */}
+                        <div className="absolute inset-0 bg-zinc-900 animate-shimmer pointer-events-none z-0" />
+                        <motion.img 
+                          key={activeImage + '_' + imageFitMode}
+                          initial={{ opacity: 0.8 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0.8 }}
+                          transition={{ duration: 0.12, ease: "easeOut" }}
                           src={resolveImageUrl(activeImage)} 
                           alt={selectedProject.title} 
-                          className="w-full h-auto max-h-[70vh] md:max-h-[86vh] lg:max-h-[88vh] object-contain block mx-auto shadow-sm sm:rounded-xl transition-all duration-300" 
+                          className={`w-full ${imageFitMode === 'cover' ? 'h-full object-cover' : 'h-auto max-h-[85vh] md:max-h-[92vh] object-contain'} block mx-auto transition-all duration-150 ease-out relative z-10`} 
                           onError={handleImageError}
                         />
 
@@ -576,7 +602,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                 e.stopPropagation();
                                 setActiveImageIndex((prev) => (prev > 0 ? prev - 1 : uniqueGalleryImages.length - 1));
                               }}
-                              className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md transition-all shadow-md active:scale-95 cursor-pointer"
+                              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2 sm:p-2.5 rounded-full bg-black/60 hover:bg-black/85 text-white backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer"
                               title="Gambar Sebelumnya"
                             >
                               <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -586,7 +612,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                 e.stopPropagation();
                                 setActiveImageIndex((prev) => (prev < uniqueGalleryImages.length - 1 ? prev + 1 : 0));
                               }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md transition-all shadow-md active:scale-95 cursor-pointer"
+                              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2 sm:p-2.5 rounded-full bg-black/60 hover:bg-black/85 text-white backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer"
                               title="Gambar Berikutnya"
                             >
                               <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -594,10 +620,34 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           </>
                         )}
                         
+                        {/* Control Bar Overlay di Atas Gambar: Toggle Fit Mode */}
+                        <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setImageFitMode((prev) => (prev === 'cover' ? 'contain' : 'cover'));
+                            }}
+                            className="px-2.5 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white/90 hover:text-white backdrop-blur-md text-[10px] font-medium transition-all shadow-md active:scale-95 flex items-center gap-1 cursor-pointer border border-white/10"
+                            title={imageFitMode === 'cover' ? 'Tampilkan utuh (Fit)' : 'Penuhi bingkai kanan-kiri (Cover)'}
+                          >
+                            {imageFitMode === 'cover' ? (
+                              <>
+                                <Minimize2 className="w-3 h-3" />
+                                <span>Muat Utuh</span>
+                              </>
+                            ) : (
+                              <>
+                                <Maximize2 className="w-3 h-3" />
+                                <span>Penuhi Bingkai</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
                         {/* Tombol Bagikan Gambar */}
                         <button
                           onClick={(e) => { e.stopPropagation(); setShowSharePopup(true); }}
-                          className="absolute bottom-3 right-3 z-[60] p-2 sm:p-2.5 rounded-full bg-white/80 dark:bg-black/70 hover:bg-white dark:hover:bg-black transition-all backdrop-blur-md border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shadow-md cursor-pointer"
+                          className="absolute bottom-3 right-3 z-20 p-2 sm:p-2.5 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md border border-white/15 flex items-center justify-center shadow-md cursor-pointer transition-all active:scale-90"
                           title="Bagikan Gambar"
                         >
                           <Share2 className="w-4 h-4 stroke-[1.5]" />
@@ -642,28 +692,23 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                       </div>
                     )
                   ) : (
-                    <div className="w-full h-48 md:h-full flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-zinc-400">
-                      <span className="text-xs">Tidak ada gambar</span>
-                    </div>
+                    <div className="w-full h-48 md:h-full bg-zinc-900 animate-shimmer" />
                   )}
                 </div>
 
                 {/* Thumbnail Galeri (Jika terdapat lebih dari 1 gambar) */}
                 {uniqueGalleryImages.length > 1 && (
-                  <div className="w-full mt-3 pt-3 border-t border-zinc-200/60 dark:border-zinc-800/60">
-                    <p className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 mb-2">
-                      Galeri Gambar ({uniqueGalleryImages.length} Foto)
-                    </p>
-                    <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <div className="w-full px-4 py-2.5 bg-black/75 backdrop-blur-md border-t border-white/10 shrink-0 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       {uniqueGalleryImages.map((img, idx) => (
                         <button
                           key={idx}
                           type="button"
                           onClick={() => setActiveImageIndex(idx)}
-                          className={`relative w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                          className={`relative w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-lg overflow-hidden border-2 transition-all duration-150 cursor-pointer ${
                             activeImageIndex === idx 
-                              ? 'border-black dark:border-white ring-2 ring-black/20 dark:ring-white/20 scale-105' 
-                              : 'border-transparent opacity-60 hover:opacity-100'
+                              ? 'border-white ring-2 ring-white/30 scale-105 opacity-100' 
+                              : 'border-transparent opacity-50 hover:opacity-100'
                           }`}
                         >
                           <img
@@ -675,6 +720,9 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                         </button>
                       ))}
                     </div>
+                    <span className="text-[10px] text-white/70 font-semibold shrink-0 whitespace-nowrap hidden sm:inline">
+                      {activeImageIndex + 1} / {uniqueGalleryImages.length}
+                    </span>
                   </div>
                 )}
               </div>
@@ -683,7 +731,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               <div 
                 ref={modalContentRef}
                 id="portfolio-modal-content" 
-                className="w-full md:w-[44%] lg:w-[40%] xl:w-[38%] flex flex-col p-4 sm:p-6 md:p-8 lg:p-10 relative md:overflow-y-auto custom-scrollbar bg-white dark:bg-[#0A0A0A] pb-12"
+                className="w-full md:w-[36%] lg:w-[34%] xl:w-[32%] flex flex-col p-4 sm:p-6 md:p-8 lg:p-10 relative md:overflow-y-auto custom-scrollbar bg-white dark:bg-[#0A0A0A] pb-12"
               >
                 <div className="w-full">
                   <div className="flex items-center justify-between gap-2 mb-2">
@@ -724,77 +772,110 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                     </div>
                   )}
 
-                  {/* PROJECT METRICS SECTION: Data Dinamis Proyek (Total Hours Spent, Tools Used, Completion Date) */}
+                  {/* PROJECT METRICS SECTION: Hanya akan muncul ketika tombol metrik proyek di klik */}
                   {(() => {
                     const metrics = getProjectMetrics(selectedProject);
                     return (
-                      <div className="mb-6 p-3.5 sm:p-4 rounded-2xl bg-zinc-50/90 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
-                        <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-zinc-200/60 dark:border-zinc-800/60">
-                          <div className="flex items-center gap-1.5 text-[10.5px] md:text-[11px] font-bold tracking-wider uppercase text-black dark:text-white">
-                            <Activity size={14} className="text-blue-500 shrink-0" />
+                      <div className="mb-5 w-full">
+                        <button
+                          type="button"
+                          onClick={() => setShowProjectMetrics(prev => !prev)}
+                          className={`w-full py-2.5 px-3.5 sm:px-4 rounded-xl text-xs font-semibold flex items-center justify-between border transition-all duration-150 active:scale-[0.99] cursor-pointer ${
+                            showProjectMetrics 
+                              ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-900 dark:text-blue-300 border-blue-200 dark:border-blue-800/80 shadow-xs' 
+                              : 'bg-zinc-50 dark:bg-[#121214] text-zinc-800 dark:text-zinc-200 border-zinc-200/80 dark:border-zinc-800/80 hover:bg-zinc-100 dark:hover:bg-[#18181b]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Activity size={15} className="text-blue-500 shrink-0" />
                             <span>Metrik Proyek (Project Metrics)</span>
                           </div>
-                          <span className="text-[9.5px] md:text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/60 px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            Selesai & Terkirim
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-2.5">
-                          {/* Card 1: Total Hours Spent */}
-                          <div className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col justify-between shadow-2xs">
-                            <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 mb-1">
-                              <Clock size={13} className="text-blue-500 shrink-0" />
-                              <span className="text-[10px] font-medium uppercase tracking-wider">Total Waktu</span>
-                            </div>
-                            <div className="text-xs sm:text-sm font-bold text-black dark:text-white">
-                              {metrics.hours}
-                            </div>
-                            <span className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                              Total Hours Spent
-                            </span>
+                          <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                            <span>{showProjectMetrics ? 'Sembunyikan' : 'Lihat Metrik Proyek'}</span>
+                            <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showProjectMetrics ? 'rotate-180' : ''}`} />
                           </div>
+                        </button>
 
-                          {/* Card 2: Tools Used */}
-                          <div className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col justify-between shadow-2xs">
-                            <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 mb-1">
-                              <Wrench size={13} className="text-purple-500 shrink-0" />
-                              <span className="text-[10px] font-medium uppercase tracking-wider">Alat / Software</span>
-                            </div>
-                            <div className="flex flex-wrap gap-1 mt-0.5">
-                              {metrics.tools.slice(0, 3).map((tool, tIdx) => (
-                                <span 
-                                  key={tIdx} 
-                                  className="inline-block px-1.5 py-0.5 text-[9px] font-semibold rounded bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-200 border border-zinc-200/60 dark:border-zinc-700/60"
-                                >
-                                  {tool}
-                                </span>
-                              ))}
-                              {metrics.tools.length > 3 && (
-                                <span className="inline-block px-1 py-0.5 text-[8.5px] font-medium text-zinc-400">
-                                  +{metrics.tools.length - 3}
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                              Tools Used
-                            </span>
-                          </div>
+                        <AnimatePresence>
+                          {showProjectMetrics && (
+                            <motion.div
+                              initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                              animate={{ opacity: 1, height: 'auto', marginTop: 10 }}
+                              exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                              transition={{ duration: 0.18, ease: "easeOut" }}
+                              className="overflow-hidden"
+                            >
+                              <div className="p-3.5 sm:p-4 rounded-2xl bg-zinc-50/90 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 shadow-xs">
+                                <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-zinc-200/60 dark:border-zinc-800/60">
+                                  <div className="flex items-center gap-1.5 text-[10.5px] md:text-[11px] font-bold tracking-wider uppercase text-black dark:text-white">
+                                    <Activity size={14} className="text-blue-500 shrink-0" />
+                                    <span>Detail Metrik Proyek</span>
+                                  </div>
+                                  <span className="text-[9.5px] md:text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/60 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    Selesai & Terkirim
+                                  </span>
+                                </div>
 
-                          {/* Card 3: Completion Date */}
-                          <div className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col justify-between shadow-2xs">
-                            <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 mb-1">
-                              <CalendarCheck size={13} className="text-emerald-500 shrink-0" />
-                              <span className="text-[10px] font-medium uppercase tracking-wider">Waktu Selesai</span>
-                            </div>
-                            <div className="text-xs sm:text-sm font-bold text-black dark:text-white truncate" title={metrics.completionDate}>
-                              {metrics.completionDate}
-                            </div>
-                            <span className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                              Completion Date
-                            </span>
-                          </div>
-                        </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-2.5">
+                                  {/* Card 1: Total Hours Spent */}
+                                  <div className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col justify-between shadow-2xs">
+                                    <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 mb-1">
+                                      <Clock size={13} className="text-blue-500 shrink-0" />
+                                      <span className="text-[10px] font-medium uppercase tracking-wider">Total Waktu</span>
+                                    </div>
+                                    <div className="text-xs sm:text-sm font-bold text-black dark:text-white">
+                                      {metrics.hours}
+                                    </div>
+                                    <span className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+                                      Total Hours Spent
+                                    </span>
+                                  </div>
+
+                                  {/* Card 2: Tools Used */}
+                                  <div className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col justify-between shadow-2xs">
+                                    <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 mb-1">
+                                      <Wrench size={13} className="text-purple-500 shrink-0" />
+                                      <span className="text-[10px] font-medium uppercase tracking-wider">Alat / Software</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1 mt-0.5">
+                                      {metrics.tools.slice(0, 3).map((tool, tIdx) => (
+                                        <span 
+                                          key={tIdx} 
+                                          className="inline-block px-1.5 py-0.5 text-[9px] font-semibold rounded bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-200 border border-zinc-200/60 dark:border-zinc-700/60"
+                                        >
+                                          {tool}
+                                        </span>
+                                      ))}
+                                      {metrics.tools.length > 3 && (
+                                        <span className="inline-block px-1 py-0.5 text-[8.5px] font-medium text-zinc-400">
+                                          +{metrics.tools.length - 3}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+                                      Tools Used
+                                    </span>
+                                  </div>
+
+                                  {/* Card 3: Completion Date */}
+                                  <div className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col justify-between shadow-2xs">
+                                    <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 mb-1">
+                                      <CalendarCheck size={13} className="text-emerald-500 shrink-0" />
+                                      <span className="text-[10px] font-medium uppercase tracking-wider">Waktu Selesai</span>
+                                    </div>
+                                    <div className="text-xs sm:text-sm font-bold text-black dark:text-white truncate" title={metrics.completionDate}>
+                                      {metrics.completionDate}
+                                    </div>
+                                    <span className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+                                      Completion Date
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     );
                   })()}
@@ -859,14 +940,14 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                         <div 
                           key={item.id} 
                           onClick={() => handleOpenArticle(item)}
-                          className="group cursor-pointer relative transition-transform duration-200 active:scale-[0.98]"
+                          className="group cursor-pointer relative transition-transform duration-150 active:scale-[0.96]"
                         >
                           {item.image ? (
-                            <div className="relative">
+                            <div className="relative rounded-lg sm:rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800">
                               <img 
                                 src={resolveImageUrl(item.image)} 
                                 alt={item.title || 'Karya'} 
-                                className="w-full h-auto object-contain rounded-lg sm:rounded-xl shadow-xs transition-transform duration-300 group-hover:scale-[1.02]" 
+                                className="w-full h-24 sm:h-28 object-cover shadow-xs transition-transform duration-200 group-hover:scale-105" 
                                 onError={handleImageError} 
                               />
                               {isUnread && (

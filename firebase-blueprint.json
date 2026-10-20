@@ -27,16 +27,108 @@
         "contactPhone": { "type": "string", "maxLength": 50 },
         "contactLocation": { "type": "string", "maxLength": 200 }
       }
+    },
+    "BlogPost": {
+      "title": "BlogPost",
+      "description": "A blog article entry.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 300 },
+        "excerpt": { "type": "string", "maxLength": 1000 },
+        "content": { "type": "string", "maxLength": 20000 },
+        "category": { "type": "string", "maxLength": 100 },
+        "date": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["title", "content"]
+    },
+    "Experience": {
+      "title": "Experience",
+      "description": "A work experience record.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "maxLength": 200 },
+        "company": { "type": "string", "maxLength": 200 },
+        "period": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 3000 }
+      },
+      "required": ["role", "company"]
+    },
+    "StatsViews": {
+      "title": "StatsViews",
+      "description": "Aggregate page view counter.",
+      "type": "object",
+      "properties": {
+        "count": { "type": "number" }
+      },
+      "required": ["count"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order or inquiry submission.",
+      "type": "object",
+      "properties": {
+        "customerName": { "type": "string", "maxLength": 200 },
+        "customerEmail": { "type": "string", "maxLength": 200 },
+        "itemTitle": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["customerName", "customerEmail"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Customer contact form message.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 200 },
+        "email": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 5000 },
+        "createdAt": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["name", "email", "message"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized administrator user.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 200 },
+        "role": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["email"]
     }
   },
   "firestore": {
     "projects": {
       "schema": { "$ref": "#/entities/Project" },
-      "description": "Stores the portfolio projects."
+      "description": "Stores portfolio projects."
     },
     "settings": {
       "schema": { "$ref": "#/entities/SiteSettings" },
       "description": "Stores global site settings and CV data."
+    },
+    "blogPosts": {
+      "schema": { "$ref": "#/entities/BlogPost" },
+      "description": "Stores blog articles."
+    },
+    "experiences": {
+      "schema": { "$ref": "#/entities/Experience" },
+      "description": "Stores professional experiences."
+    },
+    "stats/views": {
+      "schema": { "$ref": "#/entities/StatsViews" },
+      "description": "Stores aggregate public view count."
+    },
+    "orders": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Stores customer store orders."
+    },
+    "messages": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Stores contact messages."
+    },
+    "admin_users": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Stores authorized admin user profiles."
     }
   }
 }

@@ -1,5 +1,11 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, initializeFirestore, memoryLocalCache } from 'firebase/firestore';
+import { 
+  getFirestore, 
+  initializeFirestore, 
+  persistentLocalCache, 
+  persistentMultipleTabManager,
+  memoryLocalCache 
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAuth, initializeAuth, browserLocalPersistence, inMemoryPersistence, browserPopupRedirectResolver, signInWithPopup, signInWithCredential, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -10,17 +16,34 @@ const dbId = (firebaseConfig as any).firestoreDatabaseId;
 
 let dbInstance;
 try {
+  // Utamakan persistent local cache (IndexedDB) untuk pemuatan data instan tanpa delay jaringan
+  const cacheSettings = typeof window !== 'undefined'
+    ? persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+    : memoryLocalCache();
+
   dbInstance = dbId 
     ? initializeFirestore(app, { 
-        localCache: memoryLocalCache(),
+        localCache: cacheSettings,
         experimentalAutoDetectLongPolling: true 
       }, dbId) 
     : initializeFirestore(app, { 
-        localCache: memoryLocalCache(),
+        localCache: cacheSettings,
         experimentalAutoDetectLongPolling: true 
       });
 } catch (e) {
-  dbInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
+  try {
+    dbInstance = dbId 
+      ? initializeFirestore(app, { 
+          localCache: memoryLocalCache(),
+          experimentalAutoDetectLongPolling: true 
+        }, dbId) 
+      : initializeFirestore(app, { 
+          localCache: memoryLocalCache(),
+          experimentalAutoDetectLongPolling: true 
+        });
+  } catch (e2) {
+    dbInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
+  }
 }
 export const db = dbInstance;
 

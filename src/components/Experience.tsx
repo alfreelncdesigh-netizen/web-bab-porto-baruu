@@ -248,9 +248,9 @@ export default function Experience() {
           <X className="w-5 h-5" />
         </button>
           
-          <div className="relative w-full md:w-1/2 lg:w-[60%] h-[38vh] sm:h-[45vh] md:h-full bg-zinc-50 dark:bg-[#111111] border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 shrink-0 flex items-center justify-center p-3 sm:p-4 md:p-10">
-            <div className="w-full h-full flex items-center justify-center">
-              <img src={resolveImageUrl(selectedImg.url)} onError={handleImageError} className="w-full h-full object-contain rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-800" alt={selectedImg.exp?.header} />
+          <div className="relative w-full md:w-1/2 lg:w-[60%] h-auto min-h-[280px] md:h-full bg-black md:bg-zinc-50 dark:bg-black md:dark:bg-[#111111] border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 shrink-0 flex items-center justify-center p-0 sm:p-4 md:p-10">
+            <div className="w-full h-full flex items-center justify-center p-0">
+              <img src={resolveImageUrl(selectedImg.url)} onError={handleImageError} className="w-full h-auto max-h-[85vh] md:max-h-[88vh] object-contain block mx-auto rounded-none sm:rounded-xl shadow-xl" alt={selectedImg.exp?.header} />
             </div>
           </div>
           
