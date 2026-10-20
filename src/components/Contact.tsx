@@ -100,8 +100,9 @@ export default function Contact() {
   <motion.section 
    id="contact" 
    initial="hidden"
+   animate="visible"
    whileInView="visible"
-   viewport={{ once: true, amount: 0.1, margin: "-40px" }}
+   viewport={{ once: true, amount: 0 }}
    variants={sectionStaggerContainer}
    className="pt-8 pb-28 mb-20 bg-white dark:bg-[#0A0A0A] scroll-mt-24 md:scroll-mt-32"
   >

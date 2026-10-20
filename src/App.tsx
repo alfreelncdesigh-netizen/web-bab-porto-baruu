@@ -45,8 +45,8 @@ const AppSkeleton = () => (
       <div className={`w-full h-[52px] md:h-[62px] rounded-full px-4 md:px-6 flex items-center justify-between ${skeletonCard} shadow-sm backdrop-blur-md`}>
         {/* Brand / Logo */}
         <div className="flex items-center gap-2.5">
-          <div className={`h-6 w-6 rounded-lg ${skeletonGradient}`} />
-          <div className={`h-4.5 w-28 md:w-36 rounded-md ${skeletonGradient}`} />
+          <div className={`h-7 w-7 rounded-lg ${skeletonGradient}`} />
+          <div className={`h-5 w-32 md:w-40 rounded-md ${skeletonGradient}`} />
         </div>
 
         {/* Nav Links (Desktop) */}
@@ -269,6 +269,98 @@ export default function App() {
       window.scrollTo(0, 0);
     }
   };
+
+  // Deep-linking hash support for search engine crawlability & direct section linking
+  useEffect(() => {
+    const handleHash = () => {
+      const rawHash = window.location.hash.replace('#', '').trim();
+      const validViews = ['about', 'portfolio', 'store', 'contact', 'blog', 'admin', 'cv', 'stats', 'experience'];
+      if (validViews.includes(rawHash)) {
+        setIsSecondHalfLoaded(true);
+        setView(rawHash as any);
+      }
+    };
+
+    handleHash();
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  // Dynamic social sharing images & metadata synchronizer
+  useEffect(() => {
+    const metaMap: Record<string, { title: string; description: string; image: string; hash: string }> = {
+      home: {
+        title: 'Portofolio Desain Minimalis',
+        description: 'Website portofolio desain minimalis dan responsif dengan fitur galeri proyek interaktif serta integrasi formulir kontak.',
+        image: '/images/promo_poster_1789471291192.jpg',
+        hash: '',
+      },
+      portfolio: {
+        title: 'Galeri Portofolio & Proyek Pilihan – Portofolio Desain Minimalis',
+        description: 'Eksplorasi proyek desain grafis, identitas visual, poster kreatif, dan desain antarmuka pengguna interaktif.',
+        image: '/images/minimalist_3d_illustration_1787122966121.jpg',
+        hash: '#portfolio',
+      },
+      about: {
+        title: 'Tentang Desainer & Filosofi Desain – Muhammad Albiansyah',
+        description: 'Profil profesional, filosofi desain fungsional, dan pendekatan kreatif dalam merancang solusi visual berkualitas.',
+        image: '/images/editing_tools_3d_1787123977793.jpg',
+        hash: '#about',
+      },
+      experience: {
+        title: 'Riwayat Pengalaman & Karier Desain – Muhammad Albiansyah',
+        description: 'Pengalaman kerja profesional, pencapaian proyek desain visual, dan keahlian di berbagai software desain.',
+        image: '/images/editing_tools_3d_1787123977793.jpg',
+        hash: '#experience',
+      },
+      cv: {
+        title: 'Curriculum Vitae (CV) Lengkap – Muhammad Albiansyah',
+        description: 'Resume profesional desainer grafis dan UI/UX dengan rekam jejak proyek dan kemampuan teknis.',
+        image: '/images/editing_tools_3d_1787123977793.jpg',
+        hash: '#cv',
+      },
+      store: {
+        title: 'Toko Template & Layanan Desain Grafis – Portofolio Desain Minimalis',
+        description: 'Dapatkan template desain grafis modern dan pesan layanan desain kustom profesional untuk kebutuhan bisnis Anda.',
+        image: '/images/banner_promo_crea_1788696808849.jpg',
+        hash: '#store',
+      },
+      blog: {
+        title: 'Blog & Wawasan Desain – Portofolio Desain Minimalis',
+        description: 'Artikel, tips desain grafis, inspirasi tipografi modern, dan wawasan proses kreatif.',
+        image: '/images/banner_promo_bca_1788696791480.jpg',
+        hash: '#blog',
+      },
+      contact: {
+        title: 'Hubungi & Konsultasi Proyek Desain – Muhammad Albiansyah',
+        description: 'Mulai kolaborasi proyek desain Anda. Hubungi langsung melalui WhatsApp atau formulir pesan.',
+        image: '/images/promo_poster_1789471291192.jpg',
+        hash: '#contact',
+      },
+      stats: {
+        title: 'Statistik & Ringkasan Portofolio – Portofolio Desain Minimalis',
+        description: 'Data statistik kunjungan dan ringkasan aktivitas portofolio desain minimalis.',
+        image: '/images/minimalist_3d_illustration_1787122966121.jpg',
+        hash: '#stats',
+      },
+      admin: {
+        title: 'Admin Dashboard – Portofolio Desain Minimalis',
+        description: 'Panel pengelolaan konten portofolio, proyek, blog, dan pengaturan website.',
+        image: '/images/editing_tools_3d_1787123977793.jpg',
+        hash: '#admin',
+      },
+    };
+
+    const currentMeta = metaMap[view] || metaMap.home;
+    if (typeof (window as any).__updateSocialMeta === 'function') {
+      (window as any).__updateSocialMeta({
+        title: currentMeta.title,
+        description: currentMeta.description,
+        image: currentMeta.image,
+        url: window.location.origin + window.location.pathname + (currentMeta.hash ? currentMeta.hash : ''),
+      });
+    }
+  }, [view]);
 
   useEffect(() => {
     const handleViewChange = (e: any) => {
@@ -648,7 +740,7 @@ export default function App() {
 
             {view === 'portfolio' && (
               <motion.div key="portfolio" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.12, ease: [0.25, 1, 0.5, 1] }}>
-                <div className="min-h-screen"><Portfolio /></div>
+                <div className="min-h-screen"><Portfolio isSecondHalfLoaded={true} /></div>
               </motion.div>
             )}
 
@@ -672,7 +764,7 @@ export default function App() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.12, ease: [0.25, 1, 0.5, 1] }}
               >
-                <div className="min-h-screen"><Blog /></div>
+                <div className="min-h-screen"><Blog isSecondHalfLoaded={true} /></div>
               </motion.div>
             )}
 
@@ -684,7 +776,7 @@ export default function App() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.12, ease: [0.25, 1, 0.5, 1] }}
               >
-                <div className="min-h-screen"><Stats /></div>
+                <div className="min-h-screen"><Stats isFullView={true} /></div>
               </motion.div>
             )}
 

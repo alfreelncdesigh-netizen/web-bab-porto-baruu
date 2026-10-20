@@ -209,8 +209,9 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
     <motion.section 
       id="blog" 
       initial="hidden"
+      animate="visible"
       whileInView="visible"
-      viewport={{ once: true, amount: 0.1, margin: "-40px" }}
+      viewport={{ once: true, amount: 0 }}
       variants={sectionStaggerContainer}
       className="py-6 md:py-10 px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 w-full max-w-[1536px] mx-auto scroll-mt-24 md:scroll-mt-32"
     >

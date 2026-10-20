@@ -258,22 +258,14 @@ async function startServer() {
 
   if (!isProd) {
     const { createServer } = await import('vite');
-    const isHmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createServer({
       server: { 
         middlewareMode: true,
-        hmr: isHmrDisabled ? false : { server }
+        hmr: { server }
       },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-
-    // Prevent unhandled WebSocket upgrade drops when HMR is disabled
-    server.on('upgrade', (_req, socket) => {
-      if (isHmrDisabled) {
-        socket.destroy();
-      }
-    });
   } else {
     const distDir = path.resolve(__dirname, 'dist');
     app.use(express.static(distDir, {

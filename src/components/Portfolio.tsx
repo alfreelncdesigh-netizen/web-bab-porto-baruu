@@ -322,8 +322,9 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     <motion.section 
       id="portfolio" 
       initial="hidden"
+      animate="visible"
       whileInView="visible"
-      viewport={{ once: true, amount: 0.08, margin: "-40px" }}
+      viewport={{ once: true, amount: 0 }}
       variants={sectionStaggerContainer}
       className="py-6 md:py-8 scroll-mt-24 md:scroll-mt-32 relative overflow-hidden bg-white dark:bg-[#0A0A0A]"
     >

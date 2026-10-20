@@ -112,8 +112,9 @@ export default function About() {
   <motion.section 
    id="about" 
    initial="hidden"
+   animate="visible"
    whileInView="visible"
-   viewport={{ once: true, amount: 0.12, margin: "-40px" }}
+   viewport={{ once: true, amount: 0 }}
    variants={sectionStaggerContainer}
    className="pt-1 pb-6 md:py-10 bg-[var(--bg-main,#ffffff)] dark:bg-[#0a0a0a] scroll-mt-24 md:scroll-mt-32"
   >

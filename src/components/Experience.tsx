@@ -67,8 +67,9 @@ export default function Experience() {
     <motion.section 
       id="experience" 
       initial="hidden"
+      animate="visible"
       whileInView="visible"
-      viewport={{ once: true, amount: 0.1, margin: "-40px" }}
+      viewport={{ once: true, amount: 0 }}
       variants={sectionStaggerContainer}
       className="py-6 md:py-10 px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18 w-full max-w-[1440px] mx-auto scroll-mt-24 md:scroll-mt-32"
     >

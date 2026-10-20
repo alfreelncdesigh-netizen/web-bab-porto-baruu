@@ -1,8 +1,73 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email in ['alfreelnc.desigh@gmail.com', 'albianavl.co@gmail.com'] ||
+        exists(/databases/$(database)/documents/admin_users/$(request.auth.uid))
+      );
+    }
+
+    // Public portfolio projects
+    match /projects/{projectId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Public blog posts
+    match /blogPosts/{blogId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Public work experiences
+    match /experiences/{experienceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Public site settings (global & cv)
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Stats collection: views count can be read and incremented by public; other stats are admin-only
+    match /stats/views {
+      allow read: if true;
+      allow create: if true;
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['count']) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /stats/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Customer orders: public can create an order, but ONLY admins can read, update, or delete
+    match /orders/{orderId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Contact messages: public can create a message, but ONLY admins can read, update, or delete
+    match /messages/{messageId} {
+      allow create: if true;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // Admin users collection
+    match /admin_users/{userId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Default deny for all other paths
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

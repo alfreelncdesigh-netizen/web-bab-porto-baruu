@@ -162,7 +162,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
       className="group relative flex items-center justify-center hover:opacity-85 active:scale-95 transition-all select-none focus:outline-none shrink-0"
       aria-label="ALFREELNC Beranda"
      >
-      <BrandLogo className="h-5 sm:h-6 md:h-7" />
+      <BrandLogo className="h-6 sm:h-7.5 md:h-8.5" />
      </button>
 
      {/* Desktop Nav */}
