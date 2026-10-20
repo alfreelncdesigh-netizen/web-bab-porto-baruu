@@ -4,7 +4,7 @@ import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { Loader2, Check } from 'lucide-react';
 import { defaultSettings } from '../data/settings';
-import { getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { getStoredSettings, saveStoredSettings, cleanSettings } from '../lib/contentStorage';
 
 export default function AboutAdmin() {
  const [settings, setSettings] = useState(() => getStoredSettings());
@@ -15,11 +15,18 @@ export default function AboutAdmin() {
  useEffect(() => {
   const fetchSettings = async () => {
    try {
+    const local = getStoredSettings();
+    setSettings(local);
     const docSnap = await getDoc(doc(db, 'settings', 'global'));
     if (docSnap.exists()) {
-     const merged = { ...defaultSettings, ...(docSnap.data() as any) };
-     setSettings(merged);
-     try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+     const cloudData = docSnap.data() as any;
+     const cloudSavedAt = cloudData?.savedAt || 0;
+     const localSavedAt = local?.savedAt || 0;
+     if (cloudSavedAt >= localSavedAt) {
+       const merged = { ...defaultSettings, ...cleanSettings(cloudData) };
+       setSettings(merged);
+       try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+     }
     }
    } catch (err) {
     console.warn("Error fetching settings (using stored):", err);
@@ -65,14 +72,17 @@ export default function AboutAdmin() {
  const handleSave = async (e: React.FormEvent) => {
   e.preventDefault();
   setIsSaving(true);
-  showToast('Profil Tentang Saya berhasil disimpan!');
   try {
-   await Promise.race([
-    saveStoredSettings(settings),
-    new Promise((resolve) => setTimeout(resolve, 180))
-   ]);
-  } catch (err) {
+   const success = await saveStoredSettings(settings);
+   window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: settings }));
+   if (success) {
+     showToast('Profil Tentang Saya berhasil disimpan!');
+   } else {
+     showToast('Profil Tentang Saya disimpan di penyimpanan lokal.', 'success');
+   }
+  } catch (err: any) {
    console.warn("Save error:", err);
+   showToast(err?.message || 'Gagal menyimpan profil', 'error');
   } finally {
    setIsSaving(false);
   }

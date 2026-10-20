@@ -170,7 +170,7 @@ export default function PromoAdmin() {
   };
 
   return (
-    <div className="space-y-8 max-w-[1920px] mx-auto pb-16">
+    <div className="space-y-8 w-full mx-auto pb-16">
       {/* Header Halaman */}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-6">
         <div>

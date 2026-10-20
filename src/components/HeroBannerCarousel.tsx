@@ -3,6 +3,8 @@ import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight, ExternalLink, ArrowRight } from 'lucide-react';
 import { HeroBanner } from '../data/settings';
 import { getOptimizedImageUrl } from '../lib/cloudinary';
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import ImageWithSkeleton from './ImageWithSkeleton';
 
 interface HeroBannerCarouselProps {
   banners?: HeroBanner[];
@@ -115,16 +117,16 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
   const isTablet = containerWidth >= 640 && containerWidth < 1024;
   
   // Slide width calculation:
-  // On mobile: ~86% width so edges peek ~7% on left and right
-  // On tablet: ~80% width
-  // On desktop: ~75% to 70% width with max-w-[1400px], ensuring 3:1 ratio and edge-to-edge promotional layout
+  // On mobile: ~88% width so edges peek cleanly
+  // On tablet: ~84% width
+  // On desktop: spans full layout edge-to-edge
   const slideWidth = isMobile
-    ? containerWidth * 0.86
+    ? containerWidth * 0.88
     : isTablet
-    ? containerWidth * 0.82
-    : Math.min(containerWidth * 0.74, 1400);
+    ? containerWidth * 0.84
+    : containerWidth * 0.88;
 
-  const gap = isMobile ? 12 : 20;
+  const gap = isMobile ? 12 : 24;
 
   // Exact centering offset formula:
   // Offset = (containerWidth / 2) - (slideWidth / 2) - (currentIndex * (slideWidth + gap))
@@ -150,21 +152,19 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
         >
           {activeBanners.length === 1 ? (
             /* Single Banner Layout: Centered 3:1 aspect ratio card with clean HTML promo text */
-            <div className="w-full flex flex-col items-center px-2 sm:px-4 md:px-8">
+            <div className="w-full flex flex-col items-center px-0">
               <div 
-                style={{ width: isMobile ? '100%' : `${Math.min(containerWidth * 0.94, 1400)}px` }}
+                style={{ width: '100%', maxWidth: '1440px' }}
                 onClick={() => handleBannerClick(activeBanners[0], 0)}
-                className={`group relative aspect-[3/1] rounded-2xl md:rounded-3xl overflow-hidden shadow-md border border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-100 dark:bg-[#111111] transition-transform duration-300 ${activeBanners[0].link ? 'cursor-pointer hover:shadow-xl' : ''}`}
+                className={`group relative aspect-[3/1] rounded-2xl md:rounded-3xl lg:rounded-[32px] overflow-hidden bg-transparent border-0 shadow-none transition-transform duration-300 ${activeBanners[0].link ? 'cursor-pointer hover:scale-[1.01]' : ''}`}
               >
-                {/* Visual Murni (Mockup / Portofolio Artwork) */}
+                {/* Visual Murni (Mockup / Portofolio Artwork - Ukuran 1:3 dengan empat sudut melengkung) */}
                 <img 
-                  src={getOptimizedImageUrl(activeBanners[0].image)} 
+                  src={resolveImageUrl(activeBanners[0].image)} 
                   alt={activeBanners[0].title || "Banner Promosi"}
                   loading="eager"
-                  className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
-                  onError={(e) => {
-                    e.currentTarget.src = 'https://via.placeholder.com/1500x500?text=Banner+Promosi+3:1';
-                  }}
+                  className="w-full h-full object-cover rounded-2xl md:rounded-3xl lg:rounded-[32px] transition-transform duration-700 ease-out group-hover:scale-[1.02] bg-transparent border-none shadow-none"
+                  onError={handleImageError}
                 />
               </div>
 
@@ -193,15 +193,6 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
                       </p>
                     )}
                   </div>
-
-                  {activeBanners[0].link && (
-                    <button
-                      onClick={() => handleBannerClick(activeBanners[0], 0)}
-                      className="shrink-0 self-start sm:self-center inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-black text-white dark:bg-white dark:text-black text-xs font-semibold hover:opacity-85 transition-all shadow-sm active:scale-95"
-                    >
-                      {activeBanners[0].linkText || "Lihat Promo"} <ArrowRight size={13} />
-                    </button>
-                  )}
                 </div>
               )}
             </div>
@@ -223,26 +214,21 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
                     onClick={() => handleBannerClick(banner, index)}
                     className={`shrink-0 transition-all duration-500 ease-out flex flex-col ${
                       isActive 
-                        ? 'scale-100 opacity-100 z-20 cursor-pointer shadow-lg' 
-                        : 'scale-[0.97] opacity-70 hover:opacity-90 z-10 cursor-pointer shadow-sm'
+                        ? 'scale-100 opacity-100 z-20 cursor-pointer shadow-none' 
+                        : 'scale-[0.97] opacity-70 hover:opacity-90 z-10 cursor-pointer shadow-none'
                     }`}
                   >
-                    {/* Visual Murni Banner Image (No Heavy Dark Gradients on Artwork) */}
+                    {/* Visual Murni Banner Image (Ukuran 1:3 dengan empat sudut melengkung) */}
                     <div 
-                      className={`relative w-full aspect-[3/1] rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 dark:bg-[#111111] border ${
-                        isActive 
-                          ? 'border-zinc-300 dark:border-zinc-700 shadow-md' 
-                          : 'border-zinc-200/50 dark:border-zinc-800/50'
-                      }`}
+                      className="relative w-full aspect-[3/1] rounded-2xl sm:rounded-3xl lg:rounded-[32px] overflow-hidden bg-transparent border-0 shadow-none"
                     >
-                      <img 
-                        src={getOptimizedImageUrl(banner.image)} 
+                      <ImageWithSkeleton 
+                        src={banner.image} 
                         alt={banner.title || `Promo Banner ${index + 1}`}
-                        loading={index < 2 ? "eager" : "lazy"}
-                        className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
-                        onError={(e) => {
-                          e.currentTarget.src = 'https://via.placeholder.com/1500x500?text=Banner+Promosi+3:1';
-                        }}
+                        priority={index < 2}
+                        className="w-full h-full object-cover rounded-2xl sm:rounded-3xl lg:rounded-[32px] transition-transform duration-700 ease-out group-hover:scale-[1.02] bg-transparent border-none shadow-none"
+                        containerClassName="w-full h-full rounded-2xl sm:rounded-3xl lg:rounded-[32px] overflow-hidden bg-transparent border-0 shadow-none"
+                        skeletonClassName="rounded-2xl sm:rounded-3xl lg:rounded-[32px]"
                       />
                     </div>
 
@@ -268,14 +254,6 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
                             </p>
                           )}
                         </div>
-
-                        {banner.link && isActive && (
-                          <div className="shrink-0 self-start sm:self-center">
-                            <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-black text-white dark:bg-white dark:text-black text-[10px] sm:text-xs font-semibold shadow-sm">
-                              {banner.linkText || "Lihat Promo"} <ExternalLink size={11} />
-                            </span>
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>

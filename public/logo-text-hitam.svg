@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 92" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 415 92" fill="none">
   <!-- Purple Accent Dot (Top-Left) -->
   <circle cx="20" cy="26" r="15" fill="#6e2594" />
   
@@ -15,6 +15,6 @@
     ALFREELNC
   </text>
   
-  <!-- Blue Accent Dot (Bottom-Right) -->
-  <circle cx="434" cy="58" r="18" fill="#0050a4" />
+  <!-- Blue Accent Dot (Bottom-Right, positioned neatly closer to ALFREELNC) -->
+  <circle cx="394" cy="58" r="15.5" fill="#0050a4" />
 </svg>

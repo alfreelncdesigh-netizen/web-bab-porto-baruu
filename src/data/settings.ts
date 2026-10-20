@@ -39,7 +39,7 @@ export const defaultCvSections: CvSectionItem[] = [
   },
   {
     title: "Pengalaman Kerja & Proyek",
-    content: "<b>Freelance Graphic Designer & UI/UX</b> (2021 - Sekarang)<br/>Merancang materi promosi, poster acara, identitas visual brand, serta antarmuka prototipe web/mobile.<br/><br/><b>Creative Visual Contributor</b><br/>Membuat aset template visual dan konten media sosial kreatif.",
+    content: "<b>Freelance Graphic Designer & UI/UX</b> (2021 - Sekarang)<br/>Merancang materi promosi, poster acara, identitas visual brand, serta antarmuka prototipe web/mobile.<br/><br/><b>Creative Visual Contributor</b><br/>Merancang materi promosi visual dan konten media sosial kreatif.",
     images: []
   },
   {
@@ -50,6 +50,7 @@ export const defaultCvSections: CvSectionItem[] = [
 ];
 
 export interface SiteSettings {
+  savedAt?: number;
   cvPdfFile?: string;
   cvRole?: string;
   cvSections?: CvSectionItem[];
@@ -83,15 +84,15 @@ export const defaultPromoPosters: PromoPosterItem[] = [
     title: "Diskon 30% Paket Branding & Desain UI/UX",
     image: "/src/assets/images/promo_poster_1789471291192.jpg",
     ctaText: "Ambil Diskon",
-    link: "https://wa.me/628112345678?text=Halo%20saya%20tertarik%20dengan%20Promo%20Diskon%2030%25%20Desain",
+    link: "https://wa.me/6282394549268?text=Halo%20saya%20tertarik%20dengan%20Promo%20Diskon%2030%25%20Desain",
     active: true,
   },
   {
     id: "poster-2",
-    title: "Koleksi Eksklusif Template & Asset Grafis",
+    title: "Paket Konten Kreatif & Visual Media Sosial",
     image: "/src/assets/images/banner_promo_crea_1788696808849.jpg",
-    ctaText: "Buka Store",
-    link: "#store",
+    ctaText: "Pesan Sekarang",
+    link: "https://wa.me/6282394549268?text=Halo%20saya%20tertarik%20dengan%20Paket%20Konten%20Visual%20Media%20Sosial",
     active: true,
   },
   {
@@ -99,7 +100,7 @@ export const defaultPromoPosters: PromoPosterItem[] = [
     title: "Konsultasi Desain & Audit Portofolio Gratis",
     image: "/src/assets/images/banner_promo_bca_1788696791480.jpg",
     ctaText: "Chat Sekarang",
-    link: "https://wa.me/628112345678?text=Halo%20saya%20ingin%20konsultasi%20desain%20gratis",
+    link: "https://wa.me/6282394549268?text=Halo%20saya%20ingin%20konsultasi%20desain%20gratis",
     active: true,
   }
 ];
@@ -108,9 +109,9 @@ export const defaultSettings: SiteSettings = {
   cvRole: "Desainer Grafis",
   cvSections: defaultCvSections,
   fullName: "Muhammad Albiansyah",
-  heroBadge: "MY PORTOFOLIO DESIGN",
+  heroBadge: "PORTFOLIO DESIGN",
   heroTitle1: "WELCOME",
-  heroTitle2: "My portofolio design",
+  heroTitle2: "My Portfolio Design",
   heroDescription: "Saya membantu merek dan perusahaan mengubah ide kompleks menjadi desain antarmuka yang sederhana, indah, dan berpusat pada manusia.",
   aboutTitle1: "Pendekatan",
   aboutTitle2: "Desain Saya",
@@ -137,7 +138,7 @@ export const defaultSettings: SiteSettings = {
   portfolioLink: "https://alfreelnc.com",
   promoWidgetActive: true,
   promoWidgetImage: "/src/assets/images/promo_poster_1789471291192.jpg",
-  promoWidgetLink: "https://wa.me/628112345678?text=Halo%20saya%20tertarik%20dengan%20promo%20diskon%20desain%20grafis",
+  promoWidgetLink: "https://wa.me/6282394549268?text=Halo%20saya%20tertarik%20dengan%20promo%20diskon%20desain%20grafis",
   promoWidgetCtaText: "Ambil Diskon",
   promoPosters: defaultPromoPosters,
 };

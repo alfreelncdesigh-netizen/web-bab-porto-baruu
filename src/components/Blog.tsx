@@ -7,6 +7,7 @@ import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { getStoredBlogs, saveStoredBlogs, cleanBlogs } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import ImageWithSkeleton from './ImageWithSkeleton';
 import { 
   sectionStaggerContainer, 
   sectionHeaderItem, 
@@ -14,13 +15,17 @@ import {
   childGridCardItem 
 } from '../lib/animationVariants';
 
-export default function Blog() {
+export interface BlogProps {
+  isSecondHalfLoaded?: boolean;
+}
+
+export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
   const { theme } = useTheme();
   const [posts, setPosts] = useState<BlogPost[]>(() => {
     return getStoredBlogs().filter(p => p.published);
   });
   const [selectedPost, setSelectedPost] = useState<BlogPost | null>(null);
-  const [loading, setLoading] = useState(() => getStoredBlogs().length === 0);
+  const [loading, setLoading] = useState(true);
 
   // Helper styling latar belakang abu-abu dengan efek kaca buram (frosted glass) per tema
   const getCardBgByTheme = (currentTheme: string) => {
@@ -106,9 +111,40 @@ export default function Blog() {
   }, [selectedPost?.id]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    const preloadBlogImages = (items: BlogPost[]) => {
+      const promises = items.map((b) => {
+        const raw = b.image || (b as any).coverImage;
+        if (!raw) return Promise.resolve();
+        const url = resolveImageUrl(raw);
+        return new Promise<void>((resolve) => {
+          const img = new Image();
+          img.src = url;
+          if (img.complete && img.naturalWidth > 0) return resolve();
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+          setTimeout(resolve, 2000);
+        });
+      });
+      return Promise.all(promises);
+    };
+
+    // Preload initial cached blogs
+    const initialBlogs = getStoredBlogs().filter(p => p.published);
+    if (initialBlogs.length > 0) {
+      preloadBlogImages(initialBlogs).then(() => {
+        if (isMounted) setLoading(false);
+      });
+    }
+
     const handleUpdate = (e: any) => {
       if (e.detail && Array.isArray(e.detail)) {
-        setPosts(e.detail.filter((p: any) => p.published));
+        const pub = e.detail.filter((p: any) => p.published);
+        setPosts(pub);
+        preloadBlogImages(pub).then(() => {
+          if (isMounted) setLoading(false);
+        });
       }
     };
     window.addEventListener('blog_posts_updated', handleUpdate);
@@ -126,19 +162,34 @@ export default function Blog() {
           const published = cleaned.filter(p => p.published).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
           setPosts(published);
           saveStoredBlogs(cleaned);
+          preloadBlogImages(published).then(() => {
+            if (isMounted) setLoading(false);
+          });
         } else {
-          setPosts([]);
-          saveStoredBlogs([]);
+          const stored = getStoredBlogs().filter(p => p.published);
+          setPosts(stored);
+          preloadBlogImages(stored).then(() => {
+            if (isMounted) setLoading(false);
+          });
         }
-        setLoading(false);
       },
       (error) => {
         console.warn("Firestore Blog Error (using stored blogs):", error);
-        setPosts(getStoredBlogs().filter(p => p.published));
-        setLoading(false);
+        const stored = getStoredBlogs().filter(p => p.published);
+        setPosts(stored);
+        preloadBlogImages(stored).then(() => {
+          if (isMounted) setLoading(false);
+        });
       }
     );
+
+    const timer = setTimeout(() => {
+      if (isMounted) setLoading(false);
+    }, 2200);
+
     return () => {
+      isMounted = false;
+      clearTimeout(timer);
       unsubscribe();
       window.removeEventListener('blog_posts_updated', handleUpdate);
     };
@@ -161,7 +212,7 @@ export default function Blog() {
       whileInView="visible"
       viewport={{ once: true, amount: 0.1, margin: "-40px" }}
       variants={sectionStaggerContainer}
-      className="py-6 md:py-10 px-4 sm:px-6 md:px-8 lg:px-12 w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto scroll-mt-24 md:scroll-mt-32"
+      className="py-6 md:py-10 px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 w-full max-w-[1536px] mx-auto scroll-mt-24 md:scroll-mt-32"
     >
       <motion.div variants={sectionHeaderItem}>
         <h4 className="text-[9px] md:text-xs font-bold text-black dark:text-zinc-400 mb-3 md:mb-4 flex items-center gap-2 tracking-widest uppercase">
@@ -173,13 +224,16 @@ export default function Blog() {
       </motion.div>
         
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 md:gap-6 lg:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 md:gap-5 lg:gap-6">
           {[1, 2, 3, 4].map((n) => (
-            <div key={n} className="w-full flex flex-col gap-4 animate-pulse">
-              <div className="w-full h-44 sm:h-52 bg-zinc-200 dark:bg-zinc-800/50 rounded-xl sm:rounded-2xl"></div>
-              <div className="w-2/3 h-4 bg-zinc-200 dark:bg-zinc-800/50 rounded-full"></div>
-              <div className="w-full h-6 bg-zinc-200 dark:bg-zinc-800/50 rounded-full"></div>
-              <div className="w-full h-6 bg-zinc-200 dark:bg-zinc-800/50 rounded-full"></div>
+            <div key={n} className="w-full flex flex-col p-3.5 sm:p-4.5 rounded-2xl sm:rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 bg-white/40 dark:bg-zinc-900/40">
+              <div className="w-full aspect-[16/10] rounded-xl sm:rounded-2xl animate-shimmer mb-3" />
+              <div className="w-20 h-3.5 rounded-full animate-shimmer mb-2.5" />
+              <div className="w-full h-4 rounded-lg animate-shimmer mb-1.5" />
+              <div className="w-4/5 h-4 rounded-lg animate-shimmer mb-2.5" />
+              <div className="w-full h-2.5 rounded-full animate-shimmer mb-1" />
+              <div className="w-2/3 h-2.5 rounded-full animate-shimmer mb-3" />
+              <div className="w-full h-8 rounded-xl animate-shimmer mt-auto" />
             </div>
           ))}
         </div>
@@ -188,66 +242,88 @@ export default function Blog() {
       ) : (
         <motion.div 
           variants={childGridContainer}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 md:gap-6 lg:gap-8"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5 md:gap-5 lg:gap-6"
         >
-          {posts.map((post) => {
-            const hasImage = Boolean(post.image && post.image.trim() !== '');
+          {(() => {
+            const is50Limited = !isSecondHalfLoaded;
+            const displayLimit = is50Limited ? Math.max(1, Math.ceil(posts.length * 0.5)) : posts.length;
+            const visiblePosts = posts.slice(0, displayLimit);
+
+            return visiblePosts.map((post) => {
+            const rawImg = post.image || (post as any).coverImage;
+            let postImg = rawImg;
+            if (!postImg || typeof postImg !== 'string' || !postImg.trim()) {
+              const t = (post.title || '').toLowerCase();
+              if (t.includes('affinity')) postImg = '/images/editing_tools_3d_1787123977793.jpg';
+              else if (t.includes('minimalis') || t.includes('filosofi')) postImg = '/images/minimalist_3d_illustration_1787122966121.jpg';
+              else if (t.includes('tipografi') || t.includes('modern')) postImg = 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&q=80&w=1200';
+              else postImg = '/images/promo_poster_1789471291192.jpg';
+            }
+            const hasImage = Boolean(postImg && typeof postImg === 'string' && postImg.trim() !== '');
 
             return (
               <motion.article
                 variants={childGridCardItem}
                 key={post.id} 
-                className={`group cursor-pointer flex flex-col justify-between h-full p-4 sm:p-5 rounded-2xl sm:rounded-3xl border transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${getCardBgByTheme(theme)}`}
+                className={`group cursor-pointer flex flex-col justify-between h-full p-3.5 sm:p-4.5 rounded-2xl sm:rounded-3xl border transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${getCardBgByTheme(theme)}`}
                 onClick={() => handleOpenBlogPost(post)}
               >
                   <div className="flex flex-col">
-                    {/* Thumbnail: langsung tampilkan gambar dengan rasio asli dan sudut melengkung */}
+                    {/* Thumbnail: langsung tampilkan gambar lebih besar dan proporsional */}
                     {hasImage ? (
-                      <div className="w-full mb-3 sm:mb-4 flex items-center justify-center overflow-hidden rounded-xl sm:rounded-2xl">
-                        <img 
-                          src={resolveImageUrl(post.image)} 
-                          onError={handleImageError}
-                          className="w-full h-auto max-h-[240px] object-contain rounded-xl sm:rounded-2xl block group-hover:scale-[1.02] transition-transform duration-300" 
+                      <div className="w-full mb-3 sm:mb-3.5 aspect-[16/10] overflow-hidden rounded-xl sm:rounded-2xl bg-zinc-100 dark:bg-zinc-900/60 shadow-2xs">
+                        <ImageWithSkeleton 
+                          src={postImg} 
                           alt={post.title} 
+                          className="w-full h-full object-cover rounded-xl sm:rounded-2xl block group-hover:scale-[1.03] transition-transform duration-300" 
+                          skeletonClassName="rounded-xl sm:rounded-2xl"
                           loading="lazy"
                         />
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="w-full mb-3 sm:mb-3.5 aspect-[16/10] flex flex-col justify-between p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-900 dark:to-zinc-800 border border-zinc-200/50 dark:border-zinc-800/50 relative overflow-hidden group-hover:scale-[1.01] transition-transform">
+                        <BookOpen className="w-5 h-5 text-zinc-400 dark:text-zinc-500" />
+                        <span className="text-[9.5px] font-bold tracking-wider uppercase text-zinc-500 dark:text-zinc-400">
+                          {post.category || 'Artikel Desain'}
+                        </span>
+                      </div>
+                    )}
                     
-                    {/* Badge Kategori & Tanggal (font-size 11px) */}
-                    <div className="flex items-center gap-2.5 text-[11px] font-bold text-black dark:text-zinc-300 mb-2.5 tracking-wider uppercase">
-                      <span className="bg-black/5 dark:bg-white/10 border border-black/5 dark:border-white/10 px-2.5 py-1 rounded-full text-black dark:text-zinc-200 shadow-xs text-[11px] font-semibold">
+                    {/* Badge Kategori & Tanggal (font-size lebih kecil dan rapi) */}
+                    <div className="flex items-center gap-2 text-[10px] font-bold text-black dark:text-zinc-300 mb-2 tracking-wider uppercase">
+                      <span className="bg-black/5 dark:bg-white/10 border border-black/5 dark:border-white/10 px-2 py-0.5 rounded-full text-black dark:text-zinc-200 shadow-xs text-[10px] font-semibold">
                         {post.category}
                       </span>
                       <span className="text-zinc-400 dark:text-zinc-500">&bull;</span>
-                      <span className="text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-                        {new Date(post.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      <span className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400">
+                        {new Date(post.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' })}
                       </span>
                     </div>
                     
-                    {/* Judul Artikel: Maksimal 2 baris (line-clamp-2) */}
-                    <h3 className="text-base sm:text-lg md:text-xl font-semibold tracking-tight mb-2 text-black dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-[1.3] line-clamp-2">
+                    {/* Judul Artikel: Dikecilkan sedikit agar seimbang dengan kisi 4 kolom */}
+                    <h3 className="text-[13.5px] sm:text-[14px] md:text-[14.5px] font-bold tracking-tight mb-1.5 text-black dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors leading-[1.35] line-clamp-2">
                       {post.title}
                     </h3>
 
-                    {/* Ringkasan Artikel: Teks deskripsi lebih kecil di semua device */}
+                    {/* Ringkasan Artikel: Teks deskripsi lebih kecil */}
                     {post.content && (
-                      <p className="text-zinc-600 dark:text-zinc-400 text-[11px] sm:text-[12px] leading-relaxed line-clamp-2 font-normal mb-4">
+                      <p className="text-zinc-600 dark:text-zinc-400 text-[10.5px] sm:text-[11px] leading-relaxed line-clamp-2 font-normal mb-3.5">
                         {post.content}
                       </p>
                     )}
                   </div>
                   
-                  {/* Tombol khusus "Baca Artikel": warna berbeda, mode terang berwarna biru, sudut melengkung */}
-                  <div className="mt-auto pt-2">
-                    <span className={`w-full py-2.5 px-4 rounded-xl sm:rounded-2xl inline-flex items-center justify-center gap-2 text-[12px] sm:text-[13px] font-semibold transition-all duration-200 group-hover:brightness-110 active:scale-[0.98] ${getButtonClassByTheme(theme)}`}>
-                      Baca Artikel <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform duration-200" />
+                  {/* Tombol khusus "Baca Artikel": ukuran teks dan padding lebih proporsional */}
+                  <div className="mt-auto pt-1.5">
+                    <span className={`w-full py-2 px-3 rounded-xl sm:rounded-2xl inline-flex items-center justify-center gap-1.5 text-[11px] sm:text-[12px] font-bold transition-all duration-200 group-hover:brightness-110 active:scale-[0.98] ${getButtonClassByTheme(theme)}`}>
+                      Baca Artikel <ArrowRight size={13} className="group-hover:translate-x-1 transition-transform duration-200" />
                     </span>
                   </div>
                 </motion.article>
               );
-            })}
-          </motion.div>
+            });
+          })()}
+        </motion.div>
         )}
 
       {/* Blog Detail Modal */}
@@ -278,24 +354,34 @@ export default function Blog() {
               className="bg-white dark:bg-[#0A0A0A] w-screen md:w-[98vw] lg:w-[96vw] xl:w-[94vw] 2xl:w-[92vw] md:max-w-7xl lg:max-w-[1450px] xl:max-w-[1600px] 2xl:max-w-[1720px] h-[100dvh] md:h-auto md:max-h-[90vh] rounded-none md:rounded-3xl m-0 md:m-auto border-0 md:border md:border-zinc-200/60 dark:md:border-zinc-800/60 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row shadow-2xl relative"
               onClick={e => e.stopPropagation()}
             >
-              {/* Kolom Kiri: Menampung Gambar Sampul (Rasio asli full, bingkai mengikuti ukuran rasio gambar asli, tidak terpotong) */}
-              {selectedPost.image && selectedPost.image.trim() !== '' ? (
-                <div className="w-full md:w-[50%] lg:w-[54%] xl:w-[56%] shrink-0 bg-zinc-50 dark:bg-[#111111] relative flex items-center justify-center p-3 sm:p-5 lg:p-8 border-b md:border-b-0 md:border-r border-zinc-200/60 dark:border-zinc-800/60">
-                  <div className="w-full h-auto max-h-[50vh] md:max-h-[82vh] flex items-center justify-center overflow-hidden rounded-xl">
-                    <img 
-                      src={resolveImageUrl(selectedPost.image)} 
-                      onError={handleImageError}
-                      className="w-full h-auto max-h-[50vh] md:max-h-[82vh] object-contain block mx-auto rounded-lg shadow-sm" 
-                      alt={selectedPost.title} 
-                    />
+              {/* Kolom Kiri: Menampung Gambar Sampul */}
+              {(() => {
+                let modalImg = selectedPost.image || (selectedPost as any).coverImage;
+                if (!modalImg || typeof modalImg !== 'string' || !modalImg.trim()) {
+                  const t = (selectedPost.title || '').toLowerCase();
+                  if (t.includes('affinity')) modalImg = '/images/editing_tools_3d_1787123977793.jpg';
+                  else if (t.includes('minimalis') || t.includes('filosofi')) modalImg = '/images/minimalist_3d_illustration_1787122966121.jpg';
+                  else if (t.includes('tipografi') || t.includes('modern')) modalImg = 'https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&q=80&w=1200';
+                  else modalImg = '/images/promo_poster_1789471291192.jpg';
+                }
+                return (
+                  <div className="w-full md:w-[50%] lg:w-[54%] xl:w-[56%] shrink-0 bg-zinc-50 dark:bg-[#111111] relative flex items-center justify-center p-3 sm:p-5 lg:p-8 border-b md:border-b-0 md:border-r border-zinc-200/60 dark:border-zinc-800/60">
+                    <div className="w-full h-auto max-h-[50vh] md:max-h-[82vh] flex items-center justify-center overflow-hidden rounded-xl">
+                      <img 
+                        src={resolveImageUrl(modalImg)} 
+                        onError={handleImageError}
+                        className="w-full h-auto max-h-[50vh] md:max-h-[82vh] object-contain block mx-auto rounded-lg shadow-sm" 
+                        alt={selectedPost.title} 
+                      />
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                );
+              })()}
               
               {/* Kolom Kanan: Menampung judul, tanggal, badge kategori, dan teks isi artikel */}
               <div 
                 ref={modalContentRef}
-                className={`w-full ${selectedPost.image && selectedPost.image.trim() !== '' ? 'md:w-[50%] lg:w-[46%] xl:w-[44%]' : 'md:w-full'} p-5 sm:p-6 md:p-8 lg:p-10 flex flex-col justify-start md:overflow-y-auto md:max-h-[90vh] pb-10 custom-scrollbar`}
+                className={`w-full ${Boolean(selectedPost.image || (selectedPost as any).coverImage) ? 'md:w-[50%] lg:w-[46%] xl:w-[44%]' : 'md:w-full'} p-5 sm:p-6 md:p-8 lg:p-10 flex flex-col justify-start md:overflow-y-auto md:max-h-[90vh] pb-10 custom-scrollbar`}
               >
                 <div className="flex items-center gap-2.5 text-[11px] font-bold tracking-wider uppercase text-black dark:text-zinc-400 mb-3 sm:mb-4">
                   <span className="bg-zinc-100 dark:bg-[#18181b] border border-zinc-200/50 dark:border-zinc-800/50 px-3 py-1 rounded-full text-black dark:text-zinc-300 shadow-sm text-[11px]">

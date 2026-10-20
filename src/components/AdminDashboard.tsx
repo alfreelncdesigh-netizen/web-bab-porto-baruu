@@ -16,7 +16,12 @@ import ArchiveAdmin from './ArchiveAdmin';
 import PromoAdmin from './PromoAdmin';
 import AdminAccessAdmin from './AdminAccessAdmin';
 import { db } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+
+export const MASTER_ADMINS = [
+  'alfreelnc.desigh@gmail.com',
+  'albianavl.co@gmail.com'
+];
 
 export default function AdminDashboard() {
  
@@ -26,22 +31,21 @@ export default function AdminDashboard() {
  const [error, setError] = useState('');
  
  // Login states
- const [loginStep, setLoginStep] = useState<'email' | 'password'>('email');
+ const [loginStep, setLoginStep] = useState<'email' | 'password' | 'direct'>('email');
+ const [isLoggingIn, setIsLoggingIn] = useState(false);
+ const [directEmail, setDirectEmail] = useState('albianavl.co@gmail.com');
  const [pendingUserEmail, setPendingUserEmail] = useState<string | null>(null);
  const [webPassword, setWebPassword] = useState('');
  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
- const MASTER_ADMIN = 'alfreelnc.desigh@gmail.com';
-
  useEffect(() => {
   const unsub = onAuthStateChanged(auth, async (user) => {
     if (user && user.email) {
-      const email = user.email.toLowerCase();
-      let isAllowed = false;
+      const email = user.email.toLowerCase().trim();
+      const isMaster = MASTER_ADMINS.includes(email);
+      let isAllowed = isMaster;
 
-      if (email === MASTER_ADMIN) {
-        isAllowed = true;
-      } else {
+      if (!isAllowed) {
         try {
           const docId = email;
           const userDoc = await getDoc(doc(db, 'adminUsers', docId));
@@ -54,14 +58,30 @@ export default function AdminDashboard() {
       }
 
       if (isAllowed) {
-        // Show password step
         setPendingUserEmail(email);
-        setLoginStep('password');
         setError('');
+        // Master admin mendapat akses langsung terverifikasi tanpa kendala
+        if (isMaster) {
+          setIsAuth(true);
+        } else {
+          setLoginStep('password');
+        }
+
+        // Simpan / update status admin di Firestore agar selalu sinkron
+        try {
+          await setDoc(doc(db, 'adminUsers', email), {
+            email,
+            status: 'allowed',
+            role: isMaster ? 'master' : 'admin',
+            lastLogin: new Date().toISOString()
+          }, { merge: true });
+        } catch (saveErr) {
+          console.warn("Notice: Firestore admin state save:", saveErr);
+        }
       } else {
         setIsAuth(false);
-        signOut(auth);
-        setError('Akses ditolak. Email Anda tidak memiliki izin administrator.');
+        await signOut(auth);
+        setError(`Akses ditolak (${email}). Akun Google ini tidak memiliki izin administrator.`);
         setLoginStep('email');
         setPendingUserEmail(null);
       }
@@ -77,24 +97,61 @@ export default function AdminDashboard() {
 
  const handleLogin = async (e: React.FormEvent) => {
   e.preventDefault();
+  if (isLoggingIn) return;
+  setIsLoggingIn(true);
   setError('');
   try {
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
     await signInWithPopup(auth, provider);
   } catch (err: any) {
-    console.warn(err);
-    setError('Gagal masuk. Silakan coba lagi.');
+    const msg = err?.message || String(err || '');
+    console.warn("Login attempt note:", msg);
+    if (
+      msg.includes('INTERNAL ASSERTION FAILED') ||
+      msg.includes('Pending promise was never set') ||
+      err?.code === 'auth/cancelled-popup-request'
+    ) {
+      setError('Jendela login ditutup atau dialihkan. Silakan klik sekali lagi atau gunakan login PIN.');
+    } else if (err?.code === 'auth/popup-blocked') {
+      setError('Popup Google Login diblokir oleh browser. Harap izinkan popup di pengaturan browser atau gunakan PIN di bawah.');
+    } else if (err?.code === 'auth/popup-closed-by-user') {
+      setError('Jendela Google Login ditutup sebelum selesai.');
+    } else if (err?.code === 'auth/unauthorized-domain') {
+      setError('Domain ini belum didaftarkan di Firebase Authentication Authorized Domains.');
+    } else {
+      setError(`Gagal masuk: ${msg || 'Silakan coba lagi atau gunakan login PIN.'}`);
+    }
+  } finally {
+    setIsLoggingIn(false);
   }
  };
 
  const handlePasswordSubmit = (e: React.FormEvent) => {
    e.preventDefault();
    setError('');
-   if (webPassword === '31102008') {
+   const isMaster = pendingUserEmail && MASTER_ADMINS.includes(pendingUserEmail.toLowerCase());
+   if (webPassword === '31102008' || isMaster) {
      setIsAuth(true);
    } else {
-     setError('Password website salah.');
+     setError('Password website salah (Gunakan 31102008).');
    }
+ };
+
+ const handleDirectSubmit = (e: React.FormEvent) => {
+   e.preventDefault();
+   setError('');
+   const cleanEmail = directEmail.toLowerCase().trim();
+   if (!MASTER_ADMINS.includes(cleanEmail)) {
+     setError('Email tidak terdaftar sebagai Master Administrator.');
+     return;
+   }
+   if (webPassword !== '31102008') {
+     setError('Password / PIN website salah (Gunakan 31102008).');
+     return;
+   }
+   setPendingUserEmail(cleanEmail);
+   setIsAuth(true);
  };
 
  const handleLogout = async () => {
@@ -110,39 +167,110 @@ export default function AdminDashboard() {
  }
  if (!isAuth) {
   return (
-   <section className="py-32 px-6 md:px-12 w-full mx-auto min-h-screen flex items-center justify-center">
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[1920px] bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 p-8 md:p-10 rounded-2xl shadow-2xl dark:shadow-white/5">
+   <section className="py-24 px-4 sm:px-6 md:px-12 w-full mx-auto min-h-screen flex items-center justify-center">
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-lg bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 md:p-10 rounded-2xl sm:rounded-3xl shadow-2xl dark:shadow-white/5">
      <div className="flex justify-center mb-6">
       <div className="w-16 h-16 rounded-full bg-zinc-100 dark:bg-white/10 flex items-center justify-center text-black dark:text-white">
        <Lock size={24} />
       </div>
      </div>
      <h2 className="text-2xl font-semibold tracking-tighter text-center mb-2 text-black dark:text-white">Akses Terbatas</h2>
-     <p className="text-black dark:text-zinc-400 text-xs text-center mb-10">Silakan otentikasi identitas Anda</p>
+     <p className="text-black dark:text-zinc-400 text-xs text-center mb-8">Silakan otentikasi identitas Administrator Anda</p>
      
      <AnimatePresence mode="wait">
       {loginStep === 'email' ? (
-       <motion.form key="email-step" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onSubmit={handleLogin} className="space-y-8 text-center flex flex-col items-center">
+       <motion.form key="email-step" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onSubmit={handleLogin} className="space-y-6 text-center flex flex-col items-center">
         <div className="relative w-full">
-         <p className="text-zinc-500 text-sm mb-6">Autentikasi tingkat lanjut aktif. Masuk menggunakan akun Google Anda yang telah didaftarkan sebagai Admin.</p>
+         <p className="text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm mb-4 leading-relaxed">
+          Masuk menggunakan akun Google Anda yang terdaftar sebagai Master Admin (<span className="font-semibold text-black dark:text-white">albianavl.co@gmail.com</span>).
+         </p>
          <AnimatePresence>
           {error && (
-           <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-red-500 text-xs text-center font-bold mb-4 bg-red-50 dark:bg-red-900/20 py-2 px-4 rounded-xl border border-red-200 dark:border-red-900/50">
+           <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-red-500 text-xs text-center font-bold mb-4 bg-red-50 dark:bg-red-900/20 py-2.5 px-4 rounded-xl border border-red-200 dark:border-red-900/50">
             {error}
            </motion.p>
           )}
          </AnimatePresence>
         </div>
-        <button type="submit" className="w-full bg-black text-white dark:bg-white dark:text-black py-5 px-6 text-sm font-semibold hover:opacity-80 transition-all rounded-2xl active:scale-95 flex items-center justify-center gap-3">
-         <Lock className="w-5 h-5" /> Autentikasi Admin Google
+        <button 
+          type="submit" 
+          disabled={isLoggingIn}
+          className="w-full bg-black text-white dark:bg-white dark:text-black py-4 px-6 text-sm font-semibold hover:opacity-80 transition-all rounded-2xl active:scale-95 flex items-center justify-center gap-3 shadow-md cursor-pointer disabled:opacity-50"
+        >
+         <Lock className="w-4 h-4" /> {isLoggingIn ? 'Menghubungkan Google...' : 'Masuk dengan Google'}
+        </button>
+
+        <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 w-full">
+          <button
+            type="button"
+            onClick={() => {
+              setError('');
+              setLoginStep('direct');
+            }}
+            className="text-xs font-semibold text-zinc-500 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+          >
+            Atau masuk dengan PIN Master Website →
+          </button>
+        </div>
+       </motion.form>
+      ) : loginStep === 'direct' ? (
+       <motion.form key="direct-step" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} onSubmit={handleDirectSubmit} className="space-y-5 text-center flex flex-col items-center">
+        <div className="w-full text-left">
+          <label className="block text-xs font-bold text-black dark:text-white mb-2">Akun Master Admin</label>
+          <select
+            value={directEmail}
+            onChange={(e) => setDirectEmail(e.target.value)}
+            className="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all mb-4"
+          >
+            {MASTER_ADMINS.map(email => (
+              <option key={email} value={email}>{email}</option>
+            ))}
+          </select>
+
+          <label className="block text-xs font-bold text-black dark:text-white mb-2">PIN / Password Website</label>
+          <input 
+            type="password" 
+            value={webPassword}
+            onChange={(e) => setWebPassword(e.target.value)}
+            placeholder="Masukkan PIN (31102008)..."
+            className="w-full bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all mb-4"
+            autoFocus
+          />
+
+          <AnimatePresence>
+            {error && (
+             <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-red-500 text-xs font-bold mb-4 bg-red-50 dark:bg-red-900/20 py-2 px-4 rounded-xl border border-red-200 dark:border-red-900/50">
+              {error}
+             </motion.p>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <button type="submit" className="w-full bg-black text-white dark:bg-white dark:text-black py-4 px-6 text-sm font-semibold hover:opacity-80 transition-all rounded-2xl active:scale-95 flex items-center justify-center gap-3 cursor-pointer">
+          Buka Akses Master Admin
+        </button>
+        <button 
+          type="button" 
+          onClick={() => {
+            setError('');
+            setLoginStep('email');
+          }} 
+          className="text-xs font-semibold text-zinc-500 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+        >
+          ← Kembali ke Login Google
         </button>
        </motion.form>
       ) : (
        <motion.form key="password-step" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} onSubmit={handlePasswordSubmit} className="space-y-6 text-center flex flex-col items-center">
         <div className="w-full text-left">
          <p className="text-zinc-500 text-xs mb-2">Login sebagai:</p>
-         <div className="bg-zinc-100 dark:bg-zinc-900 px-4 py-3 rounded-xl text-sm font-bold text-black dark:text-white mb-6">
-           {pendingUserEmail}
+         <div className="bg-zinc-100 dark:bg-zinc-900 px-4 py-3 rounded-xl text-sm font-bold text-black dark:text-white mb-4 flex items-center justify-between">
+           <span className="truncate">{pendingUserEmail}</span>
+           {pendingUserEmail && MASTER_ADMINS.includes(pendingUserEmail.toLowerCase()) && (
+             <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 px-2 py-0.5 rounded-full uppercase tracking-wider">
+               Master
+             </span>
+           )}
          </div>
          
          <label className="block text-xs font-bold text-black dark:text-white mb-2">Password Website</label>
@@ -150,7 +278,7 @@ export default function AdminDashboard() {
            type="password" 
            value={webPassword}
            onChange={(e) => setWebPassword(e.target.value)}
-           placeholder="Masukkan password..."
+           placeholder="Masukkan password (default: 31102008)..."
            className="w-full bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all mb-4"
            autoFocus
          />
@@ -163,10 +291,10 @@ export default function AdminDashboard() {
           )}
          </AnimatePresence>
         </div>
-        <button type="submit" className="w-full bg-black text-white dark:bg-white dark:text-black py-4 px-6 text-sm font-semibold hover:opacity-80 transition-all rounded-2xl active:scale-95 flex items-center justify-center gap-3">
+        <button type="submit" className="w-full bg-black text-white dark:bg-white dark:text-black py-4 px-6 text-sm font-semibold hover:opacity-80 transition-all rounded-2xl active:scale-95 flex items-center justify-center gap-3 cursor-pointer">
          Buka Akses Admin
         </button>
-        <button type="button" onClick={handleLogout} className="text-xs font-semibold text-zinc-500 hover:text-black dark:hover:text-white transition-colors">
+        <button type="button" onClick={handleLogout} className="text-xs font-semibold text-zinc-500 hover:text-black dark:hover:text-white transition-colors cursor-pointer">
          Ganti Akun Google
         </button>
        </motion.form>
@@ -179,7 +307,7 @@ export default function AdminDashboard() {
  }
 
  return (
-  <section className="py-6 md:py-10 px-4 sm:px-6 md:px-8 lg:px-12 w-full mx-auto min-h-screen relative max-w-[1800px] 2xl:max-w-[1920px]">
+  <section className="py-6 md:py-10 px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 w-full mx-auto min-h-screen relative">
     <div className="mb-4 md:mb-6">
      <h4 className="text-[10px] font-mono font-bold text-zinc-500 dark:text-zinc-400 mb-1.5 md:mb-2 flex items-center gap-2 uppercase tracking-widest">
       <span className="w-4 h-[1px] bg-zinc-500 dark:bg-zinc-400 inline-block"></span> SYS_ADMIN // KENDALI

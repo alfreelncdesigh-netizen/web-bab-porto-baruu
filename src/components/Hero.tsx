@@ -4,8 +4,9 @@ import { ArrowRight } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { SiteSettings, defaultSettings } from '../data/settings';
-import { getStoredSettings } from '../lib/contentStorage';
+import { getStoredSettings, cleanSettings } from '../lib/contentStorage';
 import HeroBannerCarousel from './HeroBannerCarousel';
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 
 export default function Hero() {
   const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
@@ -16,14 +17,26 @@ export default function Hero() {
     };
     window.addEventListener('app_settings_updated', handleUpdate);
 
+    // Initial sync from local storage
+    const currentLocal = getStoredSettings();
+    if (currentLocal) setSettings(currentLocal);
+
     const docRef = doc(db, 'settings', 'global');
     const unsubscribe = onSnapshot(
       docRef,
       (docSnap) => {
         if (docSnap.exists()) {
-          const merged = { ...defaultSettings, ...(docSnap.data() as Partial<SiteSettings>) };
-          setSettings(merged);
-          try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+          const cloudData = docSnap.data() as Partial<SiteSettings>;
+          const local = getStoredSettings();
+          const cloudTime = cloudData?.savedAt || 0;
+          const localTime = local?.savedAt || 0;
+
+          // Jangan timpa pengaturan lokal yang lebih baru dari aksi admin
+          if (cloudTime >= localTime) {
+            const merged = { ...defaultSettings, ...cleanSettings(cloudData) };
+            setSettings(merged);
+            try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+          }
         }
       },
       (err) => {
@@ -41,295 +54,205 @@ export default function Hero() {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const badgeText = (settings.heroBadge && settings.heroBadge !== "DESAINER GRAFIS & VISUAL")
-    ? settings.heroBadge 
-    : "MY PORTOFOLIO DESIGN";
+  // Helper to ensure clean, correct typography (correcting misspelled phrases)
+  const sanitizeTypography = (text?: string, fallback: string = '') => {
+    const raw = (text && text.trim().length > 0) ? text : fallback;
+    return raw
+      .replace(/portofolio desigh/gi, 'Portfolio Design')
+      .replace(/portofolio design/gi, 'Portfolio Design')
+      .replace(/portfolio desigh/gi, 'Portfolio Design')
+      .replace(/my portofolio design/gi, 'PORTFOLIO DESIGN')
+      .replace(/my portofolio desigh/gi, 'My Portfolio Design')
+      .replace(/desigh/gi, 'Design');
+  };
 
-  const title1Text = (settings.heroTitle1 && settings.heroTitle1 !== "Visual yang berbicara,")
+  const badgeText = (settings.heroBadge && settings.heroBadge.trim().length > 0)
+    ? sanitizeTypography(settings.heroBadge, "PORTFOLIO DESIGN")
+    : "PORTFOLIO DESIGN";
+
+  const title1Text = (settings.heroTitle1 && settings.heroTitle1.trim().length > 0)
     ? settings.heroTitle1
     : "WELCOME";
 
-  const title2Text = (settings.heroTitle2 && settings.heroTitle2 !== "Presisi bertemu Rasa.")
-    ? settings.heroTitle2
-    : "My portofolio design";
+  const title2Text = (settings.heroTitle2 && settings.heroTitle2.trim().length > 0)
+    ? sanitizeTypography(settings.heroTitle2, "My Portfolio Design")
+    : "My Portfolio Design";
 
   return (
     <section id="home" className="relative w-full overflow-hidden bg-[var(--bg-main,#ffffff)] dark:bg-[#0a0a0a]">
       {/* ========================================================
-          1. TAMPILAN MOBILE (< 768px): FULL BACKGROUND IMAGE
-          - Container diposisikan pas dengan gambar foto utuh turun 70px di bawah navbar
-          - Posisi teks judul di batas bawah gambar paling atas (bottom: 24px)
-          - Badge Sub-Judul: Diperkecil (padding 3px 9px, font-size 9.5px) dengan latar abu-abu (#e4e4e7 / dark:zinc-800)
-          - Judul Utama: Tetap tebal (font-black 900), Baris 1 abu-abu (#71717a), Baris 2 hitam (#000000)
-          - Tombol "Lihat Karya" & "Kontak Saya": Diperkecil (height 34px, padding 0 13px, font-size 11px) tapi tetap saling berdekatan (gap 8px)
+          1. TAMPILAN MOBILE (< 768px): VERTICAL STACKING LAYOUT
+          - Elemen ditumpuk berurutan dari atas ke bawah:
+            1. Header navigasi (fixed di atas)
+            2. Area teks judul, sub-judul ("Creative Designer • UI/UX"), dan tombol CTA
+               dengan latar belakang terang solid untuk 100% keterbacaan & kontras tinggi.
+            3. Foto desainer dengan elemen lingkaran & garis biru abstrak
+               diposisikan di BAWAH teks & tombol, BUKAN di belakangnya.
           ======================================================== */}
-      <div 
-        className="block md:hidden relative w-full overflow-hidden"
-        style={{
-          position: 'relative',
-          height: '75vh',
-          minHeight: '520px',
-          maxHeight: '640px',
-          width: '100%',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Container Gambar Background Mobile dengan padding-top: 70px agar topi turun di bawah navbar */}
-        <div 
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            paddingTop: '70px',
-            pointerEvents: 'none',
-            zIndex: 1,
-          }}
-        >
-          <img 
-            src={settings.heroImage || "/src/assets/images/editing_tools_3d_1787123977793.jpg"} 
-            alt="Hero Background Mobile"
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'contain',
-              objectPosition: 'center top',
-            }}
-            fetchPriority="high"
-            loading="eager"
-          />
-
-          {/* Gradasi Bawah Seamless Multi-Stop Gradient (Mode Terang) */}
-          <div 
-            style={{
-              position: 'absolute',
-              inset: 0,
-              pointerEvents: 'none',
-              zIndex: 2,
-              background: 'linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(255,255,255,0.75) 80%, var(--bg-main, #ffffff) 100%)',
-            }}
-            className="dark:hidden"
-          />
-          {/* Gradasi Bawah Seamless Multi-Stop Gradient (Mode Gelap) */}
-          <div 
-            style={{
-              position: 'absolute',
-              inset: 0,
-              pointerEvents: 'none',
-              zIndex: 2,
-              background: 'linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(10,10,10,0.75) 80%, var(--bg-main, #0a0a0a) 100%)',
-            }}
-            className="hidden dark:block"
-          />
-        </div>
-
-        {/* Konten Teks & Tombol Mobile: diposisikan di batas bawah gambar paling atas */}
+      <div className="block md:hidden w-full bg-white dark:bg-[#0a0a0a] pt-20 sm:pt-24 pb-6 transition-colors">
+        {/* Area Teks & Tombol CTA: Latar belakang bersih, solid, high-contrast */}
         <motion.div 
-          style={{
-            position: 'absolute',
-            left: '20px',
-            bottom: '24px',
-            zIndex: 10,
-            textAlign: 'left',
-          }}
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: "easeOut" }}
-          className="flex flex-col items-start pr-4"
+          className="w-full px-6 sm:px-8 flex flex-col items-start text-left bg-white dark:bg-[#0a0a0a]"
         >
-          {/* Badge Sub-Judul: Diperkecil */}
-          <span 
-            style={{
-              background: '#e4e4e7',
-              color: '#27272a',
-              padding: '3px 10px',
-              borderRadius: '20px',
-              fontSize: '9.5px',
-              display: 'inline-block',
-              marginBottom: '6px',
-              letterSpacing: '0.8px',
-              border: '1px solid rgba(0, 0, 0, 0.1)',
-              boxShadow: '0 1px 4px rgba(0, 0, 0, 0.08)',
-            }}
-            className="font-bold tracking-[0.8px] uppercase select-none w-fit shrink-0 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700"
-          >
-            {badgeText}
-          </span>
+          {/* Subtitle ("Creative Designer • UI/UX") */}
+          <div className="flex items-center gap-2 mb-2 select-none">
+            <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
+            <p className="text-[11px] sm:text-xs font-bold tracking-[0.18em] uppercase text-zinc-600 dark:text-zinc-400">
+              Creative Designer • UI/UX
+            </p>
+          </div>
 
-          {/* Judul Utama: Lebih tebal (font-black 900), Baris 1 Abu-abu, Baris 2 Hitam */}
+          {/* Headline Mobile: Ukuran pas untuk layar mobile agar tidak terpotong */}
           <h1 
             style={{
-              fontFamily: "'Many Years Ago', 'Plus Jakarta Sans', 'Syne', sans-serif",
+              fontFamily: "'Many Years Ago', 'Plus Jakarta Sans', 'Outfit', sans-serif",
               letterSpacing: '-0.025em',
-              fontSize: '26px',
-              lineHeight: 1.15,
-              fontWeight: 900,
-              textShadow: '0 1px 3px rgba(255, 255, 255, 0.9), 0 2px 8px rgba(0, 0, 0, 0.15)',
+              lineHeight: 1.1,
             }}
-            className="font-black select-none"
+            className="font-black text-[34px] sm:text-[40px] text-zinc-950 dark:text-white mb-3 select-none w-full"
           >
-            {/* Baris 1: Abu-abu */}
-            <span 
-              style={{ color: '#71717a' }}
-              className="block font-black dark:text-zinc-400"
-            >
-              {title1Text}
-            </span>
-            {/* Baris 2: Hitam */}
-            <span 
-              style={{ color: '#000000' }}
-              className="block font-black mt-0.5 dark:text-white"
-            >
-              {title2Text}
-            </span>
+            <span className="block text-zinc-950 dark:text-white font-black">{title1Text}</span>
+            <span className="block text-zinc-950 dark:text-white font-black mt-1">{title2Text}</span>
           </h1>
 
-          {/* Group Tombol CTA Mobile: Diperkecil tapi tetap saling berdekatan */}
-          <div 
-            style={{
-              display: 'flex',
-              gap: '8px',
-              marginTop: '12px',
-            }}
-            className="w-fit flex-row items-center font-semibold"
-          >
-            {/* Tombol Utama ("Lihat Karya"): Diperkecil */}
+          {/* Group Tombol CTA Mobile: Menyatu dalam satu capsule horizontal & lebih kecil */}
+          <div className="inline-flex items-center p-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-1 max-w-full select-none">
             <button 
               onClick={() => scrollTo('portfolio')}
-              style={{
-                background: '#ffffff',
-                color: '#0f172a',
-                height: '34px',
-                padding: '0 13px',
-                fontSize: '11px',
-                fontWeight: 600,
-                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.16)',
-                border: '1px solid rgba(15, 23, 42, 0.15)',
-              }}
-              className="inline-flex items-center justify-center gap-1.5 rounded-full leading-tight shrink-0 active:scale-95 duration-200 transition-all cursor-pointer"
+              className="h-[34px] px-3.5 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-[11px] font-bold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
             >
               Lihat Karya <ArrowRight className="w-3 h-3 shrink-0" />
             </button>
-
-            {/* Tombol Sekunder ("Kontak Saya"): Diperkecil, background abu-abu */}
             <button 
               onClick={() => scrollTo('contact')}
-              style={{
-                background: '#e4e4e7',
-                color: '#18181b',
-                height: '34px',
-                padding: '0 13px',
-                fontSize: '11px',
-                fontWeight: 600,
-                border: '1px solid rgba(0, 0, 0, 0.12)',
-                boxShadow: '0 2px 6px rgba(0, 0, 0, 0.08)',
-              }}
-              className="inline-flex items-center justify-center gap-1.5 rounded-full leading-tight shrink-0 active:scale-95 duration-200 transition-all cursor-pointer dark:bg-zinc-800 dark:text-zinc-100 dark:border-zinc-700"
+              className="h-[34px] px-3.5 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-[11px] font-bold cursor-pointer active:scale-95 transition-all shrink-0"
             >
               Kontak Saya
             </button>
           </div>
         </motion.div>
+
+        {/* Foto Desainer Mobile: Dinaikkan posisinya mendekati teks & tombol */}
+        <motion.div 
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.12, ease: "easeOut" }}
+          className="w-full mt-0 sm:mt-1 px-6 sm:px-8 flex items-center justify-center relative overflow-hidden bg-transparent -translate-y-3 sm:-translate-y-4"
+        >
+          <div className="relative w-full max-w-[340px] sm:max-w-[360px] aspect-[4/5] flex items-center justify-center bg-transparent">
+            {/* Dekorasi Lingkaran & Garis Biru Halus */}
+            <div className="absolute w-[250px] h-[250px] sm:w-[260px] sm:h-[260px] rounded-full bg-blue-500/10 dark:bg-blue-600/15 blur-2xl pointer-events-none -z-10" />
+            <div className="absolute w-[210px] h-[210px] sm:w-[220px] sm:h-[220px] rounded-full border border-blue-500/20 dark:border-blue-400/25 pointer-events-none -z-10" />
+            <svg className="absolute -right-2 -bottom-2 w-24 h-24 text-blue-500/30 dark:text-blue-400/30 pointer-events-none -z-10" viewBox="0 0 100 100" fill="none">
+              <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 4" />
+              <path d="M12 50 Q 50 12 88 50" stroke="currentColor" strokeWidth="1.5" />
+            </svg>
+
+            <img 
+              src={resolveImageUrl(settings.heroImage || "/images/editing_tools_3d_1787123977793.jpg")} 
+              alt="Muhammad Albiansyah - Creative Designer"
+              className="w-full h-full object-contain object-center select-none bg-transparent border-0 shadow-none outline-none"
+              fetchPriority="high"
+              loading="eager"
+              onError={handleImageError}
+            />
+          </div>
+        </motion.div>
       </div>
 
       {/* ========================================================
-          2. TAMPILAN DESKTOP (>= 768px): SPLIT 2 KOLOM
-          - Padding-top lega (pt-28 md:pt-32 lg:pt-36) agar gambar turun dan tidak di belakang header
-          - Kolom gambar lebih besar (grid-cols-[1fr_1.15fr]) dan max-height lebih tinggi
-          - Gradasi bawah halus, rapih, dan menyatu mulus ke latar belakang
+          2. TAMPILAN DESKTOP (>= 768px): REDESIGN HERO SECTION
+          - Layout 2 kolom Grid: Teks di KIRI (55%), Foto Profil di KANAN (45%)
+          - Judul diperbesar: WELCOME (64–72px), My Portfolio Design (52–60px)
+          - Foto profil diperbesar ~1.3–1.5x, seimbang, proporsional, dominan & elegan
+          - Komposisi terpusat vertikal & horizontal, tanpa ruang kosong berlebih
+          - Max-width 1280px, pas di layar 1366x768 dan 1920x1080
           ======================================================== */}
-      <div className="hidden md:block w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-6 md:px-8 lg:px-12 pt-28 md:pt-32 lg:pt-36 pb-8 md:pb-12">
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_1.1fr] lg:grid-cols-[1fr_1.18fr] gap-10 lg:gap-14 xl:gap-16 items-center min-h-[78vh] lg:min-h-[84vh]">
+      <div className="hidden md:flex flex-col justify-center w-full max-w-[1280px] mx-auto px-6 sm:px-8 lg:px-12 xl:px-16 pt-20 md:pt-24 lg:pt-26 pb-4 md:pb-6 min-h-[calc(86vh-70px)]">
+        <div className="grid grid-cols-1 md:grid-cols-[55%_45%] gap-8 lg:gap-12 xl:gap-14 items-center w-full">
           
-          {/* Kolom Kiri: Teks & Tombol */}
+          {/* Kolom Kiri: Teks & Tombol CTA (55% Proporsi Luas, Tidak Terpotong) */}
           <motion.div 
-            className="flex flex-col justify-center items-start text-left z-10 w-full"
-            initial={{ opacity: 0, y: 20 }}
+            className="flex flex-col justify-center items-start text-left z-10 w-full min-w-0 pr-2 lg:pr-4"
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: "easeOut" }}
           >
-            {/* Badge Sub-Judul Desktop */}
-            <div 
-              style={{
-                background: '#0f172a',
-                color: '#ffffff',
-                padding: '4px 12px',
-                borderRadius: '20px',
-                fontSize: '11px',
-                letterSpacing: '1px',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.25)',
-              }}
-              className="inline-flex items-center font-bold tracking-[1px] uppercase mb-4 md:mb-5 select-none shrink-0"
-            >
-              {badgeText}
+            {/* Sub-Judul Desktop: Teks bersih dengan dot aksen biru */}
+            <div className="flex items-center gap-2.5 mb-3.5 select-none">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 dark:bg-blue-400"></span>
+              <p className="text-xs sm:text-[13px] font-bold tracking-[0.18em] uppercase text-zinc-600 dark:text-zinc-400">
+                {badgeText}
+              </p>
             </div>
 
-            {/* Judul Utama Desktop */}
+            {/* Judul Utama Desktop: WELCOME (64–72px) & My Portfolio Design (52–60px), rapat, bold, tegas */}
             <h1 
               style={{
-                fontFamily: "'Many Years Ago', 'Plus Jakarta Sans', 'Syne', sans-serif",
-                letterSpacing: '-0.02em',
-                textShadow: '0 2px 10px rgba(0, 0, 0, 0.15)',
+                fontFamily: "'Many Years Ago', 'Plus Jakarta Sans', 'Outfit', sans-serif",
+                letterSpacing: '-0.025em',
               }}
-              className="font-[850] text-[clamp(38px,4.2vw,56px)] lg:text-[clamp(44px,4.8vw,64px)] leading-[1.08] mb-6 md:mb-7 text-black dark:text-white select-none"
+              className="font-extrabold text-black dark:text-white select-none w-full"
             >
-              <span className="block">{title1Text}</span>
-              <span className="block text-zinc-700 dark:text-zinc-200 mt-1.5">{title2Text}</span>
+              <span className="block text-[clamp(62px,5.2vw,72px)] leading-[1.02] text-black dark:text-white font-black tracking-tight whitespace-nowrap">
+                {title1Text}
+              </span>
+              <span className="block text-[clamp(50px,4.1vw,60px)] leading-[1.06] text-black dark:text-white font-bold md:font-extrabold tracking-tight mt-1.5 sm:mt-2">
+                {title2Text}
+              </span>
             </h1>
 
-            {/* Group Tombol CTA Desktop */}
-            <div className="flex flex-row items-center gap-3 w-fit font-semibold">
+            {/* Group Tombol CTA Desktop: Rapi tepat di bawah judul dengan jarak konsisten */}
+            <div className="flex flex-row items-center gap-3.5 w-fit font-semibold mt-6 md:mt-7">
               <button 
                 onClick={() => scrollTo('portfolio')}
-                style={{
-                  boxShadow: '0 3px 12px rgba(0, 0, 0, 0.15)',
-                }}
-                className="h-[42px] px-5 inline-flex items-center justify-center gap-2 bg-white text-black hover:bg-zinc-100 hover:scale-[1.02] active:scale-95 duration-200 transition-all rounded-full text-[13px] font-semibold leading-tight shrink-0 border border-zinc-200 dark:border-transparent shadow-md cursor-pointer"
+                className="h-[48px] md:h-[50px] px-7 md:px-8 inline-flex items-center justify-center gap-2.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-full text-xs md:text-sm font-bold shadow-md hover:shadow-lg hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
               >
                 Lihat Karya <ArrowRight className="w-4 h-4 shrink-0" />
               </button>
 
               <button 
                 onClick={() => scrollTo('contact')}
-                style={{
-                  boxShadow: '0 3px 12px rgba(0, 0, 0, 0.2)',
-                }}
-                className="h-[42px] px-5 inline-flex items-center justify-center gap-2 bg-black text-white hover:bg-zinc-800 border border-black dark:bg-white/15 dark:text-white dark:border-white/30 dark:hover:bg-white/25 hover:scale-[1.02] active:scale-95 duration-200 transition-all rounded-full text-[13px] font-semibold leading-tight shadow-md shrink-0 cursor-pointer"
+                className="h-[48px] md:h-[50px] px-7 md:px-8 inline-flex items-center justify-center gap-2 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 border border-zinc-200/80 dark:bg-zinc-900 dark:text-white dark:border-zinc-800 dark:hover:bg-zinc-800 rounded-full text-xs md:text-sm font-bold shadow-xs hover:shadow-sm hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
               >
                 Kontak Saya
               </button>
             </div>
           </motion.div>
 
-          {/* Kolom Kanan: Foto Utuh Portofolio Lebih Besar & Turun Bebas dari Header */}
+          {/* Kolom Kanan: Foto Profil Diperbesar 1,3–1,5x dengan Dekorasi Lingkaran dan Garis Biru (45%) */}
           <motion.div 
-            className="w-full flex items-center justify-center relative rounded-3xl overflow-hidden min-h-[620px] lg:min-h-[740px] xl:min-h-[820px] h-full pt-3 lg:pt-5"
-            initial={{ opacity: 0, scale: 0.98 }}
+            className="w-full flex items-center justify-center relative bg-transparent border-0 shadow-none"
+            initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.7, delay: 0.1, ease: "easeOut" }}
+            transition={{ duration: 0.7, delay: 0.08, ease: "easeOut" }}
           >
-            <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+            <div className="relative w-full max-w-[520px] lg:max-w-[580px] xl:max-w-[620px] aspect-[4/5] max-h-[640px] lg:max-h-[700px] xl:max-h-[740px] flex items-center justify-center bg-transparent border-0 shadow-none">
+              {/* Dekorasi Lingkaran Biru Ambient & Border Ring (diperbesar sesuai foto baru) */}
+              <div className="absolute w-[380px] h-[380px] lg:w-[460px] lg:h-[460px] xl:w-[500px] xl:h-[500px] rounded-full bg-blue-500/15 dark:bg-blue-600/20 blur-3xl pointer-events-none -z-10" />
+              <div className="absolute w-[320px] h-[320px] lg:w-[400px] lg:h-[400px] xl:w-[440px] xl:h-[440px] rounded-full border border-blue-500/25 dark:border-blue-400/30 pointer-events-none -z-10" />
+
+              {/* Dekorasi Garis Abstrak Biru Geometris */}
+              <svg 
+                className="absolute -right-2 -bottom-2 lg:-right-4 lg:-bottom-4 w-44 h-44 lg:w-56 lg:h-56 xl:w-60 xl:h-60 text-blue-500/35 dark:text-blue-400/35 pointer-events-none -z-10 select-none" 
+                viewBox="0 0 100 100" 
+                fill="none"
+              >
+                <circle cx="50" cy="50" r="42" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 6" />
+                <path d="M12 48 Q 50 12 88 52" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+
+              {/* Foto Profil Asli (Diperbesar 1,3–1,5x, jernih & proporsional) */}
               <img 
-                src={settings.heroImage || "/src/assets/images/editing_tools_3d_1787123977793.jpg"} 
-                alt="Foto Portofolio"
-                className="w-full h-full max-h-[780px] lg:max-h-[880px] xl:max-h-[960px] object-contain object-top md:object-[top_center] rounded-3xl transition-transform duration-700"
+                src={resolveImageUrl(settings.heroImage || "/images/editing_tools_3d_1787123977793.jpg")} 
+                alt="Muhammad Albiansyah - Creative Designer"
+                className="w-full h-full object-contain object-bottom select-none bg-transparent border-none shadow-none filter drop-shadow-md transition-transform duration-500 hover:scale-[1.01]"
                 fetchPriority="high"
                 loading="eager"
-              />
-
-              {/* Mask/overlay gradasi bawah halus & rapih (Mode Terang) */}
-              <div 
-                className="absolute inset-0 pointer-events-none z-[1] dark:hidden"
-                style={{
-                  background: 'linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0) 62%, rgba(255,255,255,0.22) 76%, rgba(255,255,255,0.68) 89%, var(--bg-main, #ffffff) 100%)'
-                }}
-              />
-              {/* Mask/overlay gradasi bawah halus & rapih (Mode Gelap) */}
-              <div 
-                className="absolute inset-0 pointer-events-none z-[1] hidden dark:block"
-                style={{
-                  background: 'linear-gradient(180deg, rgba(10,10,10,0) 0%, rgba(10,10,10,0) 62%, rgba(10,10,10,0.22) 76%, rgba(10,10,10,0.68) 89%, var(--bg-main, #0a0a0a) 100%)'
-                }}
+                onError={handleImageError}
               />
             </div>
           </motion.div>
@@ -337,8 +260,8 @@ export default function Hero() {
         </div>
       </div>
 
-      {/* Banner Promosi (Disembunyikan pada tampilan mobile, tampil di desktop) */}
-      <div className="hidden md:block w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 py-4 md:py-6 relative z-10">
+      {/* Banner Promosi Carousel (Tampil di desktop dengan padding proporsional dalam batas max-w-1280px) */}
+      <div className="hidden md:block w-full max-w-[1280px] mx-auto px-6 sm:px-8 lg:px-12 xl:px-16 pt-2 md:pt-4 pb-4 md:pb-6 relative z-10">
         <HeroBannerCarousel banners={settings.heroBanners} />
       </div>
     </section>

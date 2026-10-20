@@ -3,6 +3,7 @@ import { X, ArrowUpRight, Sparkles } from 'lucide-react';
 import { getStoredCookieConsent } from "../lib/cookies";
 import { SiteSettings, defaultSettings, PromoPosterItem, defaultPromoPosters } from '../data/settings';
 import { getStoredSettings } from '../lib/contentStorage';
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 
 // ====================================================================================================
 // PANDUAN KONFIGURASI WIDGET PROMOSI POSTER STICKY (MUDAH DIEDIT):
@@ -428,10 +429,11 @@ export default function PromoPosterWidget({
           {/* Gambar Poster Promosi (Rasio 4:5) */}
           <img
             key={activePoster.id}
-            src={posterImage}
+            src={resolveImageUrl(posterImage)}
             alt={activePoster.title || "Poster Promosi"}
             loading="lazy"
             className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+            onError={handleImageError}
           />
 
           {/* Tombol Silang (×) di Pojok Kanan Atas Widget */}

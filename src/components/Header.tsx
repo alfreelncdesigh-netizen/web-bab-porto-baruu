@@ -145,12 +145,12 @@ export default function Header({ setView, currentView }: HeaderProps) {
     )}
    </AnimatePresence>
 
-   <header className="fixed top-0 left-0 right-0 z-50 pt-2.5 md:pt-4 px-3 sm:px-6 pointer-events-none flex justify-center">
+   <header className="fixed top-0 left-0 right-0 z-50 pt-2.5 md:pt-4 px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 pointer-events-none flex justify-center max-w-[1440px] mx-auto">
     <motion.div 
      initial={{ y: -100, opacity: 0 }}
      animate={{ y: 0, opacity: 1 }}
      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-     className={`pointer-events-auto flex items-center justify-between w-full max-w-[1800px] 2xl:max-w-[1920px] rounded-full px-4 py-2.5 md:px-6 md:py-3 transition-all duration-300 ${
+     className={`pointer-events-auto flex items-center justify-between w-full rounded-full px-4 py-2.5 md:px-6 md:py-3 transition-all duration-300 ${
       isScrolled 
        ? 'bg-white/90 dark:bg-[#111111]/90 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 shadow-md' 
        : 'bg-white/75 dark:bg-[#0A0A0A]/75 backdrop-blur-md border border-zinc-200/30 dark:border-zinc-800/30 shadow-sm'

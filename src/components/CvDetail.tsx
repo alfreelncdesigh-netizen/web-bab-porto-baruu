@@ -170,13 +170,18 @@ export default function CvDetail() {
       (docSnap) => {
         if (docSnap.exists()) {
           const data = docSnap.data();
-          const cleaned = cleanSettings(data as Partial<SiteSettings>);
-          setSettings(prev => {
-            const finalSections = (cleaned.cvSections && cleaned.cvSections.length > 0)
-              ? cleaned.cvSections
-              : prev.cvSections;
-            return { ...prev, ...defaultSettings, ...cleaned, cvSections: finalSections };
-          });
+          const local = getStoredSettings();
+          const cloudTime = (data as any)?.savedAt || 0;
+          const localTime = local?.savedAt || 0;
+          if (cloudTime >= localTime) {
+            const cleaned = cleanSettings(data as Partial<SiteSettings>);
+            setSettings(prev => {
+              const finalSections = (cleaned.cvSections && cleaned.cvSections.length > 0)
+                ? cleaned.cvSections
+                : prev.cvSections;
+              return { ...prev, ...defaultSettings, ...cleaned, cvSections: finalSections };
+            });
+          }
         }
         setIsLoading(false);
       },
@@ -194,7 +199,10 @@ export default function CvDetail() {
       (cvSnap) => {
         if (cvSnap.exists()) {
           const cvData = cvSnap.data();
-          if (cvData.cvSections && Array.isArray(cvData.cvSections) && cvData.cvSections.length > 0) {
+          const local = getStoredSettings();
+          const cloudTime = (cvData as any)?.savedAt || 0;
+          const localTime = local?.savedAt || 0;
+          if (cloudTime >= localTime && cvData.cvSections && Array.isArray(cvData.cvSections) && cvData.cvSections.length > 0) {
             const cleanedCvSections = cvData.cvSections.map((s: any) => ({
               title: s.title || '',
               content: s.content || '',
@@ -264,7 +272,7 @@ export default function CvDetail() {
   if (isLoading) {
     return (
       <section id="cv" className="pt-2 sm:pt-4 pb-8 md:pb-12 bg-white dark:bg-[#0A0A0A] min-h-screen">
-        <div className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 animate-pulse">
+        <div className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 animate-pulse">
           {/* Skeleton Header */}
           <div className="flex flex-row justify-between items-center mb-5 md:mb-7 gap-4">
             <div className="flex flex-col gap-1.5">
@@ -308,7 +316,7 @@ export default function CvDetail() {
 
   return (
     <section id="cv" className="pt-2 sm:pt-4 pb-8 md:pb-12 bg-white dark:bg-[#0A0A0A] min-h-screen selection:bg-zinc-200 dark:selection:bg-zinc-800 selection:text-black dark:selection:text-white">
-      <div className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12">
+      <div className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16">
         
         {/* Header Section Ringkas: Badge + Nama (20px bold) & Jabatan di kiri, Unduh CV di kanan */}
         <motion.div 

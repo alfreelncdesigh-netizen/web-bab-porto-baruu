@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { User, Phone, Instagram, LayoutTemplate, PenTool, Layers, Maximize, Hash, Calendar, DollarSign, ArrowRight, ArrowLeft, Send, CheckCircle2, FileText, UploadCloud, Info, Wallet, FileEdit, X, ChevronDown, CreditCard, ShieldCheck, Sparkles, ExternalLink, Tag } from 'lucide-react';
+import { doc, getDoc, collection, onSnapshot } from 'firebase/firestore';
+import { User, Phone, Instagram, LayoutTemplate, PenTool, Layers, Maximize, Hash, Calendar, DollarSign, ArrowRight, ArrowLeft, Send, CheckCircle2, FileText, UploadCloud, Info, Wallet, FileEdit, X, ChevronDown, CreditCard, ShieldCheck, Sparkles, ExternalLink, Tag, ShoppingBag, Download } from 'lucide-react';
 import { FastInput, FastTextarea } from './FastInput';
 import { ServiceSelectModal, servicesList } from './ServiceSelectModal';
 import { getStoredSettings } from '../lib/contentStorage';
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { defaultPromoPosters, PromoPosterItem } from '../data/settings';
 import { PAYMENT_METHODS, BriLogo, BrimoLogo, DanaLogo, GopayLogo, OvoLogo, ShopeePayLogo, LinkAjaLogo } from './PaymentLogos';
 import { getCookie, setCookie, deleteCookie } from '../lib/cookies';
@@ -215,6 +216,13 @@ export default function Store({ isOrderView = false }: StoreProps) {
   };
 
   const totalSteps = isDesktop ? 3 : 5;
+  const mobileStepTitles = [
+    'Kontak Klien',
+    'Detail Produk',
+    'Jadwal & Biaya',
+    'Materi & Lampiran',
+    'Konfirmasi Akhir'
+  ];
   const nextStep = () => setStep((prev) => Math.min(prev + 1, totalSteps));
   const prevStep = () => setStep((prev) => Math.max(prev - 1, 1));
 
@@ -230,7 +238,20 @@ export default function Store({ isOrderView = false }: StoreProps) {
     
     // 1. Jenis Layanan
     const layanan = formData.jenisLayanan?.toLowerCase() || '';
-    if (layanan === 'poster') { total += 20000; breakdown.push({ label: 'Layanan (Poster)', price: 20000 }); }
+    if (layanan === 'poster') {
+      const jumlahPoster = Math.max(1, parseInt(formData.jumlah) || 1);
+      let posterPrice = 20000;
+      if (jumlahPoster <= 5) {
+        posterPrice = jumlahPoster * 20000;
+      } else {
+        posterPrice = (5 * 20000) + ((jumlahPoster - 5) * 10000);
+      }
+      total += posterPrice;
+      const label = jumlahPoster > 1 
+        ? `Layanan (Poster - ${jumlahPoster} Desain${jumlahPoster > 5 ? ' [Hemat >5 pcs]' : ''})` 
+        : 'Layanan (Poster)';
+      breakdown.push({ label, price: posterPrice });
+    }
     else if (layanan === 'feed & story instagram') { total += 20000; breakdown.push({ label: 'Layanan (Feed & Story)', price: 20000 }); }
     else if (layanan === 'sertifikat') { total += 35000; breakdown.push({ label: 'Layanan (Sertifikat)', price: 35000 }); }
     else if (layanan === 'undangan') { total += 15000; breakdown.push({ label: 'Layanan (Undangan)', price: 15000 }); }
@@ -290,25 +311,49 @@ export default function Store({ isOrderView = false }: StoreProps) {
     e.preventDefault();
     const layanan = formData.jenisLayanan === 'Lainnya' ? formData.layananLainnya : formData.jenisLayanan;
     
-    // Simpan statistik order ke Firestore & LocalStorage
+    const { total, breakdown } = getPriceBreakdown();
+    const breakdownText = breakdown.map(b => `  - ${b.label}: ${formatIDR(b.price)}`).join('\n');
+
+    // Simpan data order ke Firestore & LocalStorage
     try {
+      const orderRecord = {
+        nama: formData.nama,
+        whatsapp: formData.whatsapp,
+        sosmed: formData.sosmed || '',
+        layanan,
+        tujuan: formData.tujuan || '',
+        gaya: formData.gaya || '',
+        format: formData.format || '',
+        jumlah: formData.jumlah || '',
+        deadline: formData.deadline || '',
+        budget: formData.budget || '',
+        totalEstimasi: total,
+        createdAt: new Date().toISOString()
+      };
       const existing = JSON.parse(localStorage.getItem('orders') || '[]');
-      existing.push({ layanan, createdAt: new Date().toISOString() });
+      existing.push(orderRecord);
       localStorage.setItem('orders', JSON.stringify(existing));
     } catch (e) {}
 
     try {
       const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
       await addDoc(collection(db, 'orders'), {
+        nama: formData.nama,
+        whatsapp: formData.whatsapp,
+        sosmed: formData.sosmed || '',
         layanan,
+        tujuan: formData.tujuan || '',
+        gaya: formData.gaya || '',
+        format: formData.format || '',
+        jumlah: formData.jumlah || '',
+        deadline: formData.deadline || '',
+        budget: formData.budget || '',
+        totalEstimasi: total,
         createdAt: serverTimestamp(),
       });
     } catch (error) {
       console.warn("Gagal mencatat order:", error);
     }
-
-    const { total, breakdown } = getPriceBreakdown();
-    const breakdownText = breakdown.map(b => `  - ${b.label}: ${formatIDR(b.price)}`).join('\n');
     
     const message = `Halo, saya ingin melakukan pemesanan custom desain dengan detail berikut:
 
@@ -358,57 +403,67 @@ Terima kasih.`;
   const selectedServiceObj = servicesList.find(s => s.name === formData.jenisLayanan);
   const SelectedServiceIcon = selectedServiceObj ? selectedServiceObj.icon : LayoutTemplate;
 
-  const inputClassMobile = "w-full pl-9 pr-3 py-2.5 bg-white/70 dark:bg-black/40 backdrop-blur-xs hover:bg-white/90 dark:hover:bg-black/60 focus:bg-white dark:focus:bg-black/80 border border-zinc-200/80 dark:border-white/10 rounded-xl focus:ring-1.5 focus:ring-black dark:focus:ring-white outline-none transition-all dark:text-white text-xs font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500";
+  const inputClassMobile = "w-full pl-8 pr-2.5 py-2 bg-white/90 dark:bg-[#121212]/90 border border-zinc-200/90 dark:border-zinc-800 rounded-xl focus:border-black dark:focus:border-white focus:ring-1 focus:ring-black/10 dark:focus:ring-white/10 outline-none transition-all text-zinc-950 dark:text-zinc-50 text-xs font-semibold placeholder:text-zinc-400 dark:placeholder:text-zinc-500 shadow-2xs";
   const inputClassDesktop = "w-full pl-11 lg:pl-12 pr-4 py-3.5 bg-white/70 dark:bg-black/40 backdrop-blur-xs hover:bg-white/90 dark:hover:bg-black/60 focus:bg-white dark:focus:bg-black/80 border border-zinc-200/80 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-black dark:focus:ring-white outline-none transition-all dark:text-white text-sm font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500";
 
   return (
-    <section id="store" className="py-6 md:py-10 bg-white dark:bg-[#0A0A0A] min-h-screen">
-      <div className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12">
+    <section id="store" className="py-5 md:py-10 bg-white dark:bg-[#0A0A0A] min-h-screen">
+      <div className="w-full mx-auto px-3 sm:px-6 md:px-8 lg:px-12 xl:px-16">
         
         {/* Header */}
         <motion.div 
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-5 md:mb-8"
+          className="text-center mb-4 md:mb-8"
         >
-          <div className="flex items-center justify-center gap-2 mb-2.5 md:mb-4 w-full relative">
-            <div className="inline-flex items-center justify-center px-3 md:px-4 py-1 md:py-1.5 rounded-full bg-zinc-100 dark:bg-[#111111] border border-zinc-200 dark:border-zinc-800 text-[8px] md:text-xs font-bold text-zinc-500 tracking-widest uppercase">
+          <div className="flex items-center justify-center gap-2 mb-2 md:mb-4 w-full relative">
+            <div className="inline-flex items-center justify-center px-2.5 md:px-4 py-1 md:py-1.5 rounded-full bg-zinc-100 dark:bg-[#111111] border border-zinc-200 dark:border-zinc-800 text-[9px] md:text-xs font-bold text-zinc-500 tracking-wider uppercase">
               Pemesanan Desain
             </div>
             {isDraftLoaded && (
-              <div className="inline-flex items-center justify-center px-3 md:px-4 py-1 md:py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-[8px] md:text-xs font-bold text-blue-600 dark:text-blue-400 tracking-widest uppercase">
+              <div className="inline-flex items-center justify-center px-2.5 md:px-4 py-1 md:py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-[9px] md:text-xs font-bold text-blue-600 dark:text-blue-400 tracking-wider uppercase">
                 DRAFT
               </div>
             )}
             
           </div>
-          <h2 className="text-xl md:text-5xl font-extrabold text-black dark:text-white tracking-tight mb-1.5 md:mb-3">
+          <h2 className="text-xl md:text-5xl font-black text-black dark:text-white tracking-tight mb-1 md:mb-3">
             Pesan Desain Khusus
           </h2>
-          <p className="text-[10px] md:text-lg text-zinc-500 dark:text-zinc-400">
+          <p className="text-[11px] md:text-lg text-zinc-500 dark:text-zinc-400 max-w-2xl mx-auto leading-relaxed">
             Ceritakan konsep atau kebutuhan desainmu di sini, nanti kita diskusikan bersama sampai cocok.
           </p>
         </motion.div>
 
+
         {/* Stepper Indicator */}
-        <div className="flex items-center justify-center mb-5 md:mb-8 overflow-x-auto pb-2 hide-scrollbar">
-          {Array.from({ length: totalSteps }).map((_, index) => {
-            const s = index + 1;
-            return (
-              <div key={s} className="flex items-center shrink-0">
-                <div className={`flex items-center justify-center w-5 h-5 md:w-10 md:h-10 lg:w-12 lg:h-12 rounded-full font-bold transition-colors duration-300 ${step >= s ? 'bg-black text-white dark:bg-white dark:text-black' : 'bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600'} text-[9px] md:text-sm`}>
-                  {step > s ? <CheckCircle2 className="w-3 h-3 md:w-5 md:h-5" /> : s}
+        <div className="flex flex-col items-center justify-center mb-4 md:mb-8">
+          <div className="flex items-center justify-center overflow-x-auto pb-1.5 hide-scrollbar">
+            {Array.from({ length: totalSteps }).map((_, index) => {
+              const s = index + 1;
+              return (
+                <div key={s} className="flex items-center shrink-0">
+                  <div className={`flex items-center justify-center w-6 h-6 md:w-10 md:h-10 lg:w-12 lg:h-12 rounded-full font-bold transition-all duration-300 shadow-2xs ${step >= s ? 'bg-black text-white dark:bg-white dark:text-black scale-105' : 'bg-zinc-100 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600'} text-[10px] md:text-sm`}>
+                    {step > s ? <CheckCircle2 className="w-3.5 h-3.5 md:w-5 md:h-5" /> : s}
+                  </div>
+                  {index < totalSteps - 1 && (
+                    <div className={`w-5 sm:w-8 md:w-16 h-[2px] md:h-1 mx-1 md:mx-2 rounded-full transition-colors duration-300 ${step > s ? 'bg-black dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-800'}`} />
+                  )}
                 </div>
-                {index < totalSteps - 1 && (
-                  <div className={`w-6 md:w-16 h-[1.5px] md:h-1 mx-1 md:mx-2 rounded-full transition-colors duration-300 ${step > s ? 'bg-black dark:bg-white' : 'bg-zinc-100 dark:bg-zinc-900'}`} />
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+          {/* Mobile Current Step Tag */}
+          {!isDesktop && (
+            <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-[10px] font-bold text-zinc-700 dark:text-zinc-300 select-none">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400"></span>
+              <span>Langkah {step} dari 5: {mobileStepTitles[step - 1]}</span>
+            </div>
+          )}
         </div>
 
         {/* Form Container */}
-        <div className={`frosted-glass-container border ${isDraftLoaded ? 'border-blue-400 dark:border-blue-600 shadow-blue-500/10' : 'border-zinc-200/60 dark:border-zinc-800/60 shadow-black/5'} rounded-[1rem] md:rounded-[2.5rem] p-4 sm:p-6 md:p-8 lg:p-10 shadow-xl w-full transition-colors`}>
+        <div className={`frosted-glass-container border ${isDraftLoaded ? 'border-blue-400 dark:border-blue-600 shadow-blue-500/10' : 'border-zinc-200/60 dark:border-zinc-800/60 shadow-black/5'} rounded-2xl md:rounded-[2.5rem] p-3 sm:p-6 md:p-8 lg:p-10 shadow-xl w-full transition-colors`}>
           <form onSubmit={handleSubmit}>
             
             {/* DESKTOP RENDER (3 Steps) */}
@@ -938,14 +993,14 @@ Terima kasih.`;
                 
                 {/* MOBILE STEP 1: Data Diri */}
                 {step === 1 && (
-                  <motion.div key="m-step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="frosted-glass-card rounded-2xl p-4 sm:p-5 space-y-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all">
-                    <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800/80">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shrink-0">
-                          <User className="w-4 h-4" />
+                  <motion.div key="m-step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="frosted-glass-card rounded-2xl p-3.5 sm:p-5 space-y-3.5 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all">
+                    <div className="flex items-center justify-between pb-2.5 border-b border-zinc-100 dark:border-zinc-800/80">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shrink-0">
+                          <User className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <h3 className="text-sm font-bold text-black dark:text-white leading-tight">Informasi Klien</h3>
+                          <h3 className="text-xs sm:text-sm font-bold text-black dark:text-white leading-tight">Informasi Klien</h3>
                           <p className="text-[10px] text-zinc-400">Langkah 1 dari 5</p>
                         </div>
                       </div>
@@ -954,46 +1009,46 @@ Terima kasih.`;
                       </span>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       <div>
-                        <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                        <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
                           <span>Nama Lengkap</span>
                           <span className="text-[9px] font-semibold text-rose-500 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded">Wajib</span>
                         </label>
                         <div className="relative">
-                          <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                          <User className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
                           <FastInput required type="text" name="nama" value={formData.nama} onChange={handleChange} className={inputClassMobile} placeholder="Masukkan nama Anda" />
                         </div>
                       </div>
                       <div>
-                        <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                        <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
                           <span>Nomor WhatsApp</span>
                           <span className="text-[9px] font-semibold text-rose-500 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded">Wajib</span>
                         </label>
                         <div className="relative">
-                          <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                          <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
                           <FastInput required type="tel" name="whatsapp" value={formData.whatsapp} onChange={handleChange} className={inputClassMobile} placeholder="Contoh: 08123456789" />
                         </div>
                       </div>
                       <div>
-                        <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                        <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
                           <span>Media Sosial / Brand</span>
                           <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded">Opsional</span>
                         </label>
                         <div className="relative">
-                          <Instagram className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
+                          <Instagram className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
                           <FastInput type="text" name="sosmed" value={formData.sosmed} onChange={handleChange} className={inputClassMobile} placeholder="@username atau Brand" />
                         </div>
                       </div>
                     </div>
 
-                    <div className="pt-2 flex justify-end gap-2 border-t border-zinc-100 dark:border-zinc-800/60">
+                    <div className="pt-2 flex items-center gap-2 border-t border-zinc-100 dark:border-zinc-800/60">
                       {formData.jenisLayanan && (
-                        <button type="button" onClick={() => setShowCancelPopup(true)} className="flex-1 flex items-center justify-center gap-1.5 bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors">
+                        <button type="button" onClick={() => setShowCancelPopup(true)} className="h-9 px-3 flex items-center justify-center gap-1 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 border border-red-200/50 dark:border-red-900/40 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors shrink-0">
                           Batal Order
                         </button>
                       )}
-                      <button type="button" disabled={!isValidDataDiri} onClick={nextStep} className="flex-1 flex items-center justify-center gap-1.5 bg-black text-white dark:bg-white dark:text-black px-4 py-2.5 rounded-xl text-xs font-bold hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50">
+                      <button type="button" disabled={!isValidDataDiri} onClick={nextStep} className="h-9 px-4 flex-1 flex items-center justify-center gap-1.5 bg-black text-white dark:bg-white dark:text-black rounded-xl text-xs font-bold hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shadow-2xs">
                         Selanjutnya <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -1002,14 +1057,14 @@ Terima kasih.`;
 
                 {/* MOBILE STEP 2: Detail Produk */}
                 {step === 2 && (
-                  <motion.div key="m-step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="frosted-glass-card rounded-2xl p-4 sm:p-5 space-y-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all">
-                    <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800/80">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shrink-0">
-                          <LayoutTemplate className="w-4 h-4" />
+                  <motion.div key="m-step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="frosted-glass-card rounded-2xl p-3.5 sm:p-5 space-y-3.5 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all">
+                    <div className="flex items-center justify-between pb-2.5 border-b border-zinc-100 dark:border-zinc-800/80">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shrink-0">
+                          <LayoutTemplate className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <h3 className="text-sm font-bold text-black dark:text-white leading-tight">Detail Produk</h3>
+                          <h3 className="text-xs sm:text-sm font-bold text-black dark:text-white leading-tight">Detail Produk</h3>
                           <p className="text-[10px] text-zinc-400">Langkah 2 dari 5</p>
                         </div>
                       </div>
@@ -1018,21 +1073,21 @@ Terima kasih.`;
                       </span>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       <div>
-                        <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                        <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
                           <span>Jenis Layanan</span>
                           <span className="text-[9px] font-semibold text-rose-500 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded">Wajib</span>
                         </label>
                         <button
                           type="button"
                           onClick={() => setShowServiceModal(true)}
-                          className={`${inputClassMobile} text-left flex items-center justify-between cursor-pointer group active:scale-[0.99]`}
+                          className={`${inputClassMobile} text-left flex items-center justify-between cursor-pointer group active:scale-[0.99] h-9.5 px-3`}
                         >
                           <div className="flex items-center gap-2 min-w-0 pr-1">
                             <SelectedServiceIcon className="w-3.5 h-3.5 text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors shrink-0" />
-                            <span className={`text-[11px] truncate ${formData.jenisLayanan ? "text-black dark:text-white font-bold" : "text-zinc-400"}`}>
-                              {formData.jenisLayanan || "Pilih Jenis Layanan..."}
+                            <span className={`text-xs truncate ${formData.jenisLayanan ? "text-zinc-950 dark:text-zinc-50 font-bold" : "text-zinc-400 dark:text-zinc-500 font-normal"}`}>
+                              {formData.jenisLayanan || "Pilih Jenis Layanan Desain..."}
                             </span>
                           </div>
                           <div className="flex items-center gap-1 text-[9px] font-bold text-zinc-500 group-hover:text-black dark:group-hover:text-white transition-colors shrink-0">
@@ -1044,7 +1099,7 @@ Terima kasih.`;
 
                       {formData.jenisLayanan === 'Lainnya' && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-                          <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                          <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
                             <span>Tuliskan Layanan Lainnya</span>
                             <span className="text-[9px] font-semibold text-rose-500">Wajib</span>
                           </label>
@@ -1052,49 +1107,50 @@ Terima kasih.`;
                         </motion.div>
                       )}
 
-                      <div className="grid grid-cols-2 gap-2">
+                      {/* 4 Kolom Spesifikasi Desain (Grid 2 Kolom Kompak & Proporsional) */}
+                      <div className="grid grid-cols-2 gap-2 pt-0.5">
                         <div>
-                          <label className="block text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">Tujuan Desain</label>
+                          <label className="block text-[10.5px] font-bold text-zinc-800 dark:text-zinc-200 mb-1 truncate">Tujuan Desain</label>
                           <div className="relative">
-                            <PenTool className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
-                            <FastInput type="text" name="tujuan" value={formData.tujuan} onChange={handleChange} className={inputClassMobile} placeholder="Contoh: Promosi" />
+                            <PenTool className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                            <FastInput type="text" name="tujuan" value={formData.tujuan} onChange={handleChange} className={`${inputClassMobile} pl-7.5 pr-2 py-1.5 text-[11px] font-semibold`} placeholder="Misal: Promosi" />
                           </div>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">Gaya Desain</label>
+                          <label className="block text-[10.5px] font-bold text-zinc-800 dark:text-zinc-200 mb-1 truncate">Gaya Desain</label>
                           <div className="relative">
-                            <Layers className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
-                            <FastInput type="text" name="gaya" value={formData.gaya} onChange={handleChange} className={inputClassMobile} placeholder="Contoh: Elegan" />
+                            <Layers className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                            <FastInput type="text" name="gaya" value={formData.gaya} onChange={handleChange} className={`${inputClassMobile} pl-7.5 pr-2 py-1.5 text-[11px] font-semibold`} placeholder="Misal: Elegan" />
                           </div>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">Format Ukuran</label>
+                          <label className="block text-[10.5px] font-bold text-zinc-800 dark:text-zinc-200 mb-1 truncate">Format Ukuran</label>
                           <div className="relative">
-                            <Maximize className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
-                            <FastInput type="text" name="format" value={formData.format} onChange={handleChange} className={inputClassMobile} placeholder="Contoh: 1:1" />
+                            <Maximize className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                            <FastInput type="text" name="format" value={formData.format} onChange={handleChange} className={`${inputClassMobile} pl-7.5 pr-2 py-1.5 text-[11px] font-semibold`} placeholder="Misal: 1:1 / A4" />
                           </div>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">Jumlah</label>
+                          <label className="block text-[10.5px] font-bold text-zinc-800 dark:text-zinc-200 mb-1 truncate">Jumlah Desain</label>
                           <div className="relative">
-                            <Hash className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
-                            <FastInput type="number" min="1" name="jumlah" value={formData.jumlah} onChange={handleChange} className={inputClassMobile} placeholder="Contoh: 1" />
+                            <Hash className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                            <FastInput type="number" min="1" name="jumlah" value={formData.jumlah} onChange={handleChange} className={`${inputClassMobile} pl-7.5 pr-2 py-1.5 text-[11px] font-semibold`} placeholder="Misal: 1" />
                           </div>
                         </div>
                       </div>
                     </div>
 
-                    <div className="pt-2 flex justify-between gap-2 border-t border-zinc-100 dark:border-zinc-800/60">
-                      <button type="button" onClick={prevStep} className="flex items-center justify-center gap-1 bg-zinc-200 text-black dark:bg-zinc-800 dark:text-white px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-all">
+                    <div className="pt-2 flex items-center justify-between gap-2 border-t border-zinc-100 dark:border-zinc-800/60">
+                      <button type="button" onClick={prevStep} className="h-9 px-3 flex items-center justify-center gap-1 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-xl text-xs font-bold transition-all shrink-0">
                         <ArrowLeft className="w-3.5 h-3.5" /> Sebelumnya
                       </button>
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2 flex-1 justify-end">
                         {formData.jenisLayanan && (
-                          <button type="button" onClick={() => setShowCancelPopup(true)} className="flex-1 flex items-center justify-center gap-1 bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-red-200 transition-colors">
+                          <button type="button" onClick={() => setShowCancelPopup(true)} className="h-9 px-3 flex items-center justify-center gap-1 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 border border-red-200/50 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors shrink-0">
                             Batal
                           </button>
                         )}
-                        <button type="button" disabled={!isValidDetailProduk} onClick={nextStep} className="flex-1 flex items-center justify-center gap-1.5 bg-black text-white dark:bg-white dark:text-black px-4 py-2.5 rounded-xl text-xs font-bold hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50">
+                        <button type="button" disabled={!isValidDetailProduk} onClick={nextStep} className="h-9 px-4 flex-1 flex items-center justify-center gap-1.5 bg-black text-white dark:bg-white dark:text-black rounded-xl text-xs font-bold hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shadow-2xs">
                           Selanjutnya <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -1104,14 +1160,14 @@ Terima kasih.`;
 
                 {/* MOBILE STEP 3: Waktu & Harga */}
                 {step === 3 && (
-                  <motion.div key="m-step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="frosted-glass-card rounded-2xl p-4 sm:p-5 space-y-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all">
-                    <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800/80">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shrink-0">
-                          <Calendar className="w-4 h-4" />
+                  <motion.div key="m-step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="frosted-glass-card rounded-2xl p-3.5 sm:p-5 space-y-3.5 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all">
+                    <div className="flex items-center justify-between pb-2.5 border-b border-zinc-100 dark:border-zinc-800/80">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shrink-0">
+                          <Calendar className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <h3 className="text-sm font-bold text-black dark:text-white leading-tight">Waktu & Harga</h3>
+                          <h3 className="text-xs sm:text-sm font-bold text-black dark:text-white leading-tight">Jadwal & Anggaran</h3>
                           <p className="text-[10px] text-zinc-400">Langkah 3 dari 5</p>
                         </div>
                       </div>
@@ -1120,46 +1176,50 @@ Terima kasih.`;
                       </span>
                     </div>
 
-                    <div className="space-y-3">
-                      <div>
-                        <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
-                          <span>Deadline Pengerjaan</span>
-                          <span className="text-[9px] font-semibold text-rose-500 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded">Wajib</span>
-                        </label>
-                        <div className="relative">
-                          <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
-                          <input required type="date" min={getMinDate(1)} name="deadline" value={formData.deadline} onChange={handleChange} className={inputClassMobile} />
+                    <div className="space-y-2.5">
+                      {/* Grid 2 Kolom untuk Deadline dan Budget agar memaksimalkan ruang kosong */}
+                      <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                            <span>Deadline Selesai</span>
+                            <span className="text-[9px] font-semibold text-rose-500 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded">Wajib</span>
+                          </label>
+                          <div className="relative">
+                            <Calendar className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                            <input required type="date" min={getMinDate(1)} name="deadline" value={formData.deadline} onChange={handleChange} className={`${inputClassMobile} text-[11px] font-semibold cursor-pointer`} />
+                          </div>
                         </div>
-                        {formData.deadline === getMinDate(1) && (
-                          <motion.p initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} className="text-amber-600 dark:text-amber-400 text-[10px] font-semibold mt-1.5 flex items-start gap-1 leading-tight bg-amber-50 dark:bg-amber-950/30 p-2 rounded-lg border border-amber-200/50">
-                            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /> 
-                            <span>Prioritas pengerjaan kilat 1 hari. Biaya mungkin disesuaikan.</span>
-                          </motion.p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
-                          <span>Budget / Kisaran Harga</span>
-                          <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded">Opsional</span>
-                        </label>
-                        <div className="relative">
-                          <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400" />
-                          <FastInput type="text" name="budget" value={formData.budget} onChange={handleChange} className={inputClassMobile} placeholder="Contoh: Rp 100k s/d Rp 300k" />
+                        <div>
+                          <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                            <span>Estimasi Budget</span>
+                            <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded">Opsional</span>
+                          </label>
+                          <div className="relative">
+                            <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                            <FastInput type="text" name="budget" value={formData.budget} onChange={handleChange} className={`${inputClassMobile} text-[11px] font-semibold`} placeholder="Contoh: Rp 150k" />
+                          </div>
                         </div>
                       </div>
+
+                      {formData.deadline === getMinDate(1) && (
+                        <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} className="text-amber-600 dark:text-amber-400 text-[10px] font-semibold flex items-start gap-1.5 leading-tight bg-amber-50 dark:bg-amber-950/30 p-2 rounded-xl border border-amber-200/50">
+                          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" /> 
+                          <span>Prioritas kilat 1 hari. Biaya mungkin disesuaikan dengan urgensi jadwal.</span>
+                        </motion.p>
+                      )}
                     </div>
 
-                    <div className="pt-2 flex justify-between gap-2 border-t border-zinc-100 dark:border-zinc-800/60">
-                      <button type="button" onClick={prevStep} className="flex items-center justify-center gap-1 bg-zinc-200 text-black dark:bg-zinc-800 dark:text-white px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-all">
+                    <div className="pt-2 flex items-center justify-between gap-2 border-t border-zinc-100 dark:border-zinc-800/60">
+                      <button type="button" onClick={prevStep} className="h-9 px-3 flex items-center justify-center gap-1 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-xl text-xs font-bold transition-all shrink-0">
                         <ArrowLeft className="w-3.5 h-3.5" /> Sebelumnya
                       </button>
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2 flex-1 justify-end">
                         {formData.jenisLayanan && (
-                          <button type="button" onClick={() => setShowCancelPopup(true)} className="flex-1 flex items-center justify-center gap-1 bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-red-200 transition-colors">
+                          <button type="button" onClick={() => setShowCancelPopup(true)} className="h-9 px-3 flex items-center justify-center gap-1 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 border border-red-200/50 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors shrink-0">
                             Batal
                           </button>
                         )}
-                        <button type="button" disabled={!isValidDeadline} onClick={nextStep} className="flex-1 flex items-center justify-center gap-1.5 bg-black text-white dark:bg-white dark:text-black px-4 py-2.5 rounded-xl text-xs font-bold hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50">
+                        <button type="button" disabled={!isValidDeadline} onClick={nextStep} className="h-9 px-4 flex-1 flex items-center justify-center gap-1.5 bg-black text-white dark:bg-white dark:text-black rounded-xl text-xs font-bold hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 shadow-2xs">
                           Selanjutnya <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -1169,14 +1229,14 @@ Terima kasih.`;
 
                 {/* MOBILE STEP 4: Materi & Referensi */}
                 {step === 4 && (
-                  <motion.div key="m-step4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="frosted-glass-card rounded-2xl p-4 sm:p-5 space-y-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all">
-                    <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800/80">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shrink-0">
-                          <FileText className="w-4 h-4" />
+                  <motion.div key="m-step4" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="frosted-glass-card rounded-2xl p-3.5 sm:p-5 space-y-3.5 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all">
+                    <div className="flex items-center justify-between pb-2.5 border-b border-zinc-100 dark:border-zinc-800/80">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shrink-0">
+                          <FileText className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <h3 className="text-sm font-bold text-black dark:text-white leading-tight">Materi & Lampiran</h3>
+                          <h3 className="text-xs sm:text-sm font-bold text-black dark:text-white leading-tight">Materi & Lampiran</h3>
                           <p className="text-[10px] text-zinc-400">Langkah 4 dari 5</p>
                         </div>
                       </div>
@@ -1185,45 +1245,48 @@ Terima kasih.`;
                       </span>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       <div>
-                        <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
-                          <span>Materi Klien</span>
+                        <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                          <span>Materi / Briefing Teks</span>
                           <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded">Opsional</span>
                         </label>
                         <div className="relative">
-                          <FileText className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-zinc-400" />
-                          <FastTextarea rows={3} name="materi" value={formData.materi} onChange={handleChange} className="w-full pl-8 pr-2.5 py-2 bg-zinc-50/80 dark:bg-[#0c0c0c] border border-zinc-200 dark:border-zinc-800 rounded-xl focus:ring-1 focus:ring-black dark:focus:ring-white outline-none transition-colors dark:text-white resize-y text-xs placeholder:text-zinc-400" placeholder="Tulis materi, instruksi, atau Link Drive..." />
+                          <FileText className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                          <FastTextarea rows={2.5} name="materi" value={formData.materi} onChange={handleChange} className="w-full pl-8 pr-2.5 py-2 bg-white/90 dark:bg-[#121212]/90 border border-zinc-200/90 dark:border-zinc-800 rounded-xl focus:border-black dark:focus:border-white focus:ring-1 focus:ring-black/10 outline-none transition-colors text-zinc-950 dark:text-zinc-50 resize-y text-xs font-semibold placeholder:text-zinc-400 min-h-[68px] max-h-[140px] shadow-2xs" placeholder="Tuliskan materi teks, tagline, atau link Google Drive..." />
                         </div>
                       </div>
                       <div>
-                        <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                        <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
                           <span>Upload Gambar Referensi</span>
                           <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded">Opsional</span>
                         </label>
-                        <div className="relative border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl p-3 text-center bg-zinc-50/50 dark:bg-[#0c0c0c]/50 hover:bg-zinc-50 dark:hover:bg-[#111111] transition-colors flex items-center justify-center min-h-[95px] cursor-pointer group">
+                        <div className="relative border border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl p-2.5 text-center bg-zinc-50/70 dark:bg-zinc-900/40 hover:bg-zinc-100/70 dark:hover:bg-zinc-900/80 transition-colors flex items-center justify-center min-h-[72px] cursor-pointer group">
                           <input type="file" accept="image/*" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" title="Upload Referensi" />
                           {isUploading ? (
-                            <div className="flex flex-col items-center justify-center text-zinc-500">
+                            <div className="flex flex-col items-center justify-center text-zinc-500 py-1">
                               <UploadCloud className="w-5 h-5 animate-bounce mb-1 text-black dark:text-white" />
-                              <span className="text-[10px] font-semibold text-black dark:text-white">Mengunggah...</span>
+                              <span className="text-[10px] font-semibold text-black dark:text-white">Mengunggah file...</span>
                             </div>
                           ) : formData.referensiUrl ? (
-                            <div className="flex flex-col items-center justify-center relative z-0">
-                              <div className="relative mb-1">
-                                <div className="w-14 h-14 rounded-xl overflow-hidden border border-emerald-500 bg-zinc-100 dark:bg-zinc-800 shadow-xs">
+                            <div className="flex items-center justify-center gap-3 relative z-0 py-1">
+                              <div className="relative">
+                                <div className="w-12 h-12 rounded-lg overflow-hidden border border-emerald-500 bg-zinc-100 dark:bg-zinc-800 shadow-2xs">
                                   <img src={formData.referensiUrl} alt="Referensi" className="w-full h-full object-cover" />
                                 </div>
                                 <div className="absolute -top-1.5 -right-1.5 bg-emerald-500 rounded-full p-0.5 shadow-md border border-white dark:border-zinc-900">
-                                  <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                                  <CheckCircle2 className="w-3 h-3 text-white" />
                                 </div>
                               </div>
-                              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">File Terpasang</span>
+                              <div className="text-left">
+                                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 block">File Terpasang</span>
+                                <span className="text-[9px] text-zinc-400">Ketuk untuk ganti gambar</span>
+                              </div>
                             </div>
                           ) : (
-                            <div className="flex flex-col items-center justify-center text-zinc-500">
-                              <UploadCloud className="w-5 h-5 mb-1 text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors" />
-                              <span className="text-[10px] font-bold text-black dark:text-white">Ketuk untuk Pilih Gambar</span>
+                            <div className="flex flex-col items-center justify-center text-zinc-500 py-1">
+                              <UploadCloud className="w-4 h-4 mb-0.5 text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors" />
+                              <span className="text-[10.5px] font-bold text-black dark:text-white">Pilih Gambar Referensi</span>
                               <span className="text-[8px] text-zinc-400 mt-0.5">PNG, JPG, JPEG (Maks. 5MB)</span>
                             </div>
                           )}
@@ -1231,17 +1294,17 @@ Terima kasih.`;
                       </div>
                     </div>
 
-                    <div className="pt-2 flex justify-between gap-2 border-t border-zinc-100 dark:border-zinc-800/60">
-                      <button type="button" onClick={prevStep} className="flex items-center justify-center gap-1 bg-zinc-200 text-black dark:bg-zinc-800 dark:text-white px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-all">
+                    <div className="pt-2 flex items-center justify-between gap-2 border-t border-zinc-100 dark:border-zinc-800/60">
+                      <button type="button" onClick={prevStep} className="h-9 px-3 flex items-center justify-center gap-1 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-xl text-xs font-bold transition-all shrink-0">
                         <ArrowLeft className="w-3.5 h-3.5" /> Sebelumnya
                       </button>
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2 flex-1 justify-end">
                         {formData.jenisLayanan && (
-                          <button type="button" onClick={() => setShowCancelPopup(true)} className="flex-1 flex items-center justify-center gap-1 bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-red-200 transition-colors">
+                          <button type="button" onClick={() => setShowCancelPopup(true)} className="h-9 px-3 flex items-center justify-center gap-1 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400 border border-red-200/50 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors shrink-0">
                             Batal
                           </button>
                         )}
-                        <button type="button" onClick={nextStep} className="flex-1 flex items-center justify-center gap-1.5 bg-black text-white dark:bg-white dark:text-black px-4 py-2.5 rounded-xl text-xs font-bold hover:scale-[1.02] active:scale-95 transition-all">
+                        <button type="button" onClick={nextStep} className="h-9 px-4 flex-1 flex items-center justify-center gap-1.5 bg-black text-white dark:bg-white dark:text-black rounded-xl text-xs font-bold hover:opacity-90 active:scale-95 transition-all shadow-2xs">
                           Selanjutnya <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -1251,14 +1314,14 @@ Terima kasih.`;
 
                 {/* MOBILE STEP 5: Konfirmasi Akhir */}
                 {step === 5 && (
-                  <motion.div key="m-step5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="frosted-glass-card rounded-2xl p-4 sm:p-5 shadow-xs space-y-4 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all">
-                    <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800/80">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shrink-0">
-                          <Wallet className="w-4 h-4" />
+                  <motion.div key="m-step5" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="frosted-glass-card rounded-2xl p-3.5 sm:p-5 shadow-xs space-y-3.5 hover:border-zinc-300 dark:hover:border-zinc-600 transition-all">
+                    <div className="flex items-center justify-between pb-2.5 border-b border-zinc-100 dark:border-zinc-800/80">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 flex items-center justify-center text-black dark:text-white shrink-0">
+                          <Wallet className="w-3.5 h-3.5" />
                         </div>
                         <div>
-                          <h3 className="text-sm font-bold text-black dark:text-white leading-tight">Konfirmasi Akhir</h3>
+                          <h3 className="text-xs sm:text-sm font-bold text-black dark:text-white leading-tight">Konfirmasi & Biaya</h3>
                           <p className="text-[10px] text-zinc-400">Langkah 5 dari 5</p>
                         </div>
                       </div>
@@ -1267,25 +1330,25 @@ Terima kasih.`;
                       </span>
                     </div>
 
-                    <div className="space-y-3">
-                      {/* Tombol Pembayaran */}
-                      <button type="button" onClick={() => setShowPaymentModal(true)} className="w-full flex flex-col gap-2 bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-900/40 dark:hover:bg-zinc-900/80 border border-zinc-200/80 dark:border-zinc-800 p-3 rounded-xl transition-colors group text-left">
+                    <div className="space-y-2.5">
+                      {/* Tombol Pembayaran Resmi */}
+                      <button type="button" onClick={() => setShowPaymentModal(true)} className="w-full flex flex-col gap-1.5 bg-zinc-50/90 hover:bg-zinc-100 dark:bg-zinc-900/50 dark:hover:bg-zinc-900/80 border border-zinc-200/80 dark:border-zinc-800 p-2.5 rounded-xl transition-colors group text-left shadow-2xs">
                         <div className="flex items-center justify-between w-full">
-                          <div className="flex items-center gap-2.5">
-                            <div className="bg-blue-500/10 p-1.5 rounded-lg text-blue-600 dark:text-blue-400">
-                              <CreditCard className="w-4 h-4" />
+                          <div className="flex items-center gap-2">
+                            <div className="bg-blue-500/10 p-1.5 rounded-lg text-blue-600 dark:text-blue-400 shrink-0">
+                              <CreditCard className="w-3.5 h-3.5" />
                             </div>
                             <div className="text-left">
                               <span className="block text-xs font-bold text-black dark:text-white leading-tight">Metode Pembayaran Resmi</span>
-                              <span className="block text-[10px] text-zinc-500 dark:text-zinc-400 leading-tight">Transfer Bank & E-Wallet (7 Opsi)</span>
+                              <span className="block text-[10px] text-zinc-500 dark:text-zinc-400 leading-tight">Transfer Bank BRI & 5 Dompet Digital</span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                          <div className="flex items-center gap-1 text-[10px] font-bold text-blue-600 dark:text-blue-400 shrink-0">
                             <span>Detail</span>
                             <ArrowRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform shrink-0" />
                           </div>
                         </div>
-                        <div className="pt-1.5 border-t border-zinc-200/50 dark:border-zinc-800 flex items-center flex-wrap gap-1.5 text-[9px]">
+                        <div className="pt-1.5 border-t border-zinc-200/50 dark:border-zinc-800/80 flex items-center flex-wrap gap-1.5 text-[9px]">
                           <span className="font-bold text-[#00529C] dark:text-blue-400">BRI</span>
                           <span className="w-0.5 h-0.5 rounded-full bg-zinc-300 dark:bg-zinc-700"></span>
                           <span className="font-bold text-[#118EEA] dark:text-sky-400">DANA</span>
@@ -1293,13 +1356,15 @@ Terima kasih.`;
                           <span className="font-bold text-[#00AED6] dark:text-cyan-400">GoPay</span>
                           <span className="w-0.5 h-0.5 rounded-full bg-zinc-300 dark:bg-zinc-700"></span>
                           <span className="font-bold text-[#4C2A86] dark:text-purple-400">OVO</span>
+                          <span className="w-0.5 h-0.5 rounded-full bg-zinc-300 dark:bg-zinc-700"></span>
+                          <span className="font-bold text-[#EE4D2D] dark:text-orange-400">ShopeePay</span>
                         </div>
                       </button>
 
                       {/* Estimasi Biaya */}
-                      <div className="bg-zinc-50 dark:bg-[#0c0c0c] rounded-xl p-3 border border-zinc-200/80 dark:border-zinc-800">
-                        <h5 className="text-xs font-bold text-black dark:text-white mb-2 uppercase tracking-wider">Estimasi Harga Sistem</h5>
-                        <div className="space-y-1 mb-2">
+                      <div className="bg-zinc-50/90 dark:bg-[#0c0c0c]/80 rounded-xl p-2.5 border border-zinc-200/80 dark:border-zinc-800">
+                        <h5 className="text-[10px] font-bold text-black dark:text-white mb-1.5 uppercase tracking-wider">Estimasi Harga Sistem</h5>
+                        <div className="space-y-1 mb-1.5">
                           {getPriceBreakdown().breakdown.map((item, idx) => (
                             <div key={idx} className="flex justify-between items-center text-[10px] text-zinc-600 dark:text-zinc-400">
                               <span>{item.label}</span>
@@ -1310,32 +1375,32 @@ Terima kasih.`;
                             <div className="text-[10px] text-zinc-400 italic">Pilih jenis layanan untuk melihat estimasi...</div>
                           )}
                         </div>
-                        <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
+                        <div className="pt-1.5 border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
                           <span className="text-xs font-bold text-black dark:text-white">Total Estimasi</span>
                           <span className={`text-xs font-black ${!formData.deadline ? 'text-zinc-400 dark:text-zinc-500 italic' : 'text-blue-600 dark:text-blue-400'}`}>
                             {!formData.deadline ? "Pilih deadline" : formatIDR(getPriceBreakdown().total)}
                           </span>
                         </div>
-                        <p className="text-[8px] text-zinc-400 mt-1.5 italic">*Harga akhir dikonfirmasi kembali saat diskusi di WhatsApp.</p>
+                        <p className="text-[8px] text-zinc-400 mt-1 italic">*Harga akhir disepakati saat konsultasi di WhatsApp.</p>
                       </div>
                       
                       <div>
-                        <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                        <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
                           <span>Catatan Tambahan</span>
                           <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded">Opsional</span>
                         </label>
                         <div className="relative">
-                          <FileEdit className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-zinc-400" />
-                          <FastTextarea rows={2} name="catatan" value={formData.catatan} onChange={handleChange} className="w-full pl-8 pr-2.5 py-2 bg-zinc-50/80 dark:bg-[#0c0c0c] border border-zinc-200 dark:border-zinc-800 rounded-xl focus:ring-1 focus:ring-black dark:focus:ring-white outline-none transition-colors dark:text-white resize-y text-xs placeholder:text-zinc-400" placeholder="Request khusus?" />
+                          <FileEdit className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                          <FastTextarea rows={2} name="catatan" value={formData.catatan} onChange={handleChange} className="w-full pl-8 pr-2.5 py-1.5 bg-white/90 dark:bg-[#121212]/90 border border-zinc-200/90 dark:border-zinc-800 rounded-xl focus:border-black dark:focus:border-white focus:ring-1 focus:ring-black/10 outline-none transition-colors text-zinc-950 dark:text-zinc-50 resize-y text-xs font-semibold placeholder:text-zinc-400 shadow-2xs" placeholder="Request khusus atau preferensi warna?" />
                         </div>
                       </div>
                     </div>
 
-                    <div className="pt-2 flex flex-row justify-between gap-2 border-t border-zinc-100 dark:border-zinc-800/60">
-                      <button type="button" onClick={prevStep} className="flex justify-center items-center gap-1 bg-zinc-200 text-black dark:bg-zinc-800 dark:text-white px-3 py-2.5 rounded-xl text-xs font-bold hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-all">
+                    <div className="pt-2 flex items-center justify-between gap-2 border-t border-zinc-100 dark:border-zinc-800/60">
+                      <button type="button" onClick={prevStep} className="h-9.5 px-3.5 flex items-center justify-center gap-1 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-xl text-xs font-bold transition-all shrink-0">
                         <ArrowLeft className="w-3.5 h-3.5" /> Kembali
                       </button>
-                      <button type="submit" className="flex-1 flex justify-center items-center gap-1.5 bg-[#25D366] text-white px-4 py-2.5 rounded-xl text-xs font-bold hover:scale-[1.02] active:scale-95 transition-all shadow-md shadow-[#25D366]/20">
+                      <button type="submit" className="h-9.5 px-4 flex-1 flex items-center justify-center gap-1.5 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl text-xs font-bold active:scale-95 transition-all shadow-md shadow-[#25D366]/20">
                         <Send className="w-3.5 h-3.5" /> Lanjutkan di WhatsApp
                       </button>
                     </div>
@@ -1362,7 +1427,7 @@ Terima kasih.`;
                   Poster & Paket Promosi Pilihan
                 </h3>
                 <p className="text-xs md:text-sm text-zinc-500 dark:text-zinc-400 mt-1 max-w-xl">
-                  Pilih penawaran terbaik di bawah ini untuk proyek desain grafis, branding, atau template Anda.
+                  Pilih penawaran terbaik di bawah ini untuk proyek desain grafis, branding, atau kebutuhan visual Anda.
                 </p>
               </div>
               <div className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 shrink-0">
@@ -1633,7 +1698,7 @@ Terima kasih.`;
       />
       
       {/* Direct Order WhatsApp Banner */}
-      <div className="w-full max-w-[1920px] mx-auto px-2 md:px-8 mt-12 md:mt-24">
+      <div className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 mt-12 md:mt-24">
         <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800/50 rounded-2xl md:rounded-[2.5rem] p-6 md:p-12 lg:p-20 flex flex-col lg:flex-row items-center justify-between gap-6 md:gap-12 lg:gap-16 text-center lg:text-left relative overflow-hidden">
           <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-green-500/20 dark:bg-green-500/10 blur-[50px] rounded-full pointer-events-none"></div>
           <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-40 h-40 bg-emerald-500/20 dark:bg-emerald-500/10 blur-[50px] rounded-full pointer-events-none"></div>

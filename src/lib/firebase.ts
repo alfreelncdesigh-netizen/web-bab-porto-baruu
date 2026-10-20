@@ -1,7 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore, initializeFirestore, memoryLocalCache } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import { getAuth, initializeAuth, browserLocalPersistence, inMemoryPersistence, browserPopupRedirectResolver, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, initializeAuth, browserLocalPersistence, inMemoryPersistence, browserPopupRedirectResolver, signInWithPopup, signInWithCredential, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -11,8 +11,14 @@ const dbId = (firebaseConfig as any).firestoreDatabaseId;
 let dbInstance;
 try {
   dbInstance = dbId 
-    ? initializeFirestore(app, { localCache: memoryLocalCache() }, dbId) 
-    : initializeFirestore(app, { localCache: memoryLocalCache() });
+    ? initializeFirestore(app, { 
+        localCache: memoryLocalCache(),
+        experimentalAutoDetectLongPolling: true 
+      }, dbId) 
+    : initializeFirestore(app, { 
+        localCache: memoryLocalCache(),
+        experimentalAutoDetectLongPolling: true 
+      });
 } catch (e) {
   dbInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
 }
@@ -66,6 +72,11 @@ export const googleSignIn = async (): Promise<{ accessToken: string } | null> =>
   return new Promise((resolve, reject) => {
     try {
       isSigningIn = true;
+      if (!(window as any).google?.accounts?.oauth2) {
+        isSigningIn = false;
+        reject(new Error("Google Identity Services belum siap atau diblokir"));
+        return;
+      }
       const client = (window as any).google.accounts.oauth2.initTokenClient({
         client_id: (firebaseConfig as any).oAuthClientId || "661057751649-294hn0suj3rkiqqtnn6nbpcqbpij00aj.apps.googleusercontent.com",
         scope: 'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.activity',
@@ -76,7 +87,12 @@ export const googleSignIn = async (): Promise<{ accessToken: string } | null> =>
             reject(response.error);
           } else {
             cachedAccessToken = response.access_token;
-            signInWithPopup(auth, provider).catch(err => console.log('Firebase Auth error (ignored):', err));
+            try {
+              const credential = GoogleAuthProvider.credential(null, response.access_token);
+              signInWithCredential(auth, credential).catch(() => {});
+            } catch (credErr) {
+              // Ignore credential conversion if not needed
+            }
             resolve({ accessToken: response.access_token });
           }
         },

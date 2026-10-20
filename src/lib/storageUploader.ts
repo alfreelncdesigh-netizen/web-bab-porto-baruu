@@ -1,6 +1,7 @@
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage, ensureFreshAuthToken } from './firebase';
 import { compressImageToWebP } from './imageCompressor';
+import { renderPdfFirstPageToImage } from './pdfHelper';
 
 /**
  * Universal timeout wrapper
@@ -168,7 +169,25 @@ export async function compressAndUpload(
   timeoutMs = 15000,
   onFinish?: () => void
 ): Promise<string> {
-  // Kompresi di sisi client
+  // Dukungan Format PDF: Render halaman 1 PDF ke format gambar WebP beresolusi tinggi
+  if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+    try {
+      const rendered = await renderPdfFirstPageToImage(file);
+      if (rendered) {
+        const url = await uploadImageToStorage(rendered.blob, rendered.name, undefined, folder, timeoutMs);
+        if (onFinish) onFinish();
+        return url;
+      }
+    } catch (e) {
+      console.warn("PDF rasterization skipped, uploading raw PDF:", e);
+    }
+    // Jika tidak dapat di-raster, unggah file PDF langsung
+    const url = await uploadImageToStorage(file, file.name, undefined, folder, timeoutMs);
+    if (onFinish) onFinish();
+    return url;
+  }
+
+  // Kompresi di sisi client untuk file gambar PNG / JPG / WebP
   let blobToUpload: Blob;
   if (file.type.startsWith('image/') && !file.type.includes('svg')) {
     const compressed = await compressImageToWebP(file, maxWidth, quality);

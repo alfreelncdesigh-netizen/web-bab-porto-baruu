@@ -4,7 +4,10 @@ import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { SiteSettings, defaultSettings, HeroBanner } from '../data/settings';
 import { getStoredSettings, saveStoredSettings, cleanSettings } from '../lib/contentStorage';
+import { uploadImageToStorage } from '../lib/storageUploader';
 import { Loader2, Check, Upload, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { renderPdfFirstPageToImage } from '../lib/pdfHelper';
+import { resolveImageUrl } from '../lib/imageResolver';
 
 export default function SettingsAdmin() {
  const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
@@ -15,20 +18,48 @@ export default function SettingsAdmin() {
 
  useEffect(() => {
   const fetchSettings = async () => {
-   try {
-    const docRef = doc(db, 'settings', 'global');
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-     const cleaned = cleanSettings(docSnap.data() as Partial<SiteSettings>);
-     const merged = { ...defaultSettings, ...cleaned };
-     setSettings(merged);
-     try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+    // 1. Initial dari local storage
+    const currentLocal = getStoredSettings();
+    setSettings(currentLocal);
+
+    // 2. Cek sinkronisasi server disk
+    try {
+      const serverRes = await fetch('/api/settings');
+      if (serverRes.ok) {
+        const serverData = await serverRes.json();
+        if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
+          const serverSavedAt = serverData.savedAt || 0;
+          const localSavedAt = currentLocal.savedAt || 0;
+          if (serverSavedAt >= localSavedAt) {
+            const merged = { ...defaultSettings, ...cleanSettings(serverData) };
+            setSettings(merged);
+            try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+          }
+        }
+      }
+    } catch {}
+
+    // 3. Cek Firestore (hanya timpa jika Firestore memiliki data tersimpan yang lebih baru)
+    try {
+      const docRef = doc(db, 'settings', 'global');
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const cloudData = docSnap.data() as Partial<SiteSettings>;
+        const local = getStoredSettings();
+        const cloudSavedAt = cloudData?.savedAt || 0;
+        const localSavedAt = local?.savedAt || 0;
+        if (cloudSavedAt >= localSavedAt) {
+          const cleaned = cleanSettings(cloudData);
+          const merged = { ...defaultSettings, ...cleaned };
+          setSettings(merged);
+          try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+        }
+      }
+    } catch (e) {
+      console.warn("Settings fetch error (using stored):", e);
+    } finally {
+      setLoading(false);
     }
-   } catch (e) {
-    console.warn("Settings fetch error (using stored):", e);
-   } finally {
-    setLoading(false);
-   }
   };
   fetchSettings();
  }, []);
@@ -42,162 +73,257 @@ export default function SettingsAdmin() {
   e.preventDefault();
   setSaving(true);
   
-  // 1. Tampilkan notifikasi di atas layar seketika
-  showToast('Perubahan berhasil disimpan!');
-
-  // 2. Simpan seketika di storage & jalankan sync Cloud di latar belakang
-  // Batasi visual loading maks 180ms agar proses sangat cepat dan tidak ada loading lama
   try {
-   await Promise.race([
-    saveStoredSettings(settings),
-    new Promise((resolve) => setTimeout(resolve, 180))
-   ]);
-  } catch (err) {
+   const success = await saveStoredSettings(settings);
+   // Kirim event broadcast agar seluruh halaman website seketika terupdate tanpa refresh
+   window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: settings }));
+   if (success) {
+     showToast('Perubahan berhasil disimpan & langsung tampil di website!');
+   } else {
+     showToast('Perubahan disimpan di penyimpanan lokal & server.', 'success');
+   }
+  } catch (err: any) {
    console.warn("Save error:", err);
+   showToast(err?.message || 'Gagal menyimpan perubahan', 'error');
   } finally {
    setSaving(false);
   }
  };
 
- const compressImage = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-   const reader = new FileReader();
-   reader.readAsDataURL(file);
-   reader.onload = (event) => {
-    const img = new Image();
-    img.src = event.target?.result as string;
-    img.onload = () => {
-     const canvas = document.createElement('canvas');
-     const MAX_WIDTH = 1200;
-     const MAX_HEIGHT = 1200;
-     let width = img.width;
-     let height = img.height;
+  const compressImage = async (file: File): Promise<string> => {
+    // Dukungan format PDF
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      const rendered = await renderPdfFirstPageToImage(file);
+      if (rendered) return rendered.dataUrl;
+    }
 
-     if (width > height) {
-      if (width > MAX_WIDTH) {
-       height *= MAX_WIDTH / width;
-       width = MAX_WIDTH;
-      }
-     } else {
-      if (height > MAX_HEIGHT) {
-       width *= MAX_HEIGHT / height;
-       height = MAX_HEIGHT;
-      }
-     }
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1400;
+          const MAX_HEIGHT = 1400;
+          let width = img.width;
+          let height = img.height;
 
-     canvas.width = width;
-     canvas.height = height;
-     const ctx = canvas.getContext('2d');
-     ctx?.drawImage(img, 0, 0, width, height);
-     resolve(canvas.toDataURL('image/jpeg', 0.6));
-    };
-    img.onerror = (error) => reject(error);
-   };
-   reader.onerror = (error) => reject(error);
-  });
- };
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
+          }
 
- const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'aboutImage' | 'heroImage' | 'promoWidgetImage' = 'aboutImage') => {
-  if (!e.target.files || e.target.files.length === 0) return;
-  const fileToUpload = e.target.files[0];
-  setUploading(true);
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(img.src);
 
-  try {
-   // Always compress first to save space, Firestore limit is 1MB
-   const compressedBase64 = await compressImage(fileToUpload);
-   setSettings({ ...settings, [field]: compressedBase64 });
-   showToast("Gambar berhasil diubah (Offline/Base64)");
-  } catch (err: any) {
-   console.warn(err);
-   showToast("Gagal memproses gambar", "error");
-  } finally {
-   setUploading(false);
-  }
- };
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
 
- const compressBannerImage = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-   const reader = new FileReader();
-   reader.readAsDataURL(file);
-   reader.onload = (event) => {
-    const img = new Image();
-    img.src = event.target?.result as string;
-    img.onload = () => {
-     const canvas = document.createElement('canvas');
-     const MAX_WIDTH = 1500;
-     let width = img.width;
-     let height = img.height;
-     if (width > MAX_WIDTH) {
-      height = Math.round((height * MAX_WIDTH) / width);
-      width = MAX_WIDTH;
-     }
-     canvas.width = width;
-     canvas.height = height;
-     const ctx = canvas.getContext('2d');
-     ctx?.drawImage(img, 0, 0, width, height);
-     resolve(canvas.toDataURL('image/jpeg', 0.75));
-    };
-    img.onerror = (error) => reject(error);
-   };
-   reader.onerror = (error) => reject(error);
-  });
- };
-
- const handleAddBanner = () => {
-  const newBanner: HeroBanner = {
-   id: `banner-${Date.now()}`,
-   image: '',
-   title: '',
-   subtitle: '',
-   badge: 'PROMO',
-   link: '#portfolio',
-   linkText: 'Lihat Promo',
-   active: true,
-   overlayText: false,
+          // Pertahankan transparansi latar belakang (PNG / WebP)
+          const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+          if (isPng) {
+            try {
+              resolve(canvas.toDataURL('image/png'));
+              return;
+            } catch {}
+          }
+          try {
+            resolve(canvas.toDataURL('image/webp', 0.85));
+          } catch {
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+          }
+        };
+        img.onerror = (error) => reject(error);
+      };
+      reader.onerror = (error) => reject(error);
+    });
   };
-  const list = settings.heroBanners ? [...settings.heroBanners] : [];
-  setSettings({ ...settings, heroBanners: [newBanner, ...list] });
-  showToast('Banner baru ditambahkan. Klik Simpan Perubahan jika sudah selesai.');
- };
 
- const handleUpdateBanner = (id: string, updates: Partial<HeroBanner>) => {
-  const updated = (settings.heroBanners || []).map((b) =>
-   b.id === id ? { ...b, ...updates } : b
-  );
-  setSettings({ ...settings, heroBanners: updated });
- };
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, field: 'aboutImage' | 'heroImage' | 'promoWidgetImage' = 'aboutImage') => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const fileToUpload = e.target.files[0];
+    setUploading(true);
 
- const handleDeleteBanner = (id: string) => {
-  const updated = (settings.heroBanners || []).filter((b) => b.id !== id);
-  setSettings({ ...settings, heroBanners: updated });
-  showToast('Banner dihapus.');
- };
+    try {
+      let finalUrl = '';
+      // Jika file PDF, konversi ke gambar resolusi tinggi
+      if (fileToUpload.type === 'application/pdf' || fileToUpload.name.toLowerCase().endsWith('.pdf')) {
+        const rendered = await renderPdfFirstPageToImage(fileToUpload);
+        if (rendered) {
+          finalUrl = await uploadImageToStorage(rendered.blob, rendered.name, undefined, 'settings');
+        }
+      }
 
- const handleMoveBanner = (index: number, direction: 'up' | 'down') => {
-  const banners = [...(settings.heroBanners || [])];
-  const targetIndex = direction === 'up' ? index - 1 : index + 1;
-  if (targetIndex < 0 || targetIndex >= banners.length) return;
-  const temp = banners[index];
-  banners[index] = banners[targetIndex];
-  banners[targetIndex] = temp;
-  setSettings({ ...settings, heroBanners: banners });
- };
+      if (!finalUrl) {
+        finalUrl = await uploadImageToStorage(fileToUpload, undefined, undefined, 'settings');
+      }
 
- const handleBannerImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, bannerId: string) => {
-  if (!e.target.files || e.target.files.length === 0) return;
-  const fileToUpload = e.target.files[0];
-  setUploading(true);
-  try {
-   const compressed = await compressBannerImage(fileToUpload);
-   handleUpdateBanner(bannerId, { image: compressed });
-   showToast("Gambar banner berhasil diunggah!");
-  } catch (err: any) {
-   console.warn(err);
-   showToast("Gagal memproses gambar banner", "error");
-  } finally {
-   setUploading(false);
-  }
- };
+      const updated = { ...settings, [field]: finalUrl };
+      setSettings(updated);
+      // Auto-save instan dan aman ke database, server, dan local storage
+      await saveStoredSettings(updated);
+      showToast("Gambar berhasil diunggah & tersimpan permanen!");
+    } catch (err: any) {
+      try {
+        const compressed = await compressImage(fileToUpload);
+        const updated = { ...settings, [field]: compressed };
+        setSettings(updated);
+        await saveStoredSettings(updated);
+        showToast("Gambar disimpan (Lokal & Terproteksi)");
+      } catch {
+        console.warn(err);
+        showToast("Gagal memproses gambar", "error");
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const compressBannerImage = async (file: File): Promise<string> => {
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      const rendered = await renderPdfFirstPageToImage(file);
+      if (rendered) return rendered.dataUrl;
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1800;
+          let width = img.width;
+          let height = img.height;
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(img.src);
+
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // Pertahankan transparansi jika PNG
+          const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+          if (isPng) {
+            try {
+              resolve(canvas.toDataURL('image/png'));
+              return;
+            } catch {}
+          }
+          try {
+            resolve(canvas.toDataURL('image/webp', 0.85));
+          } catch {
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+          }
+        };
+        img.onerror = (error) => reject(error);
+      };
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
+  const handleAddBanner = async () => {
+    const newBanner: HeroBanner = {
+      id: `banner-${Date.now()}`,
+      image: '',
+      title: '',
+      subtitle: '',
+      badge: 'PROMO',
+      link: '#portfolio',
+      linkText: '',
+      active: true,
+      overlayText: false,
+    };
+    const list = settings.heroBanners ? [...settings.heroBanners] : [];
+    const updatedBanners = [newBanner, ...list];
+    const updated = { ...settings, heroBanners: updatedBanners };
+    setSettings(updated);
+    await saveStoredSettings(updated);
+    showToast('Banner baru ditambahkan & tersimpan.');
+  };
+
+  const handleUpdateBanner = async (id: string, updates: Partial<HeroBanner>) => {
+    const updatedBanners = (settings.heroBanners || []).map((b) =>
+      b.id === id ? { ...b, ...updates } : b
+    );
+    const updated = { ...settings, heroBanners: updatedBanners };
+    setSettings(updated);
+    // Simpan otomatis pembaruan banner
+    await saveStoredSettings(updated);
+  };
+
+  const handleDeleteBanner = async (id: string) => {
+    const updatedBanners = (settings.heroBanners || []).filter((b) => b.id !== id);
+    const updated = { ...settings, heroBanners: updatedBanners };
+    setSettings(updated);
+    await saveStoredSettings(updated);
+    showToast('Banner dihapus secara permanen.');
+  };
+
+  const handleMoveBanner = async (index: number, direction: 'up' | 'down') => {
+    const banners = [...(settings.heroBanners || [])];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= banners.length) return;
+    const temp = banners[index];
+    banners[index] = banners[targetIndex];
+    banners[targetIndex] = temp;
+    const updated = { ...settings, heroBanners: banners };
+    setSettings(updated);
+    await saveStoredSettings(updated);
+  };
+
+  const handleBannerImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, bannerId: string) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const fileToUpload = e.target.files[0];
+    setUploading(true);
+
+    try {
+      let finalUrl = '';
+      if (fileToUpload.type === 'application/pdf' || fileToUpload.name.toLowerCase().endsWith('.pdf')) {
+        const rendered = await renderPdfFirstPageToImage(fileToUpload);
+        if (rendered) {
+          finalUrl = await uploadImageToStorage(rendered.blob, rendered.name, undefined, 'banners');
+        }
+      }
+
+      if (!finalUrl) {
+        finalUrl = await uploadImageToStorage(fileToUpload, undefined, undefined, 'banners');
+      }
+
+      await handleUpdateBanner(bannerId, { image: finalUrl });
+      showToast("Gambar banner berhasil diunggah & tersimpan permanen!");
+    } catch (err: any) {
+      try {
+        const compressed = await compressBannerImage(fileToUpload);
+        await handleUpdateBanner(bannerId, { image: compressed });
+        showToast("Gambar banner disimpan (Lokal & Terproteksi)");
+      } catch {
+        console.warn(err);
+        showToast("Gagal memproses gambar banner", "error");
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
 
  if (loading) {
   return <div className="p-8 text-center text-black">Memuat pengaturan...</div>;
@@ -248,9 +374,9 @@ export default function SettingsAdmin() {
         </label>
         <input 
          type="text" 
-         value={settings.heroBadge ?? "DESAINER GRAFIS & VISUAL"} 
+         value={settings.heroBadge ?? "PORTFOLIO DESIGN"} 
          onChange={e => setSettings({...settings, heroBadge: e.target.value})} 
-         placeholder="DESAINER GRAFIS & VISUAL"
+         placeholder="PORTFOLIO DESIGN"
          className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-4 py-3 text-sm focus:border-black dark:focus:border-white outline-none rounded-2xl text-black dark:text-white uppercase tracking-wider font-semibold" 
         />
        </div>
@@ -282,36 +408,56 @@ export default function SettingsAdmin() {
       </div>
       
       <div>
-       <label className="text-xs font-medium text-black dark:text-white mb-2 block flex items-center justify-between">
-        <span>Gambar Background Beranda (Full-Width)</span>
-        <span className="text-[10px] text-zinc-400 font-normal">Rasio Landscape 16:9</span>
+       <label className="text-xs font-semibold text-black dark:text-white mb-2 block flex items-center justify-between">
+        <span>Foto Utama Beranda / Desainer (Di Samping Judul)</span>
+        <span className="text-[10px] text-zinc-400 font-normal">Format PNG, JPG, WebP, PDF</span>
        </label>
-       <div className="relative w-full aspect-[16/9] bg-zinc-100 dark:bg-zinc-900 border-2 border-dashed border-zinc-300 dark:border-zinc-800/50 hover:border-black dark:hover:border-white transition-colors rounded-2xl overflow-hidden flex flex-col items-center justify-center group cursor-pointer shadow-xs">
-        <input type="file" accept="image/png, image/jpeg, image/webp" onChange={(e) => handleImageUpload(e, 'heroImage')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" disabled={uploading} />
+       <div className="relative w-full aspect-[4/3] sm:aspect-[1/1] max-h-[300px] bg-zinc-100 dark:bg-zinc-900 border-2 border-dashed border-zinc-300 dark:border-zinc-800/60 hover:border-black dark:hover:border-white transition-colors rounded-2xl overflow-hidden flex flex-col items-center justify-center group cursor-pointer shadow-xs">
+        <input type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/svg+xml, application/pdf, .pdf" onChange={(e) => handleImageUpload(e, 'heroImage')} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" disabled={uploading} />
         {uploading ? (
          <div className="flex flex-col items-center text-black dark:text-white">
           <Loader2 size={32} className="animate-spin mb-3" />
-          <span className="text-xs">Mengompres & memproses gambar...</span>
+          <span className="text-xs font-medium">Mengompres & memproses gambar...</span>
          </div>
         ) : settings.heroImage ? (
          <>
-          <img src={settings.heroImage} alt="Hero" className="w-full h-full object-cover object-top absolute inset-0" />
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center z-0">
+          <img src={resolveImageUrl(settings.heroImage)} alt="Foto Utama Beranda" className="w-full h-full object-contain object-center absolute inset-0 p-2 select-none" />
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center z-0">
            <Upload size={24} className="text-white mb-2" />
-           <span className="text-white text-xs font-semibold">Ganti Gambar Hero</span>
-           <span className="text-white/70 text-[10px] mt-1">Disarankan resolusi Full HD (min 1920x1080px)</span>
+           <span className="text-white text-xs font-semibold">Ganti Gambar Utama</span>
+           <span className="text-white/70 text-[10px] mt-1">Klik atau seret gambar baru di sini</span>
           </div>
          </>
         ) : (
          <div className="flex flex-col items-center text-black dark:text-white text-center p-4">
           <Upload size={28} className="mb-3 text-zinc-400" />
-          <span className="text-xs font-semibold mb-1">Unggah Gambar Background Hero</span>
-          <span className="text-[10px] text-zinc-400">Format JPG, PNG, WEBP (Landscape 16:9 disarankan)</span>
+          <span className="text-xs font-semibold mb-1">Unggah Foto Utama Beranda</span>
+          <span className="text-[10px] text-zinc-400">Mendukung PNG transparan, JPG, WebP, & PDF</span>
          </div>
         )}
        </div>
-       <p className="text-[10px] text-zinc-500 mt-2">
-        Gambar ini memenuhi latar belakang Hero Section di desktop dan mobile dengan layer gradasi halus.
+
+       <div className="mt-2.5 flex items-center gap-2">
+        <input 
+         type="text" 
+         value={settings.heroImage || ''} 
+         onChange={(e) => setSettings({ ...settings, heroImage: e.target.value })} 
+         placeholder="URL gambar (opsional atau hasil unggahan)" 
+         className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs rounded-xl text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all font-mono"
+        />
+        {settings.heroImage && (
+         <button
+          type="button"
+          onClick={() => setSettings({ ...settings, heroImage: '' })}
+          title="Hapus gambar"
+          className="p-2 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-900/40 transition-colors shrink-0"
+         >
+          <Trash2 size={14} />
+         </button>
+        )}
+       </div>
+       <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1.5">
+        Foto ini tampil di samping judul pada layar desktop dan di bawah judul pada layar mobile.
        </p>
       </div>
      </div>
@@ -435,7 +581,7 @@ export default function SettingsAdmin() {
             <div className="relative w-full aspect-[3/1] bg-zinc-100 dark:bg-zinc-900 border-2 border-dashed border-zinc-300 dark:border-zinc-800 hover:border-black dark:hover:border-white transition-all rounded-xl sm:rounded-2xl overflow-hidden flex flex-col items-center justify-center group cursor-pointer shadow-sm">
              <input
               type="file"
-              accept="image/png, image/jpeg, image/webp"
+              accept="image/png, image/jpeg, image/jpg, image/webp, image/svg+xml, application/pdf, .pdf"
               onChange={(e) => handleBannerImageUpload(e, banner.id)}
               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
               disabled={uploading}
@@ -604,7 +750,7 @@ export default function SettingsAdmin() {
        <div className="relative w-full aspect-[4/3] bg-zinc-100 dark:bg-zinc-900 border-2 border-dashed border-zinc-300 dark:border-zinc-800/50 hover:border-black dark:hover:border-white transition-colors rounded-2xl overflow-hidden flex flex-col items-center justify-center group cursor-pointer">
         <input 
          type="file" 
-         accept="image/png, image/jpeg, image/webp" 
+         accept="image/png, image/jpeg, image/jpg, image/webp, image/svg+xml, application/pdf, .pdf" 
          onChange={(e) => handleImageUpload(e, 'aboutImage')} 
          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
          disabled={uploading}

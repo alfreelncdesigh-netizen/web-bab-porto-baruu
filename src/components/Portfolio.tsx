@@ -6,6 +6,7 @@ import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { getStoredProjects, saveStoredProjects, cleanProjects } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import ImageWithSkeleton from './ImageWithSkeleton';
 import { 
   sectionStaggerContainer, 
   sectionHeaderItem, 
@@ -107,7 +108,12 @@ function getProjectMetrics(project: Project) {
   };
 }
 
-export default function Portfolio() {
+export interface PortfolioProps {
+  isSecondHalfLoaded?: boolean;
+  onExpandRemaining?: () => void;
+}
+
+export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining }: PortfolioProps = {}) {
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
   const [activeCategory, setActiveCategory] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,7 +121,7 @@ export default function Portfolio() {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [copied, setCopied] = useState(false);
   const [showSharePopup, setShowSharePopup] = useState(false);
-  const [loading, setLoading] = useState(() => getStoredProjects().length === 0);
+  const [loading, setLoading] = useState(true);
 
   // Refs untuk navigasi dan auto-scroll ke paling atas
   const modalRootRef = useRef<HTMLDivElement>(null);
@@ -146,8 +152,39 @@ export default function Portfolio() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+
+    const preloadImages = (items: Project[]) => {
+      const promises = items.map((p) => {
+        if (!p.image) return Promise.resolve();
+        const url = resolveImageUrl(p.image);
+        return new Promise<void>((resolve) => {
+          const img = new Image();
+          img.src = url;
+          if (img.complete && img.naturalWidth > 0) return resolve();
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+          setTimeout(resolve, 2000);
+        });
+      });
+      return Promise.all(promises);
+    };
+
+    // Preload initial cached projects immediately
+    const initialProjects = getStoredProjects();
+    if (initialProjects.length > 0) {
+      preloadImages(initialProjects).then(() => {
+        if (isMounted) setLoading(false);
+      });
+    }
+
     const handleUpdate = (e: any) => {
-      if (e.detail) setProjects(e.detail);
+      if (e.detail) {
+        setProjects(e.detail);
+        preloadImages(e.detail).then(() => {
+          if (isMounted) setLoading(false);
+        });
+      }
     };
     window.addEventListener('user_projects_updated', handleUpdate);
 
@@ -168,19 +205,35 @@ export default function Portfolio() {
           const cleaned = cleanProjects(projData);
           setProjects(cleaned);
           saveStoredProjects(cleaned);
+          preloadImages(cleaned).then(() => {
+            if (isMounted) setLoading(false);
+          });
         } else {
-          setProjects([]);
-          saveStoredProjects([]);
+          const stored = getStoredProjects();
+          setProjects(stored);
+          preloadImages(stored).then(() => {
+            if (isMounted) setLoading(false);
+          });
         }
-        setLoading(false);
       },
       (error) => {
         console.warn("Firestore Portfolio Error (using stored projects):", error);
-        setProjects(getStoredProjects());
-        setLoading(false);
+        const stored = getStoredProjects();
+        setProjects(stored);
+        preloadImages(stored).then(() => {
+          if (isMounted) setLoading(false);
+        });
       }
     );
+
+    // Safety timeout so skeleton never hangs indefinitely
+    const timer = setTimeout(() => {
+      if (isMounted) setLoading(false);
+    }, 2200);
+
     return () => {
+      isMounted = false;
+      clearTimeout(timer);
       unsubscribe();
       window.removeEventListener('user_projects_updated', handleUpdate);
     };
@@ -274,7 +327,7 @@ export default function Portfolio() {
       variants={sectionStaggerContainer}
       className="py-6 md:py-8 scroll-mt-24 md:scroll-mt-32 relative overflow-hidden bg-white dark:bg-[#0A0A0A]"
     >
-      <div className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 relative z-10">
+      <div className="w-full px-6 sm:px-8 md:px-10 lg:px-12 xl:px-16 2xl:px-20 max-w-[1600px] mx-auto relative z-10">
         <div className="mb-6 md:mb-8">
           <motion.div variants={sectionHeaderItem} className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4 md:mb-6">
             <div>
@@ -331,9 +384,18 @@ export default function Portfolio() {
         </div>
 
         {loading ? (
-          <div className="columns-1 sm:columns-2 md:columns-3 lg:columns-3 xl:columns-4 gap-4 sm:gap-5 md:gap-6 space-y-4 sm:space-y-5 md:space-y-6">
-            {[1, 2, 3, 4].map((n) => (
-              <div key={n} className="aspect-[4/5] rounded-2xl animate-pulse bg-zinc-100 dark:bg-zinc-800/20"></div>
+          <div className="columns-1 sm:columns-2 lg:columns-2 xl:columns-3 2xl:columns-3 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-12 space-y-6 sm:space-y-8 md:space-y-10 lg:space-y-10 xl:space-y-12">
+            {[1, 2, 3, 4, 5, 6].map((n, i) => (
+              <div 
+                key={n} 
+                className={`w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden animate-shimmer ${
+                  i % 3 === 0 
+                    ? 'aspect-[3/4] min-h-[460px]' 
+                    : i % 3 === 1 
+                    ? 'aspect-[4/5] min-h-[380px]' 
+                    : 'aspect-[1/1] min-h-[340px]'
+                }`}
+              />
             ))}
           </div>
         ) : (
@@ -342,56 +404,85 @@ export default function Portfolio() {
             variants={gridContainerVariants}
             initial="hidden"
             animate="visible"
-            className="columns-1 sm:columns-2 md:columns-3 lg:columns-3 xl:columns-4 gap-4 sm:gap-5 md:gap-6 space-y-4 sm:space-y-5 md:space-y-6"
+            className="columns-1 sm:columns-2 lg:columns-2 xl:columns-3 2xl:columns-3 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-12 space-y-6 sm:space-y-8 md:space-y-10 lg:space-y-10 xl:space-y-12"
           >
-            <AnimatePresence mode="popLayout">
-              {filteredProjects.map((project, index) => {
-                const cinematicCardClass = 'bg-zinc-100 dark:bg-[#111111] border-transparent dark:border-zinc-800/50 shadow-md group-hover:shadow-2xl';
+            {/* Tampilan 50% awal dan sisa dimuat otomatis saat scroll/ganti menu */}
+            {(() => {
+              const is50Limited = !isSecondHalfLoaded && activeCategory === 'Semua' && !searchQuery.trim();
+              const displayLimit = is50Limited 
+                ? Math.max(1, Math.ceil(filteredProjects.length * 0.5)) 
+                : filteredProjects.length;
+              const visibleProjects = filteredProjects.slice(0, displayLimit);
 
-                return (
-                  <motion.div 
-                    layout
-                    variants={cardItemVariants}
-                    key={project.id} 
-                    className={`group relative h-auto w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden cursor-pointer border hover:shadow-2xl transition-all ${cinematicCardClass}`} 
-                    style={{ display: 'inline-block', width: '100%' }}
-                    onClick={() => handleOpenArticle(project)}
-                  >
-                    {project.image ? (
-                      <img 
-                        src={resolveImageUrl(project.image)} 
-                        alt={project.title} 
-                        loading="lazy" 
-                        className="w-full h-auto object-cover transition-transform duration-700 ease-out group-hover:scale-105 brightness-90 group-hover:brightness-100" 
-                        onError={handleImageError} 
-                      />
-                    ) : (
-                      <div className="w-full aspect-square transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800"></div>
-                    )}
-                    <div className="absolute inset-0 opacity-60 group-hover:opacity-80 transition-opacity duration-500 bg-gradient-to-t from-[#0A0A0A]/90 via-[#0A0A0A]/30 to-transparent"></div>
-                    
-                    <div className="absolute inset-0 p-3 md:p-4 flex flex-col justify-end items-start text-white">
-                      <motion.div 
-                        initial={{ y: 20, opacity: 0 }} 
-                        whileInView={{ y: 0, opacity: 1 }} 
-                        transition={{ duration: 0.5 }} 
-                        className="transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500 ease-out"
+              return (
+                <>
+                  <AnimatePresence mode="popLayout">
+                    {visibleProjects.map((project, index) => {
+                      const cinematicCardClass = 'bg-zinc-100 dark:bg-[#111111] border-transparent dark:border-zinc-800/50 shadow-md group-hover:shadow-2xl';
+
+                      return (
+                        <motion.div 
+                          layout
+                          variants={cardItemVariants}
+                          key={project.id} 
+                          className={`group relative h-auto w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden cursor-pointer border hover:shadow-2xl transition-all ${cinematicCardClass}`} 
+                          style={{ display: 'inline-block', width: '100%' }}
+                          onClick={() => handleOpenArticle(project)}
+                        >
+                          {project.image ? (
+                            <ImageWithSkeleton 
+                              src={project.image} 
+                              alt={project.title} 
+                              className="w-full h-auto min-h-[320px] sm:min-h-[420px] md:min-h-[520px] lg:min-h-[600px] xl:min-h-[680px] 2xl:min-h-[740px] object-cover transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100" 
+                              skeletonClassName="rounded-xl sm:rounded-2xl"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="w-full aspect-[4/5] min-h-[320px] sm:min-h-[420px] lg:min-h-[600px] transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800 animate-shimmer"></div>
+                          )}
+                          <div className="absolute inset-0 opacity-60 group-hover:opacity-80 transition-opacity duration-500 bg-gradient-to-t from-[#0A0A0A]/90 via-[#0A0A0A]/30 to-transparent"></div>
+                          
+                          <div className="absolute inset-0 p-4 sm:p-5 md:p-6 flex flex-col justify-end items-start text-white">
+                            <motion.div 
+                              initial={{ y: 20, opacity: 0 }} 
+                              whileInView={{ y: 0, opacity: 1 }} 
+                              transition={{ duration: 0.5 }} 
+                              className="transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500 ease-out w-full"
+                            >
+                              <span className="inline-block px-2.5 py-1 bg-white/20 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase mb-1.5 border border-white/10 shadow-sm">
+                                {project.category}
+                              </span>
+                              <h3 className="text-sm sm:text-base md:text-lg font-bold tracking-tight mb-0 leading-[1.2]">
+                                {project.title}
+                              </h3>
+                              <div className="mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100 flex items-center text-[9px] md:text-[11px] font-semibold gap-1.5 bg-white text-black px-3.5 py-1.5 rounded-full w-fit shadow-xl shadow-black/20">
+                                <Eye size={14} /> Quick View
+                              </div>
+                            </motion.div>
+                          </div>
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
+
+                  {is50Limited && filteredProjects.length > displayLimit && (
+                    <div className="col-span-full w-full flex flex-col items-center justify-center pt-8 pb-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => onExpandRemaining?.()}
+                        className="group inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border border-zinc-200/80 dark:border-zinc-700/80 transition-all shadow-xs active:scale-95 cursor-pointer"
                       >
-                        <span className="inline-block px-2 py-0.5 bg-white/20 backdrop-blur-md rounded-full text-[8px] md:text-[9px] font-bold tracking-wider uppercase mb-1 border border-white/10 shadow-sm">
-                          {project.category}
-                        </span>
-                        <h3 className="text-xs md:text-sm font-semibold tracking-tight mb-0 leading-[1.1]">
-                          {project.title}
-                        </h3>
-                        <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100 flex items-center text-[8px] md:text-[10px] font-semibold gap-1.5 bg-white text-black px-3 py-1.5 rounded-full w-fit shadow-lg shadow-black/20">
-                          <Eye size={13} /> Quick View
-                        </div>
-                      </motion.div>
+                        <span>Tampilkan Sisa Karya ({filteredProjects.length - displayLimit} karya lagi)</span>
+                        <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                      </button>
+                      <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-2 select-none">
+                        Atau gulir (scroll) ke bawah untuk memuat otomatis
+                      </p>
                     </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
+                  )}
+                </>
+              );
+            })()}
             
             {filteredProjects.length === 0 && (
               <div className="col-span-full py-20 text-center">
@@ -438,7 +529,7 @@ export default function Portfolio() {
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
               ref={modalRootRef}
               id="portfolio-modal-root" 
-              className="w-full h-[100dvh] md:w-[98vw] lg:w-[96vw] xl:w-[95vw] 2xl:w-[94vw] md:max-w-7xl lg:max-w-[1500px] xl:max-w-[1680px] 2xl:max-w-[1800px] md:h-[92vh] md:max-h-[94vh] overflow-y-auto md:overflow-hidden rounded-none md:rounded-3xl flex flex-col md:flex-row shadow-2xl relative bg-white dark:bg-[#0A0A0A] border-0 md:border md:border-zinc-200/60 dark:md:border-zinc-800/60"
+              className="w-full h-[100dvh] md:w-[98vw] lg:w-[98vw] xl:w-[98vw] 2xl:w-[98vw] md:max-w-none md:h-[94vh] md:max-h-[96vh] overflow-y-auto md:overflow-hidden rounded-none md:rounded-3xl flex flex-col md:flex-row shadow-2xl relative bg-white dark:bg-[#0A0A0A] border-0 md:border md:border-zinc-200/60 dark:md:border-zinc-800/60"
               onClick={e => e.stopPropagation()}
             >
               {/* Target Scroll Paling Atas */}
@@ -449,7 +540,7 @@ export default function Portfolio() {
                   - Carousel galeri jika memiliki lebih dari 1 gambar
                   - Dukungan navigasi prev / next
               */}
-              <div className="w-full md:w-[56%] lg:w-[60%] xl:w-[62%] relative border-b md:border-b-0 md:border-r flex flex-col items-center justify-between h-auto md:h-full shrink-0 bg-zinc-100/90 dark:bg-[#0d0d0d] border-zinc-200/60 dark:border-zinc-800/60 p-3 sm:p-4 md:p-6 lg:p-8">
+              <div className="w-full md:w-[68%] lg:w-[72%] xl:w-[74%] relative border-b md:border-b-0 md:border-r flex flex-col items-center justify-between h-auto md:h-full shrink-0 bg-zinc-100/90 dark:bg-[#0d0d0d] border-zinc-200/60 dark:border-zinc-800/60 p-3 sm:p-4 md:p-6 lg:p-8">
                 <div className="w-full flex-1 flex items-center justify-center relative min-h-[260px] sm:min-h-[320px] md:min-h-0">
                   {activeImage ? (
                     activeImage.includes('.pdf') || activeImage.includes('.ai') || activeImage.includes('.eps') ? (
@@ -472,7 +563,7 @@ export default function Portfolio() {
                           key={activeImage}
                           src={resolveImageUrl(activeImage)} 
                           alt={selectedProject.title} 
-                          className="w-full h-auto max-h-[60vh] md:max-h-[72vh] object-contain block mx-auto shadow-sm sm:rounded-xl transition-all duration-300" 
+                          className="w-full h-auto max-h-[70vh] md:max-h-[86vh] lg:max-h-[88vh] object-contain block mx-auto shadow-sm sm:rounded-xl transition-all duration-300" 
                           onError={handleImageError}
                         />
 

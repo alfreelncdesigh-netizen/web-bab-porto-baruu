@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Header from './components/Header';
 import Hero from './components/Hero';
@@ -20,41 +20,42 @@ import { ArrowLeft } from 'lucide-react';
 import { db } from './lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, increment, collection, getDocs } from 'firebase/firestore';
 import { 
-  getStoredSettings, saveStoredSettings, cleanSettings,
+  getStoredSettings, setLocalSettings, saveStoredSettings, cleanSettings,
   getStoredProjects, saveStoredProjects, cleanProjects,
   getStoredBlogs, saveStoredBlogs, cleanBlogs,
   getStoredExperiences, saveStoredExperiences 
 } from './lib/contentStorage';
 import { defaultSettings } from './data/settings';
+import { resolveImageUrl } from './lib/imageResolver';
 
-const skeletonGradient = "bg-zinc-200/80 dark:bg-zinc-800/60 animate-pulse";
-const skeletonCard = "bg-white/70 dark:bg-zinc-900/50 border border-zinc-200/60 dark:border-zinc-800/60";
+const skeletonGradient = "animate-shimmer";
+const skeletonCard = "bg-white/80 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800/60";
 
 // Comprehensive Skeleton Loading Screen
+// Optimized Skeleton Loading Screen (Synchronized with real UI layout & typography)
 const AppSkeleton = () => (
   <motion.div
     initial={{ opacity: 1 }}
     exit={{ opacity: 0 }}
-    transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-    className="fixed inset-0 z-[99999] bg-[#F0EEEE] dark:bg-[#0A0A0A] overflow-y-auto overflow-x-hidden flex flex-col pointer-events-auto"
+    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+    className="fixed inset-0 z-[99999] bg-[#F0EEEE] dark:bg-[#0A0A0A] overflow-y-auto overflow-x-hidden flex flex-col pointer-events-auto [scrollbar-width:none]"
   >
     {/* Header Skeleton Bar */}
-    <div className="w-full pt-3 md:pt-6 px-4 flex justify-center shrink-0">
-      <div className={`w-full max-w-[1920px] h-[52px] md:h-[68px] rounded-full px-4 md:px-6 flex items-center justify-between ${skeletonCard} shadow-sm backdrop-blur-md`}>
+    <div className="w-full pt-2.5 md:pt-4 px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 flex justify-center shrink-0 max-w-[1440px] mx-auto">
+      <div className={`w-full h-[52px] md:h-[62px] rounded-full px-4 md:px-6 flex items-center justify-between ${skeletonCard} shadow-sm backdrop-blur-md`}>
         {/* Brand / Logo */}
-        <div className="flex items-center gap-2">
-          <div className={`h-7 w-7 md:h-8 md:w-8 rounded-full ${skeletonGradient}`} />
-          <div className={`h-4 md:h-5 w-24 md:w-32 rounded-lg ${skeletonGradient}`} />
+        <div className="flex items-center gap-2.5">
+          <div className={`h-6 w-6 rounded-lg ${skeletonGradient}`} />
+          <div className={`h-4.5 w-28 md:w-36 rounded-md ${skeletonGradient}`} />
         </div>
 
         {/* Nav Links (Desktop) */}
         <div className="hidden md:flex gap-6 lg:gap-8 items-center">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
+          {['Tentang Saya', 'Beranda', 'Karya', 'Pengalaman', 'Order', 'Blog', 'Statistik', 'Admin'].map((_, i) => (
             <div key={i} className={`h-3.5 w-14 lg:w-16 rounded-full ${skeletonGradient}`} />
           ))}
-          <div className="w-px h-5 bg-zinc-300 dark:bg-zinc-700 mx-2" />
+          <div className="w-px h-5 bg-zinc-300 dark:bg-zinc-700 mx-1" />
           <div className={`h-8 w-8 rounded-full ${skeletonGradient}`} />
-          <div className={`h-9 w-24 rounded-full ${skeletonGradient} ml-1`} />
         </div>
 
         {/* Mobile menu trigger */}
@@ -66,53 +67,93 @@ const AppSkeleton = () => (
     </div>
 
     {/* Hero Section Skeleton */}
-    <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 pt-8 md:pt-14 lg:pt-16 pb-8 md:pb-12">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 lg:gap-16 items-center">
+    <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-12 lg:px-16 xl:px-20 pt-8 sm:pt-12 md:pt-18 pb-6 md:pb-10">
+      {/* Mobile Skeleton Layout: Top to bottom stacking (Text -> CTA -> Photo) */}
+      <div className="flex md:hidden flex-col items-center w-full">
+        {/* Sub-heading */}
+        <div className={`h-4 w-36 rounded-full mb-3 self-start ${skeletonGradient}`} />
+        {/* Title Line 1 & Line 2 */}
+        <div className={`h-10 sm:h-12 w-[92%] rounded-xl mb-2.5 self-start ${skeletonGradient}`} />
+        <div className={`h-10 sm:h-12 w-[75%] rounded-xl mb-5 self-start ${skeletonGradient}`} />
+        {/* CTA Buttons */}
+        <div className="flex flex-row items-center gap-3 w-fit self-start mb-6">
+          <div className={`h-[42px] w-32 rounded-full ${skeletonGradient}`} />
+          <div className={`h-[42px] w-32 rounded-full ${skeletonGradient}`} />
+        </div>
+        {/* Male Designer Photo */}
+        <div className={`w-full max-w-[340px] aspect-[4/5] rounded-3xl ${skeletonGradient} shadow-md`} />
+      </div>
+
+      {/* Desktop Skeleton Layout: 2 Columns (Text left, Visual right) */}
+      <div className="hidden md:grid md:grid-cols-[1.18fr_0.92fr] lg:grid-cols-[1.24fr_0.96fr] xl:grid-cols-[1.28fr_1fr] gap-8 md:gap-10 lg:gap-14 xl:gap-18 items-center min-h-[60vh] lg:min-h-[66vh]">
         {/* Left Column: Headings & Buttons */}
-        <div className="order-2 lg:order-1 text-left flex flex-col items-start w-full">
-          {/* Badge Pill */}
-          <div className={`h-6 md:h-7 w-36 md:w-44 rounded-full mb-4 md:mb-6 ${skeletonGradient}`} />
-          {/* Title Lines */}
-          <div className={`h-9 sm:h-12 md:h-16 lg:h-18 w-[92%] sm:w-[85%] rounded-2xl mb-2 sm:mb-3 ${skeletonGradient}`} />
-          <div className={`h-9 sm:h-12 md:h-16 lg:h-18 w-[78%] sm:w-[68%] rounded-2xl mb-5 md:mb-7 ${skeletonGradient}`} />
-          {/* Description Lines */}
-          <div className={`h-3.5 sm:h-4 md:h-5 w-[95%] max-w-lg rounded-full mb-2.5 ${skeletonGradient}`} />
-          <div className={`h-3.5 sm:h-4 md:h-5 w-[85%] max-w-md rounded-full mb-2.5 ${skeletonGradient}`} />
-          <div className={`h-3.5 sm:h-4 md:h-5 w-[65%] max-w-sm rounded-full mb-6 md:mb-8 ${skeletonGradient}`} />
-          {/* Buttons */}
-          <div className="flex flex-col sm:flex-row items-center gap-3.5 w-full sm:w-auto">
-            <div className={`h-11 sm:h-12 w-full sm:w-36 rounded-full ${skeletonGradient}`} />
-            <div className={`h-11 sm:h-12 w-full sm:w-36 rounded-full ${skeletonGradient}`} />
-            <div className={`h-11 sm:h-12 w-full sm:w-36 rounded-full ${skeletonGradient}`} />
+        <div className="flex flex-col items-start w-full pr-4 lg:pr-6">
+          {/* Badge Sub-title */}
+          <div className={`h-4.5 w-44 rounded-md mb-4 ${skeletonGradient}`} />
+          {/* Headline Line 1 (Kesamping, 48-56px equivalent) */}
+          <div className={`h-12 lg:h-14 w-full max-w-[520px] rounded-2xl mb-2.5 ${skeletonGradient}`} />
+          {/* Headline Line 2 (Kesamping, 48-56px equivalent) */}
+          <div className={`h-12 lg:h-14 w-[85%] max-w-[460px] rounded-2xl mb-7 ${skeletonGradient}`} />
+          {/* CTA Buttons */}
+          <div className="flex flex-row items-center gap-3.5 w-fit">
+            <div className={`h-[46px] w-36 rounded-full ${skeletonGradient}`} />
+            <div className={`h-[46px] w-36 rounded-full ${skeletonGradient}`} />
           </div>
         </div>
 
         {/* Right Column: Hero Visual Showcase */}
-        <div className="order-1 lg:order-2 w-full max-w-md mx-auto lg:max-w-none">
-          <div className={`w-full aspect-[4/3] sm:aspect-[16/10] lg:aspect-[4/3] rounded-3xl ${skeletonGradient} shadow-xl`} />
+        <div className="w-full flex items-center justify-center">
+          <div className={`w-full max-w-[460px] lg:max-w-[500px] xl:max-w-[540px] aspect-[4/5] max-h-[560px] lg:max-h-[600px] xl:max-h-[640px] rounded-3xl ${skeletonGradient} shadow-xl`} />
+        </div>
+      </div>
+
+      {/* Hero Banner Carousel row */}
+      <div className="mt-8 md:mt-12 w-full">
+        {/* Mobile Banner: 1 item */}
+        <div className="block md:hidden">
+          <div className={`w-full aspect-[3/1] rounded-2xl ${skeletonGradient}`} />
+        </div>
+        {/* Desktop Banner: 3 items */}
+        <div className="hidden md:grid grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className={`aspect-[3/1] rounded-2xl ${skeletonGradient}`} />
+          ))}
         </div>
       </div>
     </div>
 
     {/* Showcase / Portfolio Section Skeleton */}
-    <div className="w-full max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 py-8 border-t border-zinc-200/50 dark:border-zinc-800/50">
-      <div className="flex items-center justify-between mb-6">
+    <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-12 lg:px-16 xl:px-20 py-8 border-t border-zinc-200/50 dark:border-zinc-800/50">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
         <div>
-          <div className={`h-4 w-28 rounded-full mb-2 ${skeletonGradient}`} />
-          <div className={`h-8 sm:h-10 w-48 sm:w-64 rounded-xl ${skeletonGradient}`} />
+          <div className={`h-8 sm:h-10 w-52 sm:w-64 rounded-xl mb-2 ${skeletonGradient}`} />
+          <div className={`h-3.5 w-72 rounded-full ${skeletonGradient}`} />
         </div>
-        {/* Filter tags */}
-        <div className="hidden sm:flex gap-2">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className={`h-8 w-20 rounded-full ${skeletonGradient}`} />
-          ))}
+        {/* Search input pill */}
+        <div className="flex items-center gap-3">
+          <div className={`h-10 w-56 sm:w-72 rounded-full ${skeletonGradient}`} />
         </div>
       </div>
 
-      {/* Grid of Content Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-        {[1, 2, 3, 4].map(i => (
-          <div key={i} className={`aspect-[4/5] rounded-2xl ${skeletonGradient} shadow-sm`} />
+      {/* Category filter pills */}
+      <div className="flex gap-2.5 mb-8 overflow-hidden">
+        {[1, 2, 3, 4, 5].map(i => (
+          <div key={i} className={`h-8 w-24 rounded-full ${skeletonGradient} shrink-0`} />
+        ))}
+      </div>
+
+      {/* Masonry Grid of Content Cards matching real silhouette */}
+      <div className="columns-1 sm:columns-2 lg:columns-2 xl:columns-3 gap-6 space-y-6">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div 
+            key={i} 
+            className={`w-full break-inside-avoid rounded-2xl overflow-hidden ${skeletonGradient} ${
+              i % 3 === 0 ? 'aspect-[3/4] min-h-[440px]' : i % 3 === 1 ? 'aspect-[4/5] min-h-[380px]' : 'aspect-[1/1] min-h-[340px]'
+            } relative p-5 flex flex-col justify-end`}
+          >
+            <div className="w-24 h-5 rounded-full bg-white/30 dark:bg-zinc-700/50 mb-2" />
+            <div className="w-3/4 h-6 rounded-lg bg-white/40 dark:bg-zinc-700/60" />
+          </div>
         ))}
       </div>
     </div>
@@ -202,7 +243,7 @@ const SectionDivider = () => (
     whileInView={{ opacity: 1, scaleX: 1 }}
     viewport={{ once: true, margin: "-20px" }}
     transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-    className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 py-2 sm:py-3.5 select-none pointer-events-none" 
+    className="w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 py-2 sm:py-3.5 select-none pointer-events-none" 
     aria-hidden="true"
   >
     <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-zinc-300/70 dark:via-zinc-800/80 to-transparent" />
@@ -212,8 +253,12 @@ const SectionDivider = () => (
 export default function App() {
   const [view, setView] = useState<'home' | 'about' | 'portfolio' | 'store' | 'contact' | 'blog' | 'admin' | 'cv' | 'stats' | 'experience'>('home');
   const [isAppLoading, setIsAppLoading] = useState(true);
+  const [isSecondHalfLoaded, setIsSecondHalfLoaded] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
 
   const handleSetView = (newView: any) => {
+    // Sisa konten otomatis dimuat penuh saat beralih menu
+    setIsSecondHalfLoaded(true);
     const event = new CustomEvent('requestChangeView', { 
       detail: { view: newView },
       cancelable: true 
@@ -228,6 +273,7 @@ export default function App() {
   useEffect(() => {
     const handleViewChange = (e: any) => {
       if (e.detail && e.detail.view) {
+        setIsSecondHalfLoaded(true);
         handleSetView(e.detail.view);
       }
     };
@@ -235,6 +281,7 @@ export default function App() {
     
     const handleForceViewChange = (e: any) => {
       if (e.detail && e.detail.view) {
+        setIsSecondHalfLoaded(true);
         setView(e.detail.view);
         window.scrollTo(0, 0);
       }
@@ -245,6 +292,44 @@ export default function App() {
       window.removeEventListener('forceChangeView', handleForceViewChange);
     };
   }, []);
+
+  // Otomatis muat sisa 50% konten saat pengguna mulai scroll website
+  useEffect(() => {
+    if (isSecondHalfLoaded) return;
+
+    const handleScrollOrGesture = () => {
+      if (window.scrollY > 30) {
+        setIsSecondHalfLoaded(true);
+      }
+    };
+
+    window.addEventListener('scroll', handleScrollOrGesture, { passive: true });
+    window.addEventListener('wheel', handleScrollOrGesture, { passive: true });
+    window.addEventListener('touchmove', handleScrollOrGesture, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', handleScrollOrGesture);
+      window.removeEventListener('wheel', handleScrollOrGesture);
+      window.removeEventListener('touchmove', handleScrollOrGesture);
+    };
+  }, [isSecondHalfLoaded]);
+
+  // Sentinel IntersectionObserver: otomatis memuat saat mendekati batas 50% konten
+  useEffect(() => {
+    if (isSecondHalfLoaded || !sentinelRef.current) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          setIsSecondHalfLoaded(true);
+        }
+      },
+      { rootMargin: '320px' }
+    );
+
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [isSecondHalfLoaded]);
 
   useEffect(() => {
     const recordView = async () => {
@@ -269,12 +354,17 @@ export default function App() {
       try {
         const preloadImage = (url?: string): Promise<void> => {
           if (!url || typeof url !== 'string' || !url.trim()) return Promise.resolve();
+          const resolved = resolveImageUrl(url);
           return new Promise<void>((resolve) => {
             const img = new Image();
-            img.src = url;
+            img.src = resolved;
+            if (img.complete && img.naturalWidth > 0) {
+              resolve();
+              return;
+            }
             img.onload = () => resolve();
             img.onerror = () => resolve();
-            setTimeout(resolve, 2000); // 2s safety timeout per image
+            setTimeout(resolve, 2500); // 2.5s safety timeout per image
           });
         };
 
@@ -289,42 +379,73 @@ export default function App() {
         }
 
         const currentProjects = getStoredProjects();
-        currentProjects.slice(0, 6).forEach(p => {
+        currentProjects.forEach(p => {
           if (p.image) imagePromises.push(preloadImage(p.image));
+        });
+
+        const currentBlogs = getStoredBlogs();
+        currentBlogs.forEach(b => {
+          const img = b.image || (b as any).coverImage;
+          if (img) imagePromises.push(preloadImage(img));
         });
 
         // 2. Sync from Firebase Firestore and propagate to state/listeners
         const cloudSync = async () => {
           try {
-            // Settings
+            // Settings: Sinkronisasi server disk & Firestore dengan proteksi timestamp
+            const serverSyncPromise = fetch('/api/settings')
+              .then(res => res.ok ? res.json() : null)
+              .then(serverData => {
+                if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
+                  const current = getStoredSettings();
+                  const serverTime = serverData.savedAt || 0;
+                  const localTime = current.savedAt || 0;
+                  if (serverTime >= localTime) {
+                    const cleaned = cleanSettings(serverData);
+                    const merged = { ...defaultSettings, ...cleaned };
+                    setLocalSettings(merged);
+                  }
+                }
+              }).catch(() => {});
+
             const settingsPromise = Promise.all([
+              serverSyncPromise,
               getDoc(doc(db, 'settings', 'global')),
               getDoc(doc(db, 'settings', 'cv')).catch(() => null)
-            ]).then(([snapGlobal, snapCv]) => {
-              if (snapGlobal.exists() || (snapCv && snapCv.exists())) {
+            ]).then(async ([, snapGlobal, snapCv]) => {
+              if (snapGlobal && (snapGlobal.exists() || (snapCv && snapCv.exists()))) {
                 const data = snapGlobal.exists() ? snapGlobal.data() : {};
                 const cvData = snapCv && snapCv.exists() ? snapCv.data() : null;
                 const cloudCvSections = (cvData?.cvSections && cvData.cvSections.length > 0)
                   ? cvData.cvSections
                   : data.cvSections;
-                const cleaned = cleanSettings({
-                  ...data,
-                  cvSections: cloudCvSections,
-                  cvRole: cvData?.cvRole || data.cvRole,
-                  cvPdfFile: cvData?.cvPdfFile || data.cvPdfFile
-                });
-                const merged = { ...defaultSettings, ...cleaned };
-                saveStoredSettings(merged);
-                if (merged?.heroImage) preloadImage(merged.heroImage);
-                if (merged?.aboutImage) preloadImage(merged.aboutImage);
-                if (merged?.heroBanners) {
-                  merged.heroBanners.forEach(b => { if (b?.image) preloadImage(b.image); });
+                const cloudSavedAt = data.savedAt || 0;
+                const current = getStoredSettings();
+                const localSavedAt = current.savedAt || 0;
+
+                // Hanya timpa jika Firestore memiliki data yang sama baru atau lebih baru
+                if (cloudSavedAt >= localSavedAt) {
+                  const cleaned = cleanSettings({
+                    ...data,
+                    cvSections: cloudCvSections,
+                    cvRole: cvData?.cvRole || data.cvRole,
+                    cvPdfFile: cvData?.cvPdfFile || data.cvPdfFile
+                  });
+                  const merged = { ...defaultSettings, ...cleaned };
+                  setLocalSettings(merged);
+                  const extraImgs: Promise<void>[] = [];
+                  if (merged?.heroImage) extraImgs.push(preloadImage(merged.heroImage));
+                  if (merged?.aboutImage) extraImgs.push(preloadImage(merged.aboutImage));
+                  if (merged?.heroBanners) {
+                    merged.heroBanners.forEach(b => { if (b?.image) extraImgs.push(preloadImage(b.image)); });
+                  }
+                  await Promise.all(extraImgs);
                 }
               }
             }).catch(e => console.warn("Cloud settings sync fallback:", e));
 
             // Projects
-            const projectsPromise = getDocs(collection(db, 'projects')).then((snap) => {
+            const projectsPromise = getDocs(collection(db, 'projects')).then(async (snap) => {
               if (!snap.empty) {
                 const projs: any[] = [];
                 snap.forEach(d => { if(!d.data().isArchived) projs.push({ id: d.id, ...d.data() }) });
@@ -332,18 +453,22 @@ export default function App() {
                 cleanedProjs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
                 saveStoredProjects(cleanedProjs);
                 window.dispatchEvent(new CustomEvent('user_projects_updated', { detail: cleanedProjs }));
-                cleanedProjs.slice(0, 6).forEach(p => { if (p.image) preloadImage(p.image); });
+                await Promise.all(cleanedProjs.map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
               }
             }).catch(e => console.warn("Cloud projects sync fallback:", e));
 
             // Blogs
-            const blogsPromise = getDocs(collection(db, 'blogPosts')).then((snap) => {
+            const blogsPromise = getDocs(collection(db, 'blogPosts')).then(async (snap) => {
               if (!snap.empty) {
                 const posts: any[] = [];
                 snap.forEach(d => { if(!d.data().isArchived) posts.push({ id: d.id, ...d.data() }) });
                 const cleanedPosts = cleanBlogs(posts);
                 saveStoredBlogs(cleanedPosts);
                 window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: cleanedPosts }));
+                await Promise.all(cleanedPosts.map(b => {
+                  const img = b.image || (b as any).coverImage;
+                  return img ? preloadImage(img) : Promise.resolve();
+                }));
               }
             }).catch(e => console.warn("Cloud blogs sync fallback:", e));
 
@@ -368,7 +493,7 @@ export default function App() {
           }
         };
 
-        const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 2000));
+        const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 2500));
         await Promise.race([
           Promise.all([...imagePromises, cloudSync()]),
           timeoutPromise
@@ -383,11 +508,11 @@ export default function App() {
         resolve();
       } else {
         window.addEventListener('load', () => resolve(), { once: true });
-        setTimeout(resolve, 3000);
+        setTimeout(resolve, 2500);
       }
     });
 
-    const minDelay = new Promise<void>((resolve) => setTimeout(resolve, 600));
+    const minDelay = new Promise<void>((resolve) => setTimeout(resolve, 550));
 
     // Wait for content, images, DOM ready, and a smooth minimum presentation delay
     Promise.all([prefetchData(), domReady, minDelay])
@@ -398,10 +523,10 @@ export default function App() {
         setIsAppLoading(false);
       });
       
-    // Maximum safe fallback: ALWAYS reveal content after 3.5s
+    // Maximum safe fallback: ALWAYS reveal content after 2.5s
     const maxFallback = setTimeout(() => {
       setIsAppLoading(false);
-    }, 3500);
+    }, 2500);
 
     return () => clearTimeout(maxFallback);
   }, []);
@@ -428,7 +553,7 @@ export default function App() {
         
         <main className={view !== 'home' && view !== 'admin' ? 'pt-16 md:pt-20' : ''}>
           {view !== 'home' && view !== 'admin' && (
-            <div className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 pt-3 md:pt-5 pb-1">
+            <div className="w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 pt-3 md:pt-5 pb-1">
               <button
                 type="button"
                 onClick={() => handleSetView('home')}
@@ -451,18 +576,66 @@ export default function App() {
                 transition={{ duration: 0.15, ease: [0.25, 1, 0.5, 1] }}
               >
                 <div>
+                  {/* ========================================================
+                      TAHAP 1: 50% KONTEN PERTAMA DI TAMPILKAN
+                      - Hero
+                      - About
+                      - Portfolio (dengan batasan awal 50% item karya)
+                      - Store / Pesanan
+                      ======================================================== */}
                   <Hero />
                   <About />
                   <SectionDivider />
-                  <Portfolio />
+                  <Portfolio 
+                    isSecondHalfLoaded={isSecondHalfLoaded} 
+                    onExpandRemaining={() => setIsSecondHalfLoaded(true)} 
+                  />
                   <SectionDivider />
-                  <Blog />
-                  <SectionDivider />
-                  <Stats />
-                  <SectionDivider />
-                  <Experience />
-                  <SectionDivider />
-                  <Contact />
+                  <Store isOrderView={false} />
+
+                  {/* Pembatas & Indikator Sentinel 50% Konten (Sebelum scroll / beralih menu) */}
+                  {!isSecondHalfLoaded && (
+                    <div ref={sentinelRef} className="w-full py-10 px-4 flex flex-col items-center justify-center text-center">
+                      <button
+                        type="button"
+                        onClick={() => setIsSecondHalfLoaded(true)}
+                        className="group inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-white/95 dark:bg-zinc-900/95 border border-zinc-200/80 dark:border-zinc-800/80 shadow-md backdrop-blur-md text-xs font-semibold text-zinc-700 dark:text-zinc-200 cursor-pointer hover:border-black dark:hover:border-white transition-all active:scale-95"
+                      >
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
+                        </span>
+                        <span>50% konten dimuat • Gulir ke bawah atau beralih menu untuk memuat otomatis</span>
+                        <ArrowLeft className="w-3.5 h-3.5 rotate-[-90deg] group-hover:translate-y-0.5 transition-transform" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ========================================================
+                      TAHAP 2: SISA 50% KONTEN DIMUAT OTOMATIS SAAT SCROLL / BERALIH MENU
+                      - Blog
+                      - Stats
+                      - Experience
+                      - Contact
+                      ======================================================== */}
+                  <AnimatePresence>
+                    {isSecondHalfLoaded && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+                      >
+                        <SectionDivider />
+                        <Blog isSecondHalfLoaded={true} />
+                        <SectionDivider />
+                        <Stats />
+                        <SectionDivider />
+                        <Experience />
+                        <SectionDivider />
+                        <Contact />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </motion.div>
             )}

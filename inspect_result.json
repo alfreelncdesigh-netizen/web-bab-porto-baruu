@@ -1,0 +1,134 @@
+{
+  "projects": [
+    {
+      "id": "1",
+      "title": "HUT RI-81 ",
+      "category": "Poster",
+      "image": "DATA_URL_575114"
+    },
+    {
+      "id": "1788087368502",
+      "title": "Idul Fitri",
+      "category": "Postingan Instagram",
+      "image": "DATA_URL_761518"
+    },
+    {
+      "id": "1788243337563",
+      "title": "Nike Air Max 270 React",
+      "category": "Poster",
+      "image": "DATA_URL_567486"
+    },
+    {
+      "id": "1788307771437",
+      "title": "TRAVEL TO INDONESIA",
+      "category": "Poster",
+      "image": "DATA_URL_574830"
+    },
+    {
+      "id": "1788660058545",
+      "title": "Simple Design but impact",
+      "category": "Postingan Instagram",
+      "image": "DATA_URL_48802"
+    },
+    {
+      "id": "1788745132562",
+      "title": "Idul Fitri",
+      "category": "story instagram",
+      "image": "DATA_URL_79370"
+    },
+    {
+      "id": "1789084311094",
+      "title": "Food poster design",
+      "category": "poster kuliner",
+      "image": "DATA_URL_941918"
+    },
+    {
+      "id": "1790560490298",
+      "title": "Poster Minuman Teh Hijau",
+      "category": "poster kuliner",
+      "image": "https://ais-dev-yorttlileq6ppl6ub5mkov-535307665475.asia-southeast1.run.app/uploads/Teh_Hijau_1790560458614.png"
+    },
+    {
+      "id": "2",
+      "title": "Poster Pameran Seni Kontemporer",
+      "category": "Poster",
+      "image": "https://images.unsplash.com/photo-1572375992501-4b0892d50c69?auto=format&fit=crop&q=80&w=800&h=1200"
+    },
+    {
+      "id": "3",
+      "title": "Platform E-learning EduTech",
+      "category": "Web Design",
+      "image": "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&q=80&w=1000&h=900"
+    },
+    {
+      "id": "4",
+      "title": "Identitas Merek Kopi Senja",
+      "category": "Branding",
+      "image": "https://images.unsplash.com/photo-1559925393-8be0ec4767c8?auto=format&fit=crop&q=80&w=800&h=1400"
+    },
+    {
+      "id": "5",
+      "title": "Poster Festival Musik Indie",
+      "category": "Poster",
+      "image": "https://images.unsplash.com/photo-1459749411175-04bf5292ceea?auto=format&fit=crop&q=80&w=800&h=1100"
+    },
+    {
+      "id": "6",
+      "title": "Website Studio Arsitektur",
+      "category": "Web Design",
+      "image": "DATA_URL_573146"
+    },
+    {
+      "id": "7",
+      "title": "Redesain Aplikasi Travel",
+      "category": "UI/UX",
+      "image": "https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&q=80&w=1200&h=850"
+    }
+  ],
+  "blogs": [
+    {
+      "id": "1788665178482",
+      "title": "hiewiie",
+      "image": "DATA_URL_52222"
+    },
+    {
+      "id": "1790211477629",
+      "title": "SELAMAT & SUKSES",
+      "image": "https://ais-dev-yorttlileq6ppl6ub5mkov-535307665475.asia-southeast1.run.app/uploads/SELAMAT_DAN_SUKSES_LKS2_1790211437009.png"
+    },
+    {
+      "id": "beralih-ke-affinity-designer",
+      "title": "Beralih ke Affinity Designer: Workflow Vektor Masa Depan"
+    },
+    {
+      "id": "filosofi-desain-minimalis",
+      "title": "Filosofi Desain Minimalis: Ketika Kurang Berarti Lebih"
+    },
+    {
+      "id": "hierarki-tipografi-modern",
+      "title": "Hierarki Tipografi dalam Desain Antarmuka Modern"
+    }
+  ],
+  "templates": [
+    {
+      "id": "affinity-brand-kit",
+      "title": "Affinity Designer Brand Identity Master Kit",
+      "image": "DATA_URL_156751"
+    },
+    {
+      "id": "brutalist-editorial-posters",
+      "title": "Modern Brutalist Poster & Typography Pack",
+      "image": "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&q=80&w=1200"
+    },
+    {
+      "id": "minimalist-social-carousel",
+      "title": "Minimalist Social Media Carousel Kit",
+      "image": "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?auto=format&fit=crop&q=80&w=1200"
+    },
+    {
+      "id": "ui-ux-wireframe-system",
+      "title": "Mobile App UI/UX Wireframing Kit",
+      "image": "https://images.unsplash.com/photo-1581291518857-4e27b48ff24e?auto=format&fit=crop&q=80&w=1200"
+    }
+  ]
+}

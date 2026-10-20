@@ -4,8 +4,9 @@ import { db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { MapPin, MessageCircle, ArrowRight, Copy, Check, ExternalLink } from 'lucide-react';
 import { SiteSettings, defaultSettings } from '../data/settings';
-import { getStoredSettings } from '../lib/contentStorage';
-import { getOptimizedImageUrl } from "../lib/cloudinary";
+import { getStoredSettings, cleanSettings } from '../lib/contentStorage';
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import ImageWithSkeleton from './ImageWithSkeleton';
 import { 
   sectionStaggerContainer, 
   sectionHeaderItem, 
@@ -79,14 +80,20 @@ export default function About() {
 
   const docRef = doc(db, 'settings', 'global');
   const unsubscribe = onSnapshot(
-   docRef,
-   (docSnap) => {
-    if (docSnap.exists()) {
-     const merged = { ...defaultSettings, ...(docSnap.data() as Partial<SiteSettings>) };
-     setSettings(merged);
-     try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
-    }
-   },
+    docRef,
+    (docSnap) => {
+      if (docSnap.exists()) {
+        const cloudData = docSnap.data() as Partial<SiteSettings>;
+        const local = getStoredSettings();
+        const cloudTime = cloudData?.savedAt || 0;
+        const localTime = local?.savedAt || 0;
+        if (cloudTime >= localTime) {
+          const merged = { ...defaultSettings, ...cleanSettings(cloudData) };
+          setSettings(merged);
+          try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+        }
+      }
+    },
    (err) => {
     console.warn("About settings error (using stored settings):", err);
     setSettings(getStoredSettings());
@@ -110,7 +117,7 @@ export default function About() {
    variants={sectionStaggerContainer}
    className="pt-1 pb-6 md:py-10 bg-[var(--bg-main,#ffffff)] dark:bg-[#0a0a0a] scroll-mt-24 md:scroll-mt-32"
   >
-   <div className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12">
+   <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18">
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 xl:gap-16 items-center">
      
      <motion.div 
@@ -208,12 +215,13 @@ export default function About() {
       className="order-1 lg:order-2 lg:col-span-5 relative aspect-[1080/1350] rounded-3xl sm:rounded-[2rem] overflow-hidden bg-zinc-200 dark:bg-[#1A1A1A] border border-zinc-100 dark:border-zinc-800 shadow-xl w-full max-w-md mx-auto lg:max-w-none"
      >
       {settings.aboutImage && !settings.aboutImage.includes('photo-1499951360447') ? (
-        <img 
+        <ImageWithSkeleton 
          src={settings.aboutImage} 
          alt={settings.fullName || "Tentang Saya"} 
          className="w-full h-full object-cover opacity-90 hover:opacity-100 hover:scale-105 transition-all duration-500 ease-out"
-         fetchPriority="high"
-         loading="eager" 
+         priority={true}
+         containerClassName="w-full h-full overflow-hidden"
+         skeletonClassName="rounded-3xl sm:rounded-[2rem]"
         />
       ) : (
         <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-900 dark:to-zinc-950">

@@ -34,7 +34,7 @@ export const servicesList: ServiceOption[] = [
     id: 'Feed & Story Instagram',
     name: 'Feed & Story Instagram',
     category: 'Social Media',
-    description: 'Konten feed terstruktur, carousel informatif, dan template story estetik profesional.',
+    description: 'Konten feed terstruktur, carousel informatif, dan desain story estetik profesional.',
     icon: Instagram
   },
   {

@@ -11,13 +11,16 @@ export interface AdminUser {
   addedAt: string;
 }
 
+export const MASTER_ADMINS = [
+  'alfreelnc.desigh@gmail.com',
+  'albianavl.co@gmail.com'
+];
+
 export default function AdminAccessAdmin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [newEmail, setNewEmail] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
-  
-  const MASTER_ADMIN = 'alfreelnc.desigh@gmail.com';
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
@@ -52,8 +55,8 @@ export default function AdminAccessAdmin() {
       return;
     }
 
-    if (newEmail.trim().toLowerCase() === MASTER_ADMIN) {
-      showToast('Master admin tidak perlu ditambahkan.', 'error');
+    if (MASTER_ADMINS.includes(newEmail.trim().toLowerCase())) {
+      showToast('Master admin sudah memiliki akses penuh permanen.', 'error');
       return;
     }
 
@@ -85,7 +88,7 @@ export default function AdminAccessAdmin() {
   };
 
   const handleToggleStatus = async (user: AdminUser) => {
-    if (user.email === MASTER_ADMIN) return;
+    if (MASTER_ADMINS.includes(user.email.toLowerCase())) return;
     try {
       const newStatus = user.status === 'allowed' ? 'blocked' : 'allowed';
       await updateDoc(doc(db, 'adminUsers', user.id), {
@@ -111,7 +114,7 @@ export default function AdminAccessAdmin() {
   };
 
   return (
-    <div className="max-w-[1920px]">
+    <div className="w-full">
       <AnimatePresence>
         {toast && (
           <motion.div
@@ -134,7 +137,7 @@ export default function AdminAccessAdmin() {
           <Shield className="text-zinc-400 w-5 h-5" /> Akses Administrator
         </h2>
         <p className="text-zinc-500 text-xs max-w-2xl">
-          Kelola email yang diizinkan untuk mengakses dasbor admin ini. Pastikan Anda hanya menambahkan email yang terpercaya. Master admin ({MASTER_ADMIN}) selalu memiliki akses penuh.
+          Kelola email yang diizinkan untuk mengakses dasbor admin ini. Master Administrator ({MASTER_ADMINS.join(', ')}) memiliki akses penuh permanen.
         </p>
       </div>
 
@@ -163,19 +166,21 @@ export default function AdminAccessAdmin() {
       <div className="space-y-2">
         <h3 className="text-xs font-mono font-bold text-black dark:text-white mb-3 uppercase tracking-wider">Daftar Admin</h3>
         
-        {/* Master Admin Card */}
-        <div className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-[#0A0A0A] rounded-xl border border-zinc-200 dark:border-zinc-800/50">
-          <div>
-            <p className="text-xs font-bold text-black dark:text-white">{MASTER_ADMIN}</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5">Master Admin</p>
+        {/* Master Admin Cards */}
+        {MASTER_ADMINS.map(adminEmail => (
+          <div key={adminEmail} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-[#0A0A0A] rounded-xl border border-zinc-200 dark:border-zinc-800/50">
+            <div>
+              <p className="text-xs font-bold text-black dark:text-white">{adminEmail}</p>
+              <p className="text-[10px] text-zinc-500 mt-0.5">Master Administrator</p>
+            </div>
+            <span className="px-2 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] font-bold rounded border border-emerald-200 dark:border-emerald-800/50 uppercase tracking-wider">
+              Full Access
+            </span>
           </div>
-          <span className="px-2 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] font-bold rounded border border-emerald-200 dark:border-emerald-800/50 uppercase tracking-wider">
-            Full Access
-          </span>
-        </div>
+        ))}
 
         {/* Other Admins */}
-        {users.map(user => (
+        {users.filter(u => !MASTER_ADMINS.includes(u.email.toLowerCase())).map(user => (
           <div key={user.id} className={`flex flex-col sm:flex-row sm:items-center justify-between p-3 rounded-xl border transition-all duration-300 ${user.status === 'blocked' ? 'bg-red-50/30 dark:bg-red-900/5 border-red-100 dark:border-red-900/20' : 'bg-white dark:bg-[#050505] border-zinc-200 dark:border-zinc-800/50'}`}>
             <div className="mb-2 sm:mb-0">
               <p className={`text-xs font-bold ${user.status === 'blocked' ? 'text-zinc-500 dark:text-zinc-500 line-through' : 'text-black dark:text-white'}`}>

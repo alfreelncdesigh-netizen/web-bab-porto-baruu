@@ -4,7 +4,7 @@ import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { getStoredExperiences, saveStoredExperiences } from '../lib/contentStorage';
 import { Briefcase, ArrowRight, X, Camera } from 'lucide-react';
-import { getOptimizedImageUrl } from "../lib/cloudinary";
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { 
   sectionStaggerContainer, 
   sectionHeaderItem, 
@@ -41,8 +41,7 @@ export default function Experience() {
           setExperiences(data);
           saveStoredExperiences(data);
         } else {
-          setExperiences([]);
-          saveStoredExperiences([]);
+          setExperiences(getStoredExperiences());
         }
         setLoading(false);
       },
@@ -52,7 +51,13 @@ export default function Experience() {
         setLoading(false);
       }
     );
+
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 1200);
+
     return () => {
+      clearTimeout(timer);
       unsub();
       window.removeEventListener('user_experiences_updated', handleUpdate);
     };
@@ -65,7 +70,7 @@ export default function Experience() {
       whileInView="visible"
       viewport={{ once: true, amount: 0.1, margin: "-40px" }}
       variants={sectionStaggerContainer}
-      className="py-6 md:py-10 px-4 sm:px-6 md:px-8 lg:px-12 w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto scroll-mt-24 md:scroll-mt-32"
+      className="py-6 md:py-10 px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18 w-full max-w-[1440px] mx-auto scroll-mt-24 md:scroll-mt-32"
     >
       <motion.div variants={sectionHeaderItem} className="mb-6 md:mb-8">
         <h4 className="text-[9px] md:text-xs font-bold text-black dark:text-zinc-400 mb-3 flex items-center gap-2 tracking-widest uppercase">
@@ -151,10 +156,11 @@ export default function Experience() {
                         className="relative rounded-xl md:rounded-2xl cursor-pointer group w-full max-w-sm sm:max-w-md md:max-w-none md:bg-transparent md:border-0 md:p-0 bg-zinc-100/90 dark:bg-zinc-900/90 border border-zinc-200/80 dark:border-zinc-800/80 p-1 sm:p-2.5 flex items-center justify-center overflow-hidden"
                       >
                         <img 
-                          src={getOptimizedImageUrl(exp.images[0])} 
+                          src={resolveImageUrl(exp.images[0])} 
                           alt={exp.header} 
                           className="w-full h-auto max-h-[190px] sm:max-h-[240px] md:max-h-[380px] lg:max-h-[460px] xl:max-h-[520px] object-contain rounded-lg md:rounded-2xl shadow-xs md:shadow-md transition-transform duration-500 group-hover:scale-[1.02] block mx-auto" 
                           loading="lazy"
+                          onError={handleImageError}
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center rounded-xl md:rounded-2xl pointer-events-none">
                           <div className="opacity-0 group-hover:opacity-100 bg-white/95 dark:bg-black/90 text-black dark:text-white px-4 py-2 rounded-full text-[11px] font-bold transition-all transform translate-y-2 group-hover:translate-y-0 backdrop-blur-sm shadow-md flex items-center gap-1.5 pointer-events-auto">
@@ -188,7 +194,7 @@ export default function Experience() {
       {/* Documentation Modal */}
       {documentationExp && (
         <div className="fixed inset-0 z-[150] bg-white/95 dark:bg-[#0A0A0A]/95 backdrop-blur-xl flex flex-col p-4 md:p-8 overflow-hidden transition-all">
-          <div className="flex justify-between items-center mb-8 max-w-[1920px] mx-auto w-full border-b border-zinc-200 dark:border-zinc-800 pb-6 mt-4">
+          <div className="flex justify-between items-center mb-8 mx-auto w-full border-b border-zinc-200 dark:border-zinc-800 pb-6 mt-4">
             <div>
                <h4 className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest mb-2 flex items-center gap-2">
                  Dokumentasi Pengalaman
@@ -202,7 +208,7 @@ export default function Experience() {
               <X className="w-5 h-5" />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto max-w-[1920px] mx-auto w-full pb-20 custom-scrollbar pr-2 md:pr-4">
+          <div className="flex-1 overflow-y-auto mx-auto w-full pb-20 custom-scrollbar pr-2 md:pr-4">
             <div className="columns-1 md:columns-2 gap-4 md:gap-6 space-y-4 md:space-y-6">
                {documentationExp.images.map((img, idx) => (
                   <div 
@@ -211,10 +217,11 @@ export default function Experience() {
                     onClick={() => setSelectedImg({url: img, exp: documentationExp})}
                   >
                      <img 
-                       src={getOptimizedImageUrl(img)} 
+                       src={resolveImageUrl(img)} 
                        alt={`Dokumentasi ${idx + 1}`} 
                        className="w-full h-auto object-contain hover:scale-105 transition-transform duration-700 rounded-xl" 
                        loading="lazy" 
+                       onError={handleImageError}
                      />
                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors pointer-events-none"></div>
                   </div>
@@ -242,7 +249,7 @@ export default function Experience() {
           
           <div className="relative w-full md:w-1/2 lg:w-[60%] h-[38vh] sm:h-[45vh] md:h-full bg-zinc-50 dark:bg-[#111111] border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 shrink-0 flex items-center justify-center p-3 sm:p-4 md:p-10">
             <div className="w-full h-full flex items-center justify-center">
-              <img src={getOptimizedImageUrl(selectedImg.url)} className="w-full h-full object-contain rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-800" alt={selectedImg.exp?.header} />
+              <img src={resolveImageUrl(selectedImg.url)} onError={handleImageError} className="w-full h-full object-contain rounded-xl shadow-xl border border-zinc-200 dark:border-zinc-800" alt={selectedImg.exp?.header} />
             </div>
           </div>
           
@@ -290,7 +297,7 @@ export default function Experience() {
                         selectedImg.url === img ? 'border-black dark:border-white scale-105 shadow-sm' : 'border-transparent opacity-60 hover:opacity-100'
                       }`}
                     >
-                      <img src={getOptimizedImageUrl(img)} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
+                      <img src={resolveImageUrl(img)} onError={handleImageError} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>

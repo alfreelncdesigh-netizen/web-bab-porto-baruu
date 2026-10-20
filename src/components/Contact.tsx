@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
 import { Mail, MapPin, Phone, Check, ArrowRight, MessageSquare, MessageCircle, Send } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot, collection, addDoc, query, orderBy } from 'firebase/firestore';
 import { defaultSettings, SiteSettings } from '../data/settings';
 import { getStoredSettings } from '../lib/contentStorage';
@@ -28,21 +29,29 @@ export default function Contact() {
   };
   window.addEventListener('app_settings_updated', handleSettingsUpdate);
 
-  const unsubscribeMessages = onSnapshot(
-   query(collection(db, 'messages'), orderBy('dateAdded', 'desc')),
-   (snapshot) => {
-    const msgData: any[] = [];
-    snapshot.forEach((doc) => {
-     msgData.push({ id: doc.id, ...doc.data() });
-    });
-    setMessages(msgData);
-    setLoadingMessages(false);
-   },
-   (err) => {
-    console.warn("Messages error:", err);
-    setLoadingMessages(false);
-   }
-  );
+  let unsubscribeMessages: (() => void) | null = null;
+  const unsubAuth = onAuthStateChanged(auth, (user) => {
+    if (user && user.email && ['alfreelnc.desigh@gmail.com', 'albianavl.co@gmail.com'].includes(user.email.toLowerCase().trim())) {
+      unsubscribeMessages = onSnapshot(
+        query(collection(db, 'messages'), orderBy('dateAdded', 'desc')),
+        (snapshot) => {
+          const msgData: any[] = [];
+          snapshot.forEach((doc) => {
+            msgData.push({ id: doc.id, ...doc.data() });
+          });
+          setMessages(msgData);
+          setLoadingMessages(false);
+        },
+        (err) => {
+          console.warn("Messages notice:", err);
+          setLoadingMessages(false);
+        }
+      );
+    } else {
+      setMessages([]);
+      setLoadingMessages(false);
+    }
+  });
 
   const docRef = doc(db, 'settings', 'global');
   const unsubscribe = onSnapshot(
@@ -59,7 +68,8 @@ export default function Contact() {
   );
   return () => {
     unsubscribe();
-    unsubscribeMessages();
+    unsubAuth();
+    if (unsubscribeMessages) unsubscribeMessages();
     window.removeEventListener('app_settings_updated', handleSettingsUpdate);
   };
  }, []);
@@ -95,7 +105,7 @@ export default function Contact() {
    variants={sectionStaggerContainer}
    className="pt-8 pb-28 mb-20 bg-white dark:bg-[#0A0A0A] scroll-mt-24 md:scroll-mt-32"
   >
-   <div className="w-full max-w-4xl mx-auto px-4 sm:px-6 md:px-8">
+   <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18">
     
     {/* Section Header */}
     <motion.div 
@@ -108,7 +118,7 @@ export default function Contact() {
      <h2 className="text-2xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-black dark:text-white leading-[1.15] mb-3">
       Punya Ide atau Proyek Seru? <span className="text-black dark:text-zinc-500">Mari Kolaborasi</span>
      </h2>
-     <p className="text-xs sm:text-sm md:text-base text-zinc-600 dark:text-zinc-400 max-w-xl mx-auto leading-relaxed">
+     <p className="text-xs sm:text-sm md:text-base text-zinc-600 dark:text-zinc-400 max-w-2xl mx-auto leading-relaxed">
       Lagi butuh bantuan visual, desain branding, atau sekadar ingin bertukar ide? Silakan hubungi langsung lewat WhatsApp agar lebih cepat, atau tinggalkan pesan lewat formulir di bawah.
      </p>
     </motion.div>

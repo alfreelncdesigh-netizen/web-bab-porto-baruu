@@ -29,7 +29,7 @@ export default function Footer() {
 
  return (
   <footer className="bg-zinc-200 dark:bg-[#111111] py-6 md:py-10 border-t border-zinc-200/50 dark:border-zinc-800/50 relative overflow-hidden">
-   <div className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-4 sm:px-6 md:px-8 lg:px-12 relative z-10">
+   <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18 relative z-10">
     
     {/* Top Section: Grid Layout */}
     <div className="grid grid-cols-1 md:grid-cols-12 gap-6 md:gap-8 mb-6 md:mb-10">

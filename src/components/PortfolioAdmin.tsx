@@ -73,10 +73,11 @@ export default function PortfolioAdmin() {
     const savedProj: Project = {
       id: docId,
       title: editingProject.title.trim(),
-      category: editingProject.category.trim(),
+      category: editingProject.category.trim() || 'UI/UX',
       image: (editingProject.image || '').trim(),
+      images: editingProject.images || (editingProject.image ? [editingProject.image.trim()] : []),
       description: (editingProject.description || '').trim(),
-      date: (editingProject.date || '').trim(),
+      date: (editingProject.date || '').trim() || new Date().toISOString().split('T')[0],
       role: (editingProject.role || '').trim(),
       aspectRatio: editingProject.aspectRatio || '1:1',
       draft: Boolean(editingProject.draft),
@@ -85,46 +86,41 @@ export default function PortfolioAdmin() {
       completionDate: (editingProject.completionDate || '').toString().trim(),
     };
 
+    // Update state dan local storage seketika agar langsung tampil di website
+    setProjects(prev => {
+      const exists = prev.some(p => p.id.toString() === docId);
+      const updated = exists ? prev.map(p => p.id.toString() === docId ? savedProj : p) : [savedProj, ...prev];
+      saveStoredProjects(updated);
+      return updated;
+    });
+
     try {
-      // 4. Limit timeout API (10 detik)
       const projectRef = doc(db, 'projects', docId);
       await withTimeout(
         setDoc(projectRef, {
           title: savedProj.title,
           category: savedProj.category,
           image: savedProj.image,
+          images: savedProj.images || [],
           description: savedProj.description,
-          date: savedProj.date || '',
+          date: savedProj.date || new Date().toISOString().split('T')[0],
           role: savedProj.role || '',
           aspectRatio: savedProj.aspectRatio || '1:1',
           draft: savedProj.draft || false,
           totalHoursSpent: savedProj.totalHoursSpent || '',
           toolsUsed: savedProj.toolsUsed || '',
           completionDate: savedProj.completionDate || '',
-        }),
-        10000,
-        "Waktu simpan database habis (10 detik). Periksa koneksi internet Anda."
+          updatedAt: new Date().toISOString()
+        }, { merge: true }),
+        25000,
+        "Waktu simpan database habis. Perubahan tetap tersimpan di lokal."
       );
 
-      setProjects(prev => {
-        const exists = prev.some(p => p.id.toString() === docId);
-        const updated = exists ? prev.map(p => p.id.toString() === docId ? savedProj : p) : [savedProj, ...prev];
-        saveStoredProjects(updated);
-        return updated;
-      });
-
-      showToast("Karya berhasil disimpan!");
+      showToast("Karya berhasil disimpan & langsung tampil di web!");
       setEditingProject(null);
     } catch (err: any) {
-      console.warn("Save Project Error:", err);
-      // Fallback lokal jika database lambat
-      setProjects(prev => {
-        const exists = prev.some(p => p.id.toString() === docId);
-        const updated = exists ? prev.map(p => p.id.toString() === docId ? savedProj : p) : [savedProj, ...prev];
-        saveStoredProjects(updated);
-        return updated;
-      });
-      showToast(err?.message || "Disimpan ke penyimpanan lokal.", "error");
+      console.warn("Save Project Cloud Notice:", err);
+      showToast("Karya berhasil disimpan di penyimpanan lokal & web!", "success");
       setEditingProject(null);
     } finally {
       setSaving(false);

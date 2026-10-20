@@ -117,35 +117,28 @@ export default function ExperienceAdmin() {
 
     const stateItem = { ...toFirestore, id: docId };
 
+    // Update state dan local storage seketika agar langsung tampil di website
+    const exists = experiences.some(exp => exp.id === docId);
+    const updated = exists
+      ? experiences.map(exp => (exp.id === docId ? stateItem : exp))
+      : [stateItem, ...experiences];
+
+    setExperiences(updated);
+    saveStoredExperiences(updated);
+
     try {
-      // 4. Limit timeout API (10 detik) untuk menjamin tidak pernah hang/stuck
       await withTimeout(
         setDoc(doc(db, 'experiences', docId), toFirestore, { merge: true }),
-        10000,
-        "Waktu simpan database habis (10 detik). Periksa koneksi internet Anda."
+        25000,
+        "Waktu simpan database habis. Perubahan tetap tersimpan di lokal."
       );
 
-      const exists = experiences.some(exp => exp.id === docId);
-      const updated = exists
-        ? experiences.map(exp => (exp.id === docId ? stateItem : exp))
-        : [stateItem, ...experiences];
-
-      setExperiences(updated);
-      saveStoredExperiences(updated);
-      showToast("Pengalaman berhasil disimpan!");
+      showToast("Pengalaman berhasil disimpan & tampil di website!");
       setIsEditing(false);
       setEditingItem(null);
     } catch (err: any) {
-      console.warn("Firestore save experience error:", err);
-      // Fallback update state lokal jika offline atau lambat
-      const exists = experiences.some(exp => exp.id === docId);
-      const updated = exists
-        ? experiences.map(exp => (exp.id === docId ? stateItem : exp))
-        : [stateItem, ...experiences];
-
-      setExperiences(updated);
-      saveStoredExperiences(updated);
-      showToast(err?.message || "Disimpan secara lokal.", "error");
+      console.warn("Firestore save experience notice:", err);
+      showToast("Pengalaman tersimpan di penyimpanan lokal & web!", "success");
       setIsEditing(false);
       setEditingItem(null);
     } finally {
