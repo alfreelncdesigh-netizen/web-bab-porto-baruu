@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import ArchiveMoveModal from './ArchiveMoveModal';
+import ConfirmModal from './ConfirmModal';
 import { motion } from 'motion/react';
 import { BlogPost } from '../types/blog';
 import { Edit, Trash, Plus, X, Check, Cloud, Upload, Loader2, Image as ImageIcon, Archive, AlertCircle } from 'lucide-react';
@@ -12,6 +13,8 @@ import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '
 export default function BlogAdmin() {
   const [posts, setPosts] = useState<BlogPost[]>(() => getStoredBlogs());
   const [editingPost, setEditingPost] = useState<BlogPost | null>(null);
+  const [postToDelete, setPostToDelete] = useState<BlogPost | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [archiveItemId, setArchiveItemId] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -102,23 +105,32 @@ export default function BlogAdmin() {
     }
   };
 
-  const handleDelete = async (id: string, imageUrl?: string) => {
-    if (confirm("Apakah Anda yakin ingin menghapus postingan ini? Tindakan ini permanen.")) {
-      // 1. Langsung hapus dari state & local storage seketika (optimistic update)
-      const updated = posts.filter(p => p.id !== id);
-      savePosts(updated);
-      showToast("Postingan berhasil dihapus permanen.");
+  const handleDelete = (post: BlogPost) => {
+    setPostToDelete(post);
+  };
 
-      // 2. Eksekusi penghapusan di cloud
-      try {
-        await withTimeout(
-          deleteDoc(doc(db, 'blogPosts', id)),
-          6000,
-          "Database cloud selesai diperbarui."
-        );
-      } catch (err: any) {
-        console.warn("[DELETE] Notice database cloud blog:", err?.message || err);
-      }
+  const handleConfirmDelete = async () => {
+    if (!postToDelete) return;
+    setIsDeleting(true);
+    const id = postToDelete.id;
+
+    // 1. Langsung hapus dari state & local storage seketika (optimistic update)
+    const updated = posts.filter(p => p.id !== id);
+    savePosts(updated);
+    showToast(`"${postToDelete.title || 'Postingan'}" berhasil dihapus permanen.`);
+    setPostToDelete(null);
+
+    // 2. Eksekusi penghapusan di cloud
+    try {
+      await withTimeout(
+        deleteDoc(doc(db, 'blogPosts', id)),
+        6000,
+        "Database cloud selesai diperbarui."
+      );
+    } catch (err: any) {
+      console.warn("[DELETE] Notice database cloud blog:", err?.message || err);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -448,7 +460,7 @@ export default function BlogAdmin() {
                       <Edit size={14} />
                     </button>
                     <button
-                      onClick={() => handleDelete(post.id, post.image)}
+                      onClick={() => handleDelete(post)}
                       className="w-8 h-8 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 hover:bg-red-500 hover:text-white dark:hover:bg-red-500 dark:hover:text-white rounded-2xl transition-all"
                       title="Hapus"
                     >
@@ -477,6 +489,18 @@ export default function BlogAdmin() {
         }}
         itemType="blogPosts"
         itemId={archiveItemId || ''}
+      />
+
+      <ConfirmModal
+        isOpen={!!postToDelete}
+        title="Hapus Postingan Blog?"
+        message={`Apakah Anda yakin ingin menghapus postingan "${postToDelete?.title || ''}" secara permanen? Tindakan ini akan menghapusnya dari artikel blog dan cloud database.`}
+        confirmText="Hapus Permanen"
+        cancelText="Batal"
+        variant="danger"
+        isProcessing={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onClose={() => !isDeleting && setPostToDelete(null)}
       />
     </div>
   );

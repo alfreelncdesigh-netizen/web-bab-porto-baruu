@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <style>
+    .line { stroke: #000000; }
+    @media (prefers-color-scheme: dark) {
+      .line { stroke: #ffffff; }
+    }
+  </style>
+  <path class="line" d="M 25 85 L 55 15 L 55 85 L 85 85" fill="none" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="42" cy="73" r="5" fill="none" stroke="#68217A" stroke-width="4"/>
+  <circle cx="71" cy="72" r="7" fill="none" stroke="#0047AB" stroke-width="4.5"/>
+</svg>

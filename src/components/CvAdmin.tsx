@@ -11,6 +11,7 @@ import { defaultSettings, defaultCvSections } from '../data/settings';
 import { getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { compressImageToWebP } from '../lib/imageCompressor';
 import { uploadImageToStorage } from '../lib/storageUploader';
+import ConfirmModal from './ConfirmModal';
 
 export default function CvAdmin() {
   const [settings, setSettings] = useState<any>(() => {
@@ -31,6 +32,7 @@ export default function CvAdmin() {
   const [uploadingSectionIndex, setUploadingSectionIndex] = useState<number | null>(null);
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
   const [targetSectionIndex, setTargetSectionIndex] = useState<number>(0);
+  const [sectionIdxToClear, setSectionIdxToClear] = useState<number | null>(null);
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
 
   useEffect(() => {
@@ -437,15 +439,21 @@ export default function CvAdmin() {
   };
 
   // CLEAR ALL IMAGES FROM SECTION
-  const handleClearAllImages = async (sectionIdx: number) => {
-    if (window.confirm("Hapus semua foto dari blok ini?")) {
-      const newSections = [...(settings.cvSections || [])];
-      newSections[sectionIdx] = { ...newSections[sectionIdx], images: [] };
-      const updatedSettings = { ...settings, cvSections: newSections };
-      setSettings(updatedSettings);
-      await saveStoredSettings(updatedSettings);
-      showToast("Semua foto di blok ini telah dihapus & disimpan");
-    }
+  const handleClearAllImages = (sectionIdx: number) => {
+    setSectionIdxToClear(sectionIdx);
+  };
+
+  const handleConfirmClearImages = async () => {
+    if (sectionIdxToClear === null) return;
+    const sectionIdx = sectionIdxToClear;
+    setSectionIdxToClear(null);
+
+    const newSections = [...(settings.cvSections || [])];
+    newSections[sectionIdx] = { ...newSections[sectionIdx], images: [] };
+    const updatedSettings = { ...settings, cvSections: newSections };
+    setSettings(updatedSettings);
+    await saveStoredSettings(updatedSettings);
+    showToast("Semua foto di blok ini telah dihapus & disimpan");
   };
 
   const currentSection = settings.cvSections?.[targetSectionIndex] || null;
@@ -976,6 +984,17 @@ export default function CvAdmin() {
           </div>
         </motion.div>
       )}
+
+      <ConfirmModal
+        isOpen={sectionIdxToClear !== null}
+        title="Hapus Semua Foto Blok Ini?"
+        message="Apakah Anda yakin ingin menghapus semua foto dari blok ini? Perubahan akan disimpan secara otomatis."
+        confirmText="Hapus Semua"
+        cancelText="Batal"
+        variant="danger"
+        onConfirm={handleConfirmClearImages}
+        onClose={() => setSectionIdxToClear(null)}
+      />
     </div>
   );
 }

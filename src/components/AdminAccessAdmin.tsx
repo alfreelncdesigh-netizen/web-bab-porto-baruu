@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { Shield, Plus, Trash, Check, X, ShieldAlert, Loader2 } from 'lucide-react';
+import ConfirmModal from './ConfirmModal';
 
 export interface AdminUser {
   id: string;
@@ -20,6 +21,8 @@ export default function AdminAccessAdmin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [newEmail, setNewEmail] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<AdminUser | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
 
   useEffect(() => {
@@ -101,15 +104,26 @@ export default function AdminAccessAdmin() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Hapus pengguna ini dari daftar akses?')) {
-      try {
-        await deleteDoc(doc(db, 'adminUsers', id));
-        showToast('Pengguna dihapus.');
-      } catch (err) {
-        console.error(err);
-        showToast('Gagal menghapus.', 'error');
-      }
+  const handleDelete = (user: AdminUser) => {
+    setUserToDelete(user);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!userToDelete) return;
+    setIsDeleting(true);
+    const id = userToDelete.id;
+
+    // Optimistic update
+    setUsers(prev => prev.filter(u => u.id !== id));
+    showToast(`Pengguna ${userToDelete.email} dihapus dari daftar akses.`);
+    setUserToDelete(null);
+
+    try {
+      await deleteDoc(doc(db, 'adminUsers', id));
+    } catch (err) {
+      console.error("Delete admin user error:", err);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -204,8 +218,8 @@ export default function AdminAccessAdmin() {
               </button>
               
               <button
-                onClick={() => handleDelete(user.id)}
-                className="px-2 py-1 text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 rounded border border-transparent hover:border-red-200 dark:hover:border-red-900/30 transition-all flex items-center gap-1.5 shrink-0 text-[10px] font-bold uppercase tracking-wider"
+                onClick={() => handleDelete(user)}
+                className="px-2 py-1 text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-500/10 dark:hover:bg-red-500/20 rounded border border-transparent hover:border-red-200 dark:hover:border-red-900/30 transition-all flex items-center gap-1.5 shrink-0 text-[10px] font-bold uppercase tracking-wider cursor-pointer"
                 title="Hapus secara permanen"
               >
                 <Trash size={12} /> <span className="sm:hidden">Hapus</span>
@@ -220,6 +234,18 @@ export default function AdminAccessAdmin() {
           </p>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={!!userToDelete}
+        title="Hapus Akses Admin?"
+        message={`Apakah Anda yakin ingin menghapus "${userToDelete?.email || ''}" dari daftar akses admin?`}
+        confirmText="Hapus Akses"
+        cancelText="Batal"
+        variant="danger"
+        isProcessing={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onClose={() => !isDeleting && setUserToDelete(null)}
+      />
     </div>
   );
 }

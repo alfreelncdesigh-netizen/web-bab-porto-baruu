@@ -95,6 +95,15 @@
         "role": { "type": "string", "maxLength": 50 }
       },
       "required": ["email"]
+    },
+    "ArchiveFolder": {
+      "title": "ArchiveFolder",
+      "description": "Folder container for archived portfolio works and articles.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 200 }
+      },
+      "required": ["name"]
     }
   },
   "firestore": {
@@ -129,6 +138,10 @@
     "admin_users": {
       "schema": { "$ref": "#/entities/AdminUser" },
       "description": "Stores authorized admin user profiles."
+    },
+    "archiveFolders": {
+      "schema": { "$ref": "#/entities/ArchiveFolder" },
+      "description": "Stores archive folders."
     }
   }
 }

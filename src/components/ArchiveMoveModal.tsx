@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { collection, getDocs, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { X, Folder, Plus, FolderDown } from 'lucide-react';
 import { getStoredProjects, saveStoredProjects } from '../lib/contentStorage';
@@ -29,9 +29,18 @@ export default function ArchiveMoveModal({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
-      loadFolders();
-    }
+    if (!isOpen) return;
+
+    loadFolders();
+    const unsub = onSnapshot(collection(db, 'archiveFolders'), (snap) => {
+      const f: ArchiveFolder[] = [];
+      snap.forEach(d => f.push({ id: d.id, name: d.data().name }));
+      setFolders(f);
+    }, (err) => {
+      console.warn("Archive modal folder sync warning:", err);
+    });
+
+    return () => unsub();
   }, [isOpen]);
 
   const loadFolders = async () => {
@@ -47,15 +56,16 @@ export default function ArchiveMoveModal({
 
   const handleCreateFolder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newFolderName.trim()) return;
+    const trimmed = newFolderName.trim();
+    if (!trimmed) return;
     setLoading(true);
     try {
       const ref = await addDoc(collection(db, 'archiveFolders'), {
-        name: newFolderName,
+        name: trimmed,
         createdAt: serverTimestamp()
       });
-      const newFolder = { id: ref.id, name: newFolderName };
-      setFolders([...folders, newFolder]);
+      const newFolder = { id: ref.id, name: trimmed };
+      setFolders(prev => prev.some(f => f.id === ref.id) ? prev : [...prev, newFolder]);
       setNewFolderName('');
       setIsCreating(false);
     } catch (e) {
@@ -74,10 +84,10 @@ export default function ArchiveMoveModal({
         saveStoredProjects(updated);
       }
 
-      await updateDoc(doc(db, itemType, itemId), {
+      await setDoc(doc(db, itemType, itemId), {
         isArchived: true,
         archiveFolderId: folderId
-      });
+      }, { merge: true });
       onSuccess(folderId);
       onClose();
     } catch (e) {

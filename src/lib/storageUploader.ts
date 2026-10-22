@@ -79,12 +79,8 @@ export async function uploadImageToStorage(
       if (serverRes.ok) {
         const resData = await serverRes.json();
         if (resData.url) {
-          const fullUrl = resData.url.startsWith('http')
-            ? resData.url
-            : (typeof window !== 'undefined' && window.location?.origin
-                ? `${window.location.origin}${resData.url.startsWith('/') ? '' : '/'}${resData.url}`
-                : resData.url);
-          return fullUrl;
+          // Kembalikan relative clean URL (e.g. /uploads/safeName.webp) agar adaptif di semua domain/preview
+          return resData.url;
         }
       }
     } catch (apiErr: any) {
@@ -112,12 +108,7 @@ export async function uploadImageToStorage(
         if (jsonRes.ok) {
           const resData = await jsonRes.json();
           if (resData.url) {
-            const fullUrl = resData.url.startsWith('http')
-              ? resData.url
-              : (typeof window !== 'undefined' && window.location?.origin
-                  ? `${window.location.origin}${resData.url.startsWith('/') ? '' : '/'}${resData.url}`
-                  : resData.url);
-            return fullUrl;
+            return resData.url;
           }
         }
       }

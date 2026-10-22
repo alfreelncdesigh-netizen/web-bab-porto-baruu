@@ -43,16 +43,32 @@ export function resolveImageUrl(url?: string | null): string {
 
   // Jika URL absolute (http:// atau https://)
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    // Jika URL mengarah ke /uploads/ di host lain (misal dari instance sebelumnya),
-    // redirect ke origin saat ini jika berbeda
+    // Jika URL mengarah ke /uploads/ di host lain (misal dari preview instance sebelumnya),
+    // normalisasi ke origin saat ini secara dinamis
     if (trimmed.includes('/uploads/')) {
       try {
         const parsed = new URL(trimmed);
         const origin = typeof window !== 'undefined' ? window.location.origin : '';
-        if (origin && parsed.origin !== origin) {
-          const pathname = parsed.pathname;
+        const pathname = parsed.pathname;
+        if (origin) {
           return `${origin}${pathname.startsWith('/') ? '' : '/'}${pathname}`;
         }
+        return pathname;
+      } catch {
+        // Abaikan parse error
+      }
+    }
+
+    // Jika URL mengarah ke folder publik /images/ di host lain
+    if (trimmed.includes('/images/')) {
+      try {
+        const parsed = new URL(trimmed);
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        const pathname = parsed.pathname;
+        if (origin) {
+          return `${origin}${pathname.startsWith('/') ? '' : '/'}${pathname}`;
+        }
+        return pathname;
       } catch {
         // Abaikan parse error
       }

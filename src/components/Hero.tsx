@@ -152,7 +152,14 @@ export default function Hero() {
               className="w-full h-full object-contain object-center select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-sm"
               fetchPriority="high"
               loading="eager"
-              onError={handleImageError}
+              onError={(e) => {
+                const target = e.currentTarget;
+                if (!target.src.includes('editing_tools_3d_1787123977793.jpg')) {
+                  target.src = '/images/editing_tools_3d_1787123977793.jpg';
+                } else {
+                  handleImageError(e);
+                }
+              }}
             />
           </div>
         </motion.div>
@@ -236,7 +243,14 @@ export default function Hero() {
                 className="w-full h-full object-contain object-bottom select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-md transition-transform duration-500 hover:scale-[1.01]"
                 fetchPriority="high"
                 loading="eager"
-                onError={handleImageError}
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (!target.src.includes('editing_tools_3d_1787123977793.jpg')) {
+                    target.src = '/images/editing_tools_3d_1787123977793.jpg';
+                  } else {
+                    handleImageError(e);
+                  }
+                }}
               />
             </div>
           </motion.div>

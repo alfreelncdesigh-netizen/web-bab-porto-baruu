@@ -164,7 +164,14 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
                   alt={activeBanners[0].title || "Banner Promosi"}
                   loading="eager"
                   className="w-full h-full object-cover rounded-2xl md:rounded-3xl lg:rounded-[32px] transition-transform duration-700 ease-out group-hover:scale-[1.02] bg-transparent border-none shadow-none"
-                  onError={handleImageError}
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (!target.src.includes('banner_promo_bca_1788696791480.jpg')) {
+                      target.src = '/images/banner_promo_bca_1788696791480.jpg';
+                    } else {
+                      handleImageError(e);
+                    }
+                  }}
                 />
               </div>
 

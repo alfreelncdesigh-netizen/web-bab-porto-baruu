@@ -88,6 +88,16 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
   if (cleaned.aboutImage && cleaned.aboutImage.includes('photo-1499951360447')) {
     cleaned.aboutImage = "";
   }
+  if (cleaned.heroImage && typeof cleaned.heroImage === 'string') {
+    if (cleaned.heroImage.includes('/src/assets/images/')) {
+      const filename = cleaned.heroImage.split('/src/assets/images/')[1];
+      cleaned.heroImage = `/images/${filename}`;
+    } else if (cleaned.heroImage.startsWith('src/assets/images/')) {
+      cleaned.heroImage = `/images/${cleaned.heroImage.replace('src/assets/images/', '')}`;
+    }
+  } else {
+    cleaned.heroImage = defaultSettings.heroImage;
+  }
   if (Array.isArray(cleaned.cvSections) && cleaned.cvSections.length > 0) {
     cleaned.cvSections = cleaned.cvSections.map((s: any) => {
       let imgs: string[] = [];

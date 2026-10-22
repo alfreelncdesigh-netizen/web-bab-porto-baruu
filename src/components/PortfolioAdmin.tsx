@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import ArchiveMoveModal from './ArchiveMoveModal';
+import ConfirmModal from './ConfirmModal';
 import { motion } from 'motion/react';
 import { Project, categories } from '../data/projects';
 import { Edit, Trash, EyeOff, Eye, Plus, X, Check, Upload, Loader2, Link as LinkIcon, Archive, AlertCircle } from 'lucide-react';
@@ -7,11 +8,14 @@ import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { getStoredProjects, saveStoredProjects, cleanProjects } from '../lib/contentStorage';
 import { getOptimizedImageUrl } from "../lib/cloudinary";
+import { resolveImageUrl } from '../lib/imageResolver';
 import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
 
 export default function PortfolioAdmin() {
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
   const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [archiveItemId, setArchiveItemId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -125,25 +129,33 @@ export default function PortfolioAdmin() {
     }
   };
 
-  const handleDelete = async (id: string | number, imageUrl?: string) => {
-    if (confirm("Apakah Anda yakin ingin menghapus karya ini? Tindakan ini permanen.")) {
-      const docId = id.toString();
-      // 1. Langsung hapus dari tampilan admin dan publik seketika (optimistic update)
-      const updated = projects.filter(p => p.id.toString() !== docId);
-      setProjects(updated);
-      saveStoredProjects(updated);
-      showToast("Karya berhasil dihapus permanen.");
+  const handleDelete = (project: Project) => {
+    setProjectToDelete(project);
+  };
 
-      // 2. Eksekusi penghapusan di database Cloud Firestore
-      try {
-        await withTimeout(
-          deleteDoc(doc(db, 'projects', docId)),
-          6000,
-          "Database cloud selesai diperbarui."
-        );
-      } catch (err: any) {
-        console.warn("[DELETE] Notice database cloud:", err?.message || err);
-      }
+  const handleConfirmDelete = async () => {
+    if (!projectToDelete) return;
+    setIsDeleting(true);
+    const docId = projectToDelete.id.toString();
+
+    // 1. Langsung hapus dari tampilan admin dan publik seketika (optimistic update)
+    const updated = projects.filter(p => p.id.toString() !== docId);
+    setProjects(updated);
+    saveStoredProjects(updated);
+    showToast(`"${projectToDelete.title || 'Karya'}" berhasil dihapus permanen.`);
+    setProjectToDelete(null);
+
+    // 2. Eksekusi penghapusan di database Cloud Firestore
+    try {
+      await withTimeout(
+        deleteDoc(doc(db, 'projects', docId)),
+        6000,
+        "Database cloud selesai diperbarui."
+      );
+    } catch (err: any) {
+      console.warn("[DELETE] Notice database cloud:", err?.message || err);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -247,7 +259,11 @@ export default function PortfolioAdmin() {
       if (fileList.length === 1) {
         setUploadStatusText("Mengompres & Mengunggah Gambar...");
         const cleanUrl = await compressAndUpload(firstFile, 'portfolio');
-        setEditingProject(prev => prev ? ({ ...prev, image: cleanUrl }) : null);
+        setEditingProject(prev => prev ? ({
+          ...prev,
+          image: cleanUrl,
+          images: [cleanUrl, ...(prev.images || []).filter(img => img !== cleanUrl)]
+        }) : null);
         showToast("Gambar berhasil diunggah!");
       } else {
         setUploadStatusText(`Mengunggah Gambar (0/${fileList.length})...`);
@@ -257,7 +273,11 @@ export default function PortfolioAdmin() {
           (done, total) => setUploadStatusText(`Mengunggah Gambar (${done}/${total})...`)
         );
         if (cleanUrls.length > 0) {
-          setEditingProject(prev => prev ? ({ ...prev, image: cleanUrls[0] }) : null);
+          setEditingProject(prev => prev ? ({
+            ...prev,
+            image: cleanUrls[0],
+            images: cleanUrls
+          }) : null);
           showToast(`${cleanUrls.length} gambar berhasil diunggah!`);
         }
       }
@@ -571,7 +591,7 @@ export default function PortfolioAdmin() {
                             ? 'https://via.placeholder.com/150?text=PDF'
                             : project.image?.includes('.eps') || project.image?.includes('.ai')
                             ? 'https://via.placeholder.com/150?text=Vektor'
-                            : getOptimizedImageUrl(project.image)
+                            : resolveImageUrl(project.image)
                         }
                         alt={project.title}
                         className="w-full h-full object-cover"
@@ -610,7 +630,7 @@ export default function PortfolioAdmin() {
                       {project.draft ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                     <button
-                      onClick={() => handleDelete(project.id, project.image)}
+                      onClick={() => handleDelete(project)}
                       className="w-8 h-8 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 hover:bg-red-500 hover:text-white dark:hover:bg-red-500 dark:hover:text-white rounded-2xl transition-all"
                       title="Hapus"
                     >
@@ -642,6 +662,18 @@ export default function PortfolioAdmin() {
         }}
         itemType="projects"
         itemId={archiveItemId || ''}
+      />
+
+      <ConfirmModal
+        isOpen={!!projectToDelete}
+        title="Hapus Karya Desain?"
+        message={`Apakah Anda yakin ingin menghapus karya "${projectToDelete?.title || ''}" secara permanen? Tindakan ini akan menghapus karya dari galeri publik dan database cloud.`}
+        confirmText="Hapus Permanen"
+        cancelText="Batal"
+        variant="danger"
+        isProcessing={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onClose={() => !isDeleting && setProjectToDelete(null)}
       />
     </div>
   );

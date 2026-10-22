@@ -92,7 +92,7 @@ export const defaultPromoPosters: PromoPosterItem[] = [
   {
     id: "poster-1",
     title: "Diskon 30% Paket Branding & Desain UI/UX",
-    image: "/src/assets/images/promo_poster_1789471291192.jpg",
+    image: "/images/promo_poster_1789471291192.jpg",
     ctaText: "Ambil Diskon",
     link: "https://wa.me/6282394549268?text=Halo%20saya%20tertarik%20dengan%20Promo%20Diskon%2030%25%20Desain",
     active: true,
@@ -100,7 +100,7 @@ export const defaultPromoPosters: PromoPosterItem[] = [
   {
     id: "poster-2",
     title: "Paket Konten Kreatif & Visual Media Sosial",
-    image: "/src/assets/images/banner_promo_crea_1788696808849.jpg",
+    image: "/images/banner_promo_crea_1788696808849.jpg",
     ctaText: "Pesan Sekarang",
     link: "https://wa.me/6282394549268?text=Halo%20saya%20tertarik%20dengan%20Paket%20Konten%20Visual%20Media%20Sosial",
     active: true,
@@ -108,7 +108,7 @@ export const defaultPromoPosters: PromoPosterItem[] = [
   {
     id: "poster-3",
     title: "Konsultasi Desain & Audit Portofolio Gratis",
-    image: "/src/assets/images/banner_promo_bca_1788696791480.jpg",
+    image: "/images/banner_promo_bca_1788696791480.jpg",
     ctaText: "Chat Sekarang",
     link: "https://wa.me/6282394549268?text=Halo%20saya%20ingin%20konsultasi%20desain%20gratis",
     active: true,
@@ -128,11 +128,11 @@ export const defaultSettings: SiteSettings = {
   aboutDescription1: "Desain yang baik bukan hanya tentang bagaimana ia terlihat, tetapi bagaimana ia berfungsi. Saya percaya pada pendekatan minimalis dimana setiap elemen memiliki tujuan.",
   aboutDescription2: "Dengan pengalaman lebih dari 5 tahun di industri kreatif, saya telah bekerja dengan berbagai klien dari startup hingga perusahaan besar untuk merancang produk digital yang tidak hanya estetis, tetapi juga memecahkan masalah pengguna secara nyata.",
   aboutImage: "",
-  heroImage: "/src/assets/images/editing_tools_3d_1787123977793.jpg",
+  heroImage: "/images/editing_tools_3d_1787123977793.jpg",
   heroBanners: [
     {
       id: "banner-1",
-      image: "/src/assets/images/banner_promo_bca_1788696791480.jpg",
+      image: "/images/banner_promo_bca_1788696791480.jpg",
       title: "Praktis Pembayaran & Konsultasi Desain Digital",
       subtitle: "Solusi antarmuka dan visual presisi tinggi untuk pertumbuhan brand Anda",
       badge: "PROMO SPESIAL",
@@ -147,7 +147,7 @@ export const defaultSettings: SiteSettings = {
   contactLocation: "Kabupaten Sinjai Utara",
   portfolioLink: "https://alfreelnc.com",
   promoWidgetActive: true,
-  promoWidgetImage: "/src/assets/images/promo_poster_1789471291192.jpg",
+  promoWidgetImage: "/images/promo_poster_1789471291192.jpg",
   promoWidgetLink: "https://wa.me/6282394549268?text=Halo%20saya%20tertarik%20dengan%20promo%20diskon%20desain%20grafis",
   promoWidgetCtaText: "Ambil Diskon",
   promoPosters: defaultPromoPosters,

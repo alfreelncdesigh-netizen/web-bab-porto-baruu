@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react';
 import { 
   collection, 
   getDocs, 
+  getDoc,
   doc, 
   deleteDoc, 
   updateDoc, 
   addDoc, 
+  setDoc,
+  onSnapshot,
   serverTimestamp, 
   query, 
   where, 
@@ -36,8 +39,17 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { getOptimizedImageUrl } from '../lib/cloudinary';
 import { Project } from '../data/projects';
-import { getStoredProjects, saveStoredProjects } from '../lib/contentStorage';
+import { 
+  getStoredProjects, 
+  saveStoredProjects, 
+  cleanProjects,
+  getStoredBlogs,
+  saveStoredBlogs,
+  getStoredExperiences,
+  saveStoredExperiences
+} from '../lib/contentStorage';
 import { resolveImageUrl } from '../lib/imageResolver';
+import ConfirmModal from './ConfirmModal';
 
 interface ArchiveFolder {
   id: string;
@@ -75,9 +87,28 @@ export default function ArchiveAdmin() {
   const [addSearchQuery, setAddSearchQuery] = useState('');
   
   // Folder edit / delete states
-  const [folderToDelete, setFolderToDelete] = useState<string | null>(null);
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editFolderName, setEditFolderName] = useState('');
+
+  // Confirmation modal state (replacing window.confirm)
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: 'danger' | 'warning' | 'primary';
+    onConfirm: () => void | Promise<void>;
+    secondaryAction?: {
+      text: string;
+      onAction: () => void | Promise<void>;
+    };
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   // Bulk Selection States inside folder or folder list
   const [selectedFoldersForBulk, setSelectedFoldersForBulk] = useState<string[]>([]);
@@ -93,8 +124,23 @@ export default function ArchiveAdmin() {
   };
 
   useEffect(() => {
-    loadFolders();
     loadAvailableProjects();
+
+    const unsubFolders = onSnapshot(
+      collection(db, 'archiveFolders'),
+      (snap) => {
+        const f: ArchiveFolder[] = [];
+        snap.forEach(d => f.push({ id: d.id, name: d.data().name }));
+        setFolders(f);
+        setLoading(false);
+      },
+      (err) => {
+        console.warn("Failed to listen to archive folders:", err);
+        loadFolders();
+      }
+    );
+
+    return () => unsubFolders();
   }, []);
 
   useEffect(() => {
@@ -126,7 +172,7 @@ export default function ArchiveAdmin() {
     try {
       // Prioritize local storage for instant access
       const stored = getStoredProjects();
-      setAvailableProjects(stored);
+      setAvailableProjects(cleanProjects(stored));
 
       // Check Firestore to get up-to-date projects
       const snap = await getDocs(collection(db, 'projects'));
@@ -138,8 +184,9 @@ export default function ArchiveAdmin() {
             projs.push({ id: docSnap.id, ...data } as Project);
           }
         });
-        if (projs.length > 0) {
-          setAvailableProjects(projs);
+        const cleaned = cleanProjects(projs);
+        if (cleaned.length > 0) {
+          setAvailableProjects(cleaned);
         }
       }
     } catch (err) {
@@ -196,8 +243,8 @@ export default function ArchiveAdmin() {
   };
 
   // Handle Create Folder (with optional selected projects)
-  const handleCreateArchive = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateArchive = async (e?: React.FormEvent | React.MouseEvent) => {
+    if (e && 'preventDefault' in e) e.preventDefault();
     if (!newFolderName.trim() || isProcessing) return;
     setIsProcessing(true);
 
@@ -213,10 +260,19 @@ export default function ArchiveAdmin() {
       if (selectedProjectIdsForNewArchive.length > 0) {
         const batch = writeBatch(db);
         for (const projId of selectedProjectIdsForNewArchive) {
-          batch.update(doc(db, 'projects', projId), {
+          const projObj = availableProjects.find(p => p.id.toString() === projId);
+          batch.set(doc(db, 'projects', projId), {
+            ...(projObj ? {
+              title: projObj.title || '',
+              category: projObj.category || '',
+              image: projObj.image || '',
+              description: projObj.description || '',
+              date: projObj.date || ''
+            } : {}),
             isArchived: true,
-            archiveFolderId: folderRef.id
-          });
+            archiveFolderId: folderRef.id,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
         }
         await batch.commit();
 
@@ -227,7 +283,7 @@ export default function ArchiveAdmin() {
         setAvailableProjects(remaining);
       }
 
-      setFolders(prev => [...prev, newFolder]);
+      setFolders(prev => prev.some(f => f.id === newFolder.id) ? prev : [...prev, newFolder]);
       showToast(`Arsip "${newFolder.name}" berhasil dibuat dengan ${selectedProjectIdsForNewArchive.length} karya!`);
       
       // Reset form & close modal
@@ -253,10 +309,19 @@ export default function ArchiveAdmin() {
     try {
       const batch = writeBatch(db);
       for (const projId of selectedProjectIdsForExisting) {
-        batch.update(doc(db, 'projects', projId), {
+        const projObj = availableProjects.find(p => p.id.toString() === projId);
+        batch.set(doc(db, 'projects', projId), {
+          ...(projObj ? {
+            title: projObj.title || '',
+            category: projObj.category || '',
+            image: projObj.image || '',
+            description: projObj.description || '',
+            date: projObj.date || ''
+          } : {}),
           isArchived: true,
-          archiveFolderId: selectedFolder.id
-        });
+          archiveFolderId: selectedFolder.id,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
       }
       await batch.commit();
 
@@ -306,105 +371,203 @@ export default function ArchiveAdmin() {
     }
   };
 
-  const handleDeleteFolder = async (folderId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (folderToDelete !== folderId) {
-      setFolderToDelete(folderId);
-      setTimeout(() => setFolderToDelete(null), 3500);
-      return;
-    }
-    
+  const promptDeleteFolder = (folder: ArchiveFolder, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setConfirmModal({
+      isOpen: true,
+      title: `Hapus Folder "${folder.name}"?`,
+      message: `Pilih apakah Anda ingin menghapus folder ini dan mengembalikan semua karya di dalamnya agar kembali tampil di website, atau menghapus folder beserta seluruh karyanya secara permanen.`,
+      confirmText: 'Kembalikan Karya & Hapus Folder',
+      cancelText: 'Batal',
+      variant: 'warning',
+      secondaryAction: {
+        text: 'Hapus Folder & Seluruh Karyanya Secara Permanen',
+        onAction: () => executeDeleteFolder(folder.id, 'delete_all')
+      },
+      onConfirm: () => executeDeleteFolder(folder.id, 'restore_items')
+    });
+  };
+
+  const executeDeleteFolder = async (folderId: string, mode: 'restore_items' | 'delete_all') => {
+    setIsProcessing(true);
     try {
       const batch = writeBatch(db);
       
-      // Un-archive projects belonging to this folder and restore them to public
       const pSnap = await getDocs(query(collection(db, 'projects'), where('archiveFolderId', '==', folderId)));
       const restoredProjects: Project[] = [];
+      const deletedProjectIds = new Set<string>();
+
       pSnap.forEach(d => {
-        batch.update(doc(db, 'projects', d.id), { isArchived: false, archiveFolderId: null });
-        restoredProjects.push({ id: d.id, ...d.data() } as Project);
+        if (mode === 'restore_items') {
+          batch.set(doc(db, 'projects', d.id), { isArchived: false, archiveFolderId: null }, { merge: true });
+          restoredProjects.push({ id: d.id, ...d.data(), isArchived: false, archiveFolderId: null } as unknown as Project);
+        } else {
+          batch.delete(doc(db, 'projects', d.id));
+          deletedProjectIds.add(d.id);
+        }
       });
       
       const bSnap = await getDocs(query(collection(db, 'blogPosts'), where('archiveFolderId', '==', folderId)));
-      bSnap.forEach(d => batch.update(doc(db, 'blogPosts', d.id), { isArchived: false, archiveFolderId: null }));
+      bSnap.forEach(d => {
+        if (mode === 'restore_items') {
+          batch.set(doc(db, 'blogPosts', d.id), { isArchived: false, archiveFolderId: null }, { merge: true });
+        } else {
+          batch.delete(doc(db, 'blogPosts', d.id));
+        }
+      });
       
       const eSnap = await getDocs(query(collection(db, 'experiences'), where('archiveFolderId', '==', folderId)));
-      eSnap.forEach(d => batch.update(doc(db, 'experiences', d.id), { isArchived: false, archiveFolderId: null }));
+      eSnap.forEach(d => {
+        if (mode === 'restore_items') {
+          batch.set(doc(db, 'experiences', d.id), { isArchived: false, archiveFolderId: null }, { merge: true });
+        } else {
+          batch.delete(doc(db, 'experiences', d.id));
+        }
+      });
 
       batch.delete(doc(db, 'archiveFolders', folderId));
       await batch.commit();
       
-      // If projects were restored, add them back to local storage
-      if (restoredProjects.length > 0) {
-        const currentProjects = getStoredProjects();
-        const merged = [...currentProjects, ...restoredProjects];
-        saveStoredProjects(merged);
-        setAvailableProjects(merged);
+      if (mode === 'restore_items') {
+        if (restoredProjects.length > 0) {
+          const currentProjects = getStoredProjects();
+          const existingIds = new Set(currentProjects.map(p => p.id.toString()));
+          const merged = [...restoredProjects.filter(p => !existingIds.has(p.id.toString())), ...currentProjects];
+          await saveStoredProjects(merged);
+          setAvailableProjects(merged);
+        }
+        showToast("Folder berhasil dihapus & karyanya kembali tampil di web!");
+      } else {
+        if (deletedProjectIds.size > 0) {
+          const currentProjects = getStoredProjects();
+          const remaining = currentProjects.filter(p => !deletedProjectIds.has(p.id.toString()));
+          await saveStoredProjects(remaining);
+          setAvailableProjects(remaining);
+        }
+        showToast("Folder dan seluruh isinya berhasil dihapus permanen.");
       }
 
-      setFolders(folders.filter(f => f.id !== folderId));
+      setFolders(prev => prev.filter(f => f.id !== folderId));
       if (selectedFolder?.id === folderId) setSelectedFolder(null);
-      setFolderToDelete(null);
-      showToast("Folder arsip berhasil dihapus & karyanya dikembalikan ke publik.");
-    } catch (err) {
-      console.warn(err);
+      setConfirmModal(prev => ({ ...prev, isOpen: false }));
+    } catch (err: any) {
+      console.warn("Failed to delete folder:", err);
       showToast("Gagal menghapus folder. Silakan coba lagi.", "error");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   // Restore single item back to public
   const handleRestore = async (item: ArchivedItem) => {
+    setIsProcessing(true);
     try {
-      await updateDoc(doc(db, item.type, item.id), {
+      await setDoc(doc(db, item.type, item.id), {
         isArchived: false,
-        archiveFolderId: null
-      });
+        archiveFolderId: null,
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
 
       // If it's a project, restore it to stored projects so it immediately displays on web
       if (item.type === 'projects') {
-        const snap = await getDocs(query(collection(db, 'projects'), where('__name__', '==', item.id)));
         let projectData: Project | null = null;
-        snap.forEach(d => {
-          projectData = { id: d.id, ...d.data(), isArchived: false, archiveFolderId: null } as unknown as Project;
-        });
+        try {
+          const docSnap = await getDoc(doc(db, 'projects', item.id));
+          if (docSnap.exists()) {
+            projectData = { id: docSnap.id, ...docSnap.data(), isArchived: false, archiveFolderId: null } as unknown as Project;
+          }
+        } catch {}
 
-        if (projectData) {
-          const current = getStoredProjects();
-          const updated = [projectData, ...current.filter(p => p.id.toString() !== item.id)];
-          saveStoredProjects(updated);
-          setAvailableProjects(updated);
+        if (!projectData) {
+          projectData = {
+            id: item.id,
+            title: item.title,
+            category: item.category || 'UI/UX',
+            image: item.image || '',
+            description: '',
+            date: new Date().toISOString().split('T')[0],
+            isArchived: false,
+            archiveFolderId: null
+          } as unknown as Project;
         }
+
+        const current = getStoredProjects();
+        const updated = [projectData, ...current.filter(p => p.id.toString() !== item.id)];
+        await saveStoredProjects(updated);
+        setAvailableProjects(updated);
+      } else if (item.type === 'blogPosts') {
+        try {
+          const docSnap = await getDoc(doc(db, 'blogPosts', item.id));
+          if (docSnap.exists()) {
+            const bData = { id: docSnap.id, ...docSnap.data(), isArchived: false, archiveFolderId: null };
+            const current = getStoredBlogs();
+            const updated = [bData, ...current.filter(b => b.id.toString() !== item.id)];
+            await saveStoredBlogs(updated as any);
+          }
+        } catch {}
+      } else if (item.type === 'experiences') {
+        try {
+          const docSnap = await getDoc(doc(db, 'experiences', item.id));
+          if (docSnap.exists()) {
+            const eData = { id: docSnap.id, ...docSnap.data(), isArchived: false, archiveFolderId: null };
+            const current = getStoredExperiences();
+            const updated = [eData, ...current.filter(e => e.id.toString() !== item.id)];
+            await saveStoredExperiences(updated);
+          }
+        } catch {}
       }
 
-      setItems(items.filter(i => i.id !== item.id));
+      setItems(prev => prev.filter(i => i.id !== item.id));
       showToast(`"${item.title}" berhasil dikeluarkan dan kembali tampil di web!`);
     } catch (e: any) {
-      console.warn(e);
+      console.warn("Failed to restore item:", e);
       showToast("Gagal mengeluarkan karya.", "error");
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   // Permanently delete single item
-  const handleDeleteItemPermanently = async (item: ArchivedItem, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm(`HAPUS PERMANEN "${item.title}"? Konten ini akan dihapus selamanya.`)) return;
+  const handleDeleteItemPermanently = (item: ArchivedItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setConfirmModal({
+      isOpen: true,
+      title: 'Hapus Konten Permanen?',
+      message: `HAPUS PERMANEN "${item.title}"? Konten ini akan dihapus selamanya dari arsip dan cloud database. Tindakan ini tidak dapat dibatalkan.`,
+      confirmText: 'Hapus Permanen',
+      cancelText: 'Batal',
+      variant: 'danger',
+      onConfirm: async () => {
+        setIsProcessing(true);
+        try {
+          await deleteDoc(doc(db, item.type, item.id));
 
-    try {
-      await deleteDoc(doc(db, item.type, item.id));
+          if (item.type === 'projects') {
+            const current = getStoredProjects();
+            const updated = current.filter(p => p.id.toString() !== item.id);
+            await saveStoredProjects(updated);
+            setAvailableProjects(updated);
+          } else if (item.type === 'blogPosts') {
+            const current = getStoredBlogs();
+            const updated = current.filter(b => b.id.toString() !== item.id);
+            await saveStoredBlogs(updated);
+          } else if (item.type === 'experiences') {
+            const current = getStoredExperiences();
+            const updated = current.filter(e => e.id.toString() !== item.id);
+            await saveStoredExperiences(updated);
+          }
 
-      if (item.type === 'projects') {
-        const current = getStoredProjects();
-        const updated = current.filter(p => p.id.toString() !== item.id);
-        saveStoredProjects(updated);
-        setAvailableProjects(updated);
+          setItems(prev => prev.filter(i => i.id !== item.id));
+          showToast(`"${item.title}" berhasil dihapus permanen.`);
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        } catch (err) {
+          console.warn("Failed to delete item:", err);
+          showToast("Gagal menghapus konten.", "error");
+        } finally {
+          setIsProcessing(false);
+        }
       }
-
-      setItems(items.filter(i => i.id !== item.id));
-      showToast(`"${item.title}" berhasil dihapus permanen.`);
-    } catch (err) {
-      console.warn(err);
-      showToast("Gagal menghapus konten.", "error");
-    }
+    });
   };
 
   // Bulk Selection Toggles
@@ -425,51 +588,108 @@ export default function ArchiveAdmin() {
     }
   };
 
-  const handleBulkRestoreItems = async () => {
-    if (!confirm(`Keluarkan ${selectedItemsForBulk.length} karya terpilih kembali ke halaman utama web?`)) return;
-    setLoading(true);
-    try {
-      const batch = writeBatch(db);
-      for (const itemId of selectedItemsForBulk) {
-        const item = items.find(i => i.id === itemId);
-        if (item) {
-          batch.update(doc(db, item.type, item.id), { isArchived: false, archiveFolderId: null });
+  const handleBulkRestoreItems = () => {
+    if (selectedItemsForBulk.length === 0) return;
+    setConfirmModal({
+      isOpen: true,
+      title: `Keluarkan ${selectedItemsForBulk.length} Karya ke Web?`,
+      message: `Semua karya yang dipilih (${selectedItemsForBulk.length} karya) akan dikeluarkan dari folder arsip ini dan langsung ditampilkan kembali di halaman utama website.`,
+      confirmText: 'Keluarkan ke Web',
+      cancelText: 'Batal',
+      variant: 'primary',
+      onConfirm: async () => {
+        setIsProcessing(true);
+        setLoading(true);
+        try {
+          const batch = writeBatch(db);
+          for (const itemId of selectedItemsForBulk) {
+            const item = items.find(i => i.id === itemId);
+            if (item) {
+              batch.set(doc(db, item.type, item.id), { isArchived: false, archiveFolderId: null, updatedAt: new Date().toISOString() }, { merge: true });
+            }
+          }
+          await batch.commit();
+
+          // Fetch restored projects and update storedProjects
+          const restoredProjects: Project[] = [];
+          for (const itemId of selectedItemsForBulk) {
+            const item = items.find(i => i.id === itemId);
+            if (item && item.type === 'projects') {
+              try {
+                const docSnap = await getDoc(doc(db, 'projects', itemId));
+                if (docSnap.exists()) {
+                  restoredProjects.push({ id: docSnap.id, ...docSnap.data(), isArchived: false, archiveFolderId: null } as unknown as Project);
+                }
+              } catch {}
+            }
+          }
+
+          if (restoredProjects.length > 0) {
+            const currentProjects = getStoredProjects();
+            const existingIds = new Set(currentProjects.map(p => p.id.toString()));
+            const merged = [
+              ...restoredProjects.filter(p => !existingIds.has(p.id.toString())),
+              ...currentProjects
+            ];
+            await saveStoredProjects(merged);
+            setAvailableProjects(merged);
+          }
+
+          setItems(prev => prev.filter(i => !selectedItemsForBulk.includes(i.id)));
+          showToast(`${selectedItemsForBulk.length} karya berhasil dikembalikan ke website publik!`);
+          setSelectedItemsForBulk([]);
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        } catch (e) {
+          console.warn("Failed to bulk restore:", e);
+          showToast("Gagal memproses pengembalian karya.", "error");
+        } finally {
+          setIsProcessing(false);
+          setLoading(false);
         }
       }
-      await batch.commit();
-
-      // Reload active projects
-      await loadAvailableProjects();
-      setItems(items.filter(i => !selectedItemsForBulk.includes(i.id)));
-      setSelectedItemsForBulk([]);
-      showToast(`${selectedItemsForBulk.length} karya berhasil dikembalikan ke publik!`);
-    } catch (e) {
-      console.warn(e);
-      showToast("Gagal memproses bulk restore.", "error");
-    }
-    setLoading(false);
+    });
   };
 
-  const handleBulkDeleteItems = async () => {
-    if (!confirm(`HAPUS PERMANEN ${selectedItemsForBulk.length} karya terpilih? Tindakan ini tidak bisa dibatalkan.`)) return;
-    setLoading(true);
-    try {
-      const batch = writeBatch(db);
-      for (const itemId of selectedItemsForBulk) {
-        const item = items.find(i => i.id === itemId);
-        if (item) {
-          batch.delete(doc(db, item.type, item.id));
+  const handleBulkDeleteItems = () => {
+    if (selectedItemsForBulk.length === 0) return;
+    setConfirmModal({
+      isOpen: true,
+      title: `HAPUS PERMANEN ${selectedItemsForBulk.length} Karya?`,
+      message: `Tindakan ini tidak bisa dibatalkan! ${selectedItemsForBulk.length} karya terpilih akan dihapus selamanya dari arsip dan cloud database.`,
+      confirmText: 'Hapus Semua Terpilih',
+      cancelText: 'Batal',
+      variant: 'danger',
+      onConfirm: async () => {
+        setIsProcessing(true);
+        setLoading(true);
+        try {
+          const batch = writeBatch(db);
+          for (const itemId of selectedItemsForBulk) {
+            const item = items.find(i => i.id === itemId);
+            if (item) {
+              batch.delete(doc(db, item.type, item.id));
+            }
+          }
+          await batch.commit();
+
+          const currentProjects = getStoredProjects();
+          const remaining = currentProjects.filter(p => !selectedItemsForBulk.includes(p.id.toString()));
+          await saveStoredProjects(remaining);
+          setAvailableProjects(remaining);
+
+          setItems(prev => prev.filter(i => !selectedItemsForBulk.includes(i.id)));
+          setSelectedItemsForBulk([]);
+          showToast(`${selectedItemsForBulk.length} karya berhasil dihapus permanen.`);
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        } catch (e) {
+          console.warn("Failed to bulk delete:", e);
+          showToast("Gagal memproses bulk delete.", "error");
+        } finally {
+          setIsProcessing(false);
+          setLoading(false);
         }
       }
-      await batch.commit();
-      setItems(items.filter(i => !selectedItemsForBulk.includes(i.id)));
-      setSelectedItemsForBulk([]);
-      showToast(`${selectedItemsForBulk.length} karya berhasil dihapus permanen.`);
-    } catch (e) {
-      console.warn(e);
-      showToast("Gagal memproses bulk delete.", "error");
-    }
-    setLoading(false);
+    });
   };
 
   // Toggle selection for creating a new archive
@@ -569,10 +789,19 @@ export default function ArchiveAdmin() {
               Masukkan Karya ke Arsip
             </button>
 
+            <button
+              onClick={() => promptDeleteFolder(selectedFolder)}
+              className="px-3.5 py-2.5 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 hover:bg-red-600 hover:text-white rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95 border border-red-200 dark:border-red-900/40"
+              title="Hapus folder arsip ini"
+            >
+              <Trash size={15} />
+              Hapus Folder
+            </button>
+
             {items.length > 0 && (
               <button
                 onClick={toggleAllItems}
-                className="px-3.5 py-2.5 flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white rounded-2xl text-xs sm:text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                className="px-3.5 py-2.5 flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white rounded-2xl text-xs sm:text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer"
               >
                 {selectedItemsForBulk.length === items.length ? <CheckSquare size={16} className="text-blue-500" /> : <Square size={16} />}
                 Pilih Semua
@@ -808,6 +1037,19 @@ export default function ArchiveAdmin() {
             </div>
           )}
         </AnimatePresence>
+
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmText={confirmModal.confirmText}
+          cancelText={confirmModal.cancelText}
+          variant={confirmModal.variant}
+          secondaryAction={confirmModal.secondaryAction}
+          isProcessing={isProcessing}
+          onConfirm={confirmModal.onConfirm}
+          onClose={() => !isProcessing && setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        />
       </div>
     );
   }
@@ -934,22 +1176,13 @@ export default function ArchiveAdmin() {
                             <Edit2 size={14} />
                           </button>
 
-                          {folderToDelete === folder.id ? (
-                            <button
-                              onClick={(e) => handleDeleteFolder(folder.id, e)}
-                              className="px-2.5 h-8 flex items-center justify-center bg-red-500 text-white rounded-xl hover:bg-red-600 font-bold text-[11px] transition-all cursor-pointer"
-                            >
-                              Hapus?
-                            </button>
-                          ) : (
-                            <button
-                              onClick={(e) => handleDeleteFolder(folder.id, e)}
-                              title="Hapus folder"
-                              className="w-8 h-8 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all cursor-pointer"
-                            >
-                              <Trash size={14} />
-                            </button>
-                          )}
+                          <button
+                            onClick={(e) => promptDeleteFolder(folder, e)}
+                            title="Hapus folder arsip"
+                            className="w-8 h-8 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all cursor-pointer"
+                          >
+                            <Trash size={14} />
+                          </button>
                         </div>
                       </div>
                     )}
@@ -1110,6 +1343,19 @@ export default function ArchiveAdmin() {
           </div>
         )}
       </AnimatePresence>
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
+        variant={confirmModal.variant}
+        secondaryAction={confirmModal.secondaryAction}
+        isProcessing={isProcessing}
+        onConfirm={confirmModal.onConfirm}
+        onClose={() => !isProcessing && setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

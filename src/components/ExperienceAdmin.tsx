@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import ArchiveMoveModal from './ArchiveMoveModal';
+import ConfirmModal from './ConfirmModal';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { getStoredExperiences, saveStoredExperiences } from '../lib/contentStorage';
@@ -10,6 +11,8 @@ export default function ExperienceAdmin() {
   const [experiences, setExperiences] = useState<any[]>(() => getStoredExperiences());
   const [isEditing, setIsEditing] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
+  const [itemToDelete, setItemToDelete] = useState<any>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [archiveItemId, setArchiveItemId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -70,24 +73,33 @@ export default function ExperienceAdmin() {
     setIsEditing(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Hapus pengalaman ini? Tindakan ini permanen.")) {
-      // 1. Langsung hapus dari state & local storage seketika (optimistic update)
-      const updated = experiences.filter(e => e.id !== id);
-      setExperiences(updated);
-      saveStoredExperiences(updated);
-      showToast("Pengalaman berhasil dihapus permanen.");
+  const handleDelete = (item: any) => {
+    setItemToDelete(item);
+  };
 
-      // 2. Eksekusi penghapusan di cloud
-      try {
-        await withTimeout(
-          deleteDoc(doc(db, 'experiences', id)),
-          6000,
-          "Database cloud selesai diperbarui."
-        );
-      } catch (err: any) {
-        console.warn("[DELETE] Notice database cloud experience:", err?.message || err);
-      }
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
+    setIsDeleting(true);
+    const id = itemToDelete.id.toString();
+
+    // 1. Langsung hapus dari state & local storage seketika (optimistic update)
+    const updated = experiences.filter(e => e.id.toString() !== id);
+    setExperiences(updated);
+    saveStoredExperiences(updated);
+    showToast(`Pengalaman "${itemToDelete.header || ''}" berhasil dihapus permanen.`);
+    setItemToDelete(null);
+
+    // 2. Eksekusi penghapusan di cloud
+    try {
+      await withTimeout(
+        deleteDoc(doc(db, 'experiences', id)),
+        6000,
+        "Database cloud selesai diperbarui."
+      );
+    } catch (err: any) {
+      console.warn("[DELETE] Notice database cloud experience:", err?.message || err);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -401,7 +413,7 @@ export default function ExperienceAdmin() {
                       <Edit2 className="w-3.5 h-3.5" /> Edit
                     </button>
                     <button
-                      onClick={() => handleDelete(exp.id)}
+                      onClick={() => handleDelete(exp)}
                       className="flex-1 bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400 py-2 rounded-xl text-xs font-bold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2"
                     >
                       <Trash2 className="w-3.5 h-3.5" /> Hapus
@@ -418,6 +430,18 @@ export default function ExperienceAdmin() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!itemToDelete}
+        title="Hapus Pengalaman?"
+        message={`Apakah Anda yakin ingin menghapus pengalaman "${itemToDelete?.header || ''}" secara permanen? Data akan dihapus dari website dan cloud database.`}
+        confirmText="Hapus Permanen"
+        cancelText="Batal"
+        variant="danger"
+        isProcessing={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onClose={() => !isDeleting && setItemToDelete(null)}
+      />
     </div>
   );
 }

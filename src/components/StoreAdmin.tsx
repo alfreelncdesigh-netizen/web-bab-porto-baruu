@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ShoppingCart, Trash2, Calendar, Phone, CheckCircle, Clock, Search, MessageSquare, ExternalLink, RefreshCw } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import ConfirmModal from './ConfirmModal';
 
 interface OrderItem {
   id: string;
@@ -26,6 +27,8 @@ export default function StoreAdmin() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<OrderItem | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<OrderItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -57,14 +60,27 @@ export default function StoreAdmin() {
     return () => unsub();
   }, []);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Yakin ingin menghapus riwayat order ini?')) return;
+  const handleDelete = (order: OrderItem) => {
+    setOrderToDelete(order);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!orderToDelete) return;
+    setIsDeleting(true);
+    const id = orderToDelete.id;
+
+    // Optimistic local state update
+    setOrders(prev => prev.filter(o => o.id !== id));
+    if (selectedOrder?.id === id) setSelectedOrder(null);
+    showToast(`Order dari ${orderToDelete.nama || 'Pelanggan'} berhasil dihapus.`);
+    setOrderToDelete(null);
+
     try {
       await deleteDoc(doc(db, 'orders', id));
-      showToast('Order berhasil dihapus.');
-      if (selectedOrder?.id === id) setSelectedOrder(null);
     } catch (e) {
-      showToast('Gagal menghapus order.', 'error');
+      console.warn("Delete order error:", e);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -248,7 +264,7 @@ export default function StoreAdmin() {
                   </select>
 
                   <button
-                    onClick={() => handleDelete(order.id)}
+                    onClick={() => handleDelete(order)}
                     className="p-1.5 text-zinc-400 hover:text-red-500 rounded-xl transition-colors cursor-pointer"
                     title="Hapus Order"
                   >
@@ -260,6 +276,18 @@ export default function StoreAdmin() {
           })}
         </div>
       )}
+
+      <ConfirmModal
+        isOpen={!!orderToDelete}
+        title="Hapus Riwayat Order?"
+        message={`Apakah Anda yakin ingin menghapus data order dari "${orderToDelete?.nama || 'Pelanggan'}"? Tindakan ini permanen.`}
+        confirmText="Hapus Order"
+        cancelText="Batal"
+        variant="danger"
+        isProcessing={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onClose={() => !isDeleting && setOrderToDelete(null)}
+      />
     </div>
   );
 }
