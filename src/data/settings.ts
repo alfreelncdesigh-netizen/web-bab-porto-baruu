@@ -140,6 +140,28 @@ export const defaultSettings: SiteSettings = {
       linkText: "Lihat Karya",
       active: true,
       overlayText: false
+    },
+    {
+      id: "banner-2",
+      image: "/images/banner_promo_crea_1788696808849.jpg",
+      title: "Paket Konten Kreatif & Visual Media Sosial",
+      subtitle: "Desain visual feeds, story, dan materi promosi menarik untuk brand Anda",
+      badge: "KONTEN KREATIF",
+      link: "#portfolio",
+      linkText: "Lihat Karya",
+      active: true,
+      overlayText: false
+    },
+    {
+      id: "banner-3",
+      image: "/images/promo_poster_1789471291192.jpg",
+      title: "Diskon 30% Paket Branding & Desain UI/UX",
+      subtitle: "Tingkatkan identitas visual bisnis Anda dengan harga promo terbatas",
+      badge: "DISKON 30%",
+      link: "#contact",
+      linkText: "Pesan Sekarang",
+      active: true,
+      overlayText: false
     }
   ],
   contactEmail: "alfreelnc.desigh@gmail.com",

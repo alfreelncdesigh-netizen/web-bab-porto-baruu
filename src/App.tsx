@@ -51,7 +51,7 @@ const AppSkeleton = () => (
 
         {/* Nav Links (Desktop) */}
         <div className="hidden md:flex gap-5 lg:gap-6 items-center">
-          {['Tentang Saya', 'Beranda', 'Karya', 'Pengalaman', 'Order', 'Blog', 'Statistik', 'Admin'].map((_, i) => (
+          {['Tentang Saya', 'Beranda', 'Karya', 'Pengalaman', 'Order', 'Blog', 'Statistik'].map((_, i) => (
             <div key={i} className={`h-3 w-12 lg:w-14 rounded-full ${skeletonGradient}`} />
           ))}
           <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700 mx-1" />
@@ -108,14 +108,9 @@ const AppSkeleton = () => (
         </div>
       </div>
 
-      {/* Hero Banner Carousel row */}
-      <div className="mt-8 md:mt-12 w-full">
-        {/* Mobile Banner: 1 item */}
-        <div className="block md:hidden">
-          <div className={`w-full aspect-[3/1] rounded-2xl ${skeletonGradient}`} />
-        </div>
-        {/* Desktop Banner: 3 items */}
-        <div className="hidden md:grid grid-cols-3 gap-4">
+      {/* Hero Banner Carousel row (Desktop only) */}
+      <div className="mt-8 md:mt-12 w-full hidden md:block">
+        <div className="grid grid-cols-3 gap-4">
           {[1, 2, 3].map((i) => (
             <div key={i} className={`aspect-[3/1] rounded-2xl ${skeletonGradient}`} />
           ))}
@@ -526,16 +521,17 @@ export default function App() {
                 const current = getStoredSettings();
                 const localSavedAt = current.savedAt || 0;
 
-                // Hanya timpa jika Firestore memiliki data yang sama baru atau lebih baru
-                if (cloudSavedAt >= localSavedAt) {
+                if (snapGlobal?.exists() || (snapCv && snapCv.exists())) {
                   const cleaned = cleanSettings({
                     ...data,
                     cvSections: cloudCvSections,
                     cvRole: cvData?.cvRole || data.cvRole,
-                    cvPdfFile: cvData?.cvPdfFile || data.cvPdfFile
+                    cvPdfFile: cvData?.cvPdfFile || data.cvPdfFile,
+                    savedAt: cloudSavedAt || Date.now()
                   });
                   const merged = { ...defaultSettings, ...cleaned };
                   setLocalSettings(merged);
+                  window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: merged }));
                   const extraImgs: Promise<void>[] = [];
                   if (merged?.heroImage) extraImgs.push(preloadImage(merged.heroImage));
                   if (merged?.aboutImage) extraImgs.push(preloadImage(merged.aboutImage));
@@ -555,8 +551,8 @@ export default function App() {
                 const cleanedProjs = cleanProjects(projs);
                 cleanedProjs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
                 saveStoredProjects(cleanedProjs);
-                window.dispatchEvent(new CustomEvent('user_projects_updated', { detail: cleanedProjs }));
-                await Promise.all(cleanedProjs.map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
+                // Hanya preload 2 proyek teratas agar hemat bandwidth dan sesuai dengan lazy loading IntersectionObserver
+                await Promise.all(cleanedProjs.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
               }
             }).catch(e => console.warn("Cloud projects sync fallback:", e));
 
@@ -568,7 +564,7 @@ export default function App() {
                 const cleanedPosts = cleanBlogs(posts);
                 saveStoredBlogs(cleanedPosts);
                 window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: cleanedPosts }));
-                await Promise.all(cleanedPosts.map(b => {
+                await Promise.all(cleanedPosts.slice(0, 2).map(b => {
                   const img = b.image || (b as any).coverImage;
                   return img ? preloadImage(img) : Promise.resolve();
                 }));

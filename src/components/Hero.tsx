@@ -27,12 +27,7 @@ export default function Hero() {
       (docSnap) => {
         if (docSnap.exists()) {
           const cloudData = docSnap.data() as Partial<SiteSettings>;
-          const local = getStoredSettings();
-          const cloudTime = cloudData?.savedAt || 0;
-          const localTime = local?.savedAt || 0;
-
-          // Jangan timpa pengaturan lokal yang lebih baru dari aksi admin
-          if (cloudTime >= localTime) {
+          if (cloudData && Object.keys(cloudData).length > 0) {
             const merged = { ...defaultSettings, ...cleanSettings(cloudData) };
             setSettings(merged);
             try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
@@ -89,7 +84,7 @@ export default function Hero() {
             3. Foto desainer dengan elemen lingkaran & garis biru abstrak
                diposisikan di BAWAH teks & tombol, BUKAN di belakangnya.
           ======================================================== */}
-      <div className="block md:hidden w-full bg-white dark:bg-[#0a0a0a] pt-20 sm:pt-24 pb-6 transition-colors">
+      <div className="block md:hidden w-full bg-white dark:bg-[#0a0a0a] pt-16 sm:pt-20 pb-0 transition-colors">
         {/* Area Teks & Tombol CTA: Latar belakang bersih, solid, high-contrast */}
         <motion.div 
           initial={{ opacity: 0, y: 14 }}
@@ -112,44 +107,44 @@ export default function Hero() {
               letterSpacing: '-0.025em',
               lineHeight: 1.1,
             }}
-            className="font-black text-[34px] sm:text-[40px] text-zinc-950 dark:text-white mb-1.5 select-none w-full"
+            className="font-black text-[34px] sm:text-[40px] text-zinc-950 dark:text-white mb-2 select-none w-full"
           >
             <span className="block text-zinc-950 dark:text-white font-black">{title1Text}</span>
             <span className="block text-zinc-950 dark:text-white font-black mt-1">{title2Text}</span>
           </h1>
 
           {/* Group Tombol CTA Mobile: Diperkecil & dinaikkan posisinya lebih dekat ke teks judul */}
-          <div className="inline-flex items-center p-0.5 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-0 max-w-full select-none">
+          <div className="inline-flex items-center p-0.5 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-0.5 max-w-full select-none">
             <button 
               onClick={() => scrollTo('portfolio')}
-              className="h-[26px] sm:h-[28px] px-2.5 sm:px-3 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-[10px] sm:text-[10.5px] font-bold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
+              className="h-[28px] sm:h-[30px] px-3 sm:px-3.5 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-[10.5px] sm:text-[11px] font-bold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
             >
               Lihat Karya <ArrowRight className="w-2.5 h-2.5 shrink-0" />
             </button>
             <button 
               onClick={() => scrollTo('contact')}
-              className="h-[26px] sm:h-[28px] px-2.5 sm:px-3 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-[10px] sm:text-[10.5px] font-bold cursor-pointer active:scale-95 transition-all shrink-0"
+              className="h-[28px] sm:h-[30px] px-3 sm:px-3.5 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-[10.5px] sm:text-[11px] font-bold cursor-pointer active:scale-95 transition-all shrink-0"
             >
               Kontak
             </button>
           </div>
         </motion.div>
 
-        {/* Foto Desainer Mobile: Tampil bersih, transparan, tanpa garis bingkai */}
+        {/* Foto Desainer Mobile: Dibuat lebih besar, dinaikkan posisinya sedikit ke atas */}
         <motion.div 
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.12, ease: "easeOut" }}
-          className="w-full mt-0 sm:mt-1 px-6 sm:px-8 flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none -translate-y-2 sm:-translate-y-3"
+          className="w-full -mt-1 sm:-mt-2 px-3 sm:px-6 flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none -translate-y-2 sm:-translate-y-3"
         >
-          <div className="relative w-full max-w-[340px] sm:max-w-[360px] aspect-[4/5] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
-            {/* Ambient subtle glow tanpa garis bingkai apapun */}
-            <div className="absolute w-[220px] h-[220px] sm:w-[240px] sm:h-[240px] rounded-full bg-blue-500/10 dark:bg-blue-600/15 blur-3xl pointer-events-none -z-10" />
+          <div className="relative w-full max-w-[380px] sm:max-w-[420px] aspect-[4/5] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
+            {/* Ambient subtle glow */}
+            <div className="absolute w-[260px] h-[260px] sm:w-[300px] sm:h-[300px] rounded-full bg-blue-500/10 dark:bg-blue-600/15 blur-3xl pointer-events-none -z-10" />
 
             <img 
               src={resolveImageUrl(settings.heroImage || "/images/editing_tools_3d_1787123977793.jpg")} 
               alt="Muhammad Albiansyah - Creative Designer"
-              className="w-full h-full object-contain object-center select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-sm"
+              className="w-full h-full object-contain object-bottom select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-md"
               fetchPriority="high"
               loading="eager"
               onError={(e) => {

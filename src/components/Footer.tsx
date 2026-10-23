@@ -111,9 +111,15 @@ export default function Footer() {
 
     {/* Bottom Section: Copyright & Cookies */}
     <div className="pt-4 md:pt-8 border-t border-zinc-200/50 dark:border-zinc-800/50 flex flex-col md:flex-row justify-between items-center gap-3">
-     <p className="text-[8px] md:text-[10px] text-zinc-400 dark:text-zinc-500 font-semibold tracking-wider uppercase text-center md:text-left w-full md:w-auto">
+     <button
+      type="button"
+      onClick={() => window.dispatchEvent(new CustomEvent('changeView', { detail: { view: 'admin' } }))}
+      className="text-[8px] md:text-[10px] text-zinc-400 dark:text-zinc-500 hover:text-black dark:hover:text-white transition-colors font-semibold tracking-wider uppercase text-center md:text-left cursor-pointer focus:outline-none"
+      title="Masuk ke Mode Admin"
+      aria-label="Masuk ke Mode Admin"
+     >
       © {currentYear} ALFREELNC. HAK CIPTA DILINDUNGI.
-     </p>
+     </button>
      <button
       onClick={() => window.dispatchEvent(new CustomEvent('openCookieSettings'))}
       className="text-[9px] md:text-[10px] text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white transition-colors underline underline-offset-4 decoration-zinc-300 dark:decoration-zinc-700"

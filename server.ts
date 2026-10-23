@@ -32,23 +32,43 @@ try {
 
 // 1. Static file serving for uploads (/uploads/*) and public assets (/images/*)
 const publicDir = path.resolve(__dirname, 'public');
+
+// Service Worker must always be fresh
+app.get('/sw.js', (_req: Request, res: Response) => {
+  const swPath = path.join(publicDir, 'sw.js');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Content-Type', 'application/javascript');
+  res.sendFile(swPath);
+});
+
 app.use('/uploads', express.static(uploadsDir, {
   maxAge: '1y',
   immutable: true,
   setHeaders: (res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   }
 }));
+
 app.use('/images', express.static(path.join(publicDir, 'images'), {
   maxAge: '1y',
   immutable: true,
   setHeaders: (res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   }
 }));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(express.static(publicDir));
+
+app.use(express.static(publicDir, {
+  setHeaders: (res, filePath) => {
+    if (/\.(?:png|jpe?g|webp|svg|gif|avif|ico)$/i.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  }
+}));
 
 // Settings persistence on server disk (instant fallback and cross-session persistence)
 const settingsFilePath = path.resolve(__dirname, 'settings-storage.json');
@@ -279,6 +299,11 @@ async function startServer() {
     app.use(express.static(distDir, {
       maxAge: '1h',
       index: false,
+      setHeaders: (res, filePath) => {
+        if (/\.(?:png|jpe?g|webp|svg|gif|avif|ico|woff2?|ttf|eot)$/i.test(filePath)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      }
     }));
     app.get('*', (_req: Request, res: Response) => {
       const indexPath = path.resolve(distDir, 'index.html');

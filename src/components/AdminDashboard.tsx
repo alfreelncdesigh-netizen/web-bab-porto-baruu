@@ -2,7 +2,7 @@ import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from
 import { auth } from '../lib/firebase';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, Lock, LogOut, Image as ImageIcon, FileText, Settings, ShoppingCart, Briefcase, BarChart3, User, Mail, Archive, Sparkles, Shield } from 'lucide-react';
+import { Menu, X, Lock, LogOut, Image as ImageIcon, FileText, Settings, ShoppingCart, Briefcase, BarChart3, User, Mail, Archive, Sparkles, Shield, Eye, EyeOff } from 'lucide-react';
 import BlogAdmin from './BlogAdmin';
 import ExperienceAdmin from './ExperienceAdmin';
 import PortfolioAdmin from './PortfolioAdmin';
@@ -36,7 +36,15 @@ export default function AdminDashboard() {
  const [directEmail, setDirectEmail] = useState('albianavl.co@gmail.com');
  const [pendingUserEmail, setPendingUserEmail] = useState<string | null>(null);
  const [webPassword, setWebPassword] = useState('');
+ const [showPassword, setShowPassword] = useState(false);
  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+ // Selalu kosongkan kolom kata sandi saat berpindah langkah otentikasi atau membuka login
+ useEffect(() => {
+   setWebPassword('');
+   setShowPassword(false);
+   setError('');
+ }, [loginStep]);
 
  useEffect(() => {
   const unsub = onAuthStateChanged(auth, async (user) => {
@@ -133,8 +141,10 @@ export default function AdminDashboard() {
    const isMaster = pendingUserEmail && MASTER_ADMINS.includes(pendingUserEmail.toLowerCase());
    if (webPassword === '31102008' || isMaster) {
      setIsAuth(true);
+     setWebPassword('');
    } else {
-     setError('Password website salah (Gunakan 31102008).');
+     setError('Kata sandi salah. Silakan periksa kembali.');
+     setWebPassword('');
    }
  };
 
@@ -147,11 +157,13 @@ export default function AdminDashboard() {
      return;
    }
    if (webPassword !== '31102008') {
-     setError('Password / PIN website salah (Gunakan 31102008).');
+     setError('Kata sandi salah. Silakan periksa kembali.');
+     setWebPassword('');
      return;
    }
    setPendingUserEmail(cleanEmail);
    setIsAuth(true);
+   setWebPassword('');
  };
 
  const handleLogout = async () => {
@@ -227,15 +239,27 @@ export default function AdminDashboard() {
             ))}
           </select>
 
-          <label className="block text-xs font-bold text-black dark:text-white mb-2">PIN / Password Website</label>
-          <input 
-            type="password" 
-            value={webPassword}
-            onChange={(e) => setWebPassword(e.target.value)}
-            placeholder="Masukkan PIN (31102008)..."
-            className="w-full bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all mb-4"
-            autoFocus
-          />
+          <label className="block text-xs font-bold text-black dark:text-white mb-2">PIN / Kata Sandi Website</label>
+          <div className="relative mb-4">
+            <input 
+              type={showPassword ? "text" : "password"} 
+              value={webPassword}
+              onChange={(e) => setWebPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="new-password"
+              className="w-full bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 pr-11 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all tracking-widest"
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+              tabIndex={-1}
+              aria-label={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
 
           <AnimatePresence>
             {error && (
@@ -273,15 +297,27 @@ export default function AdminDashboard() {
            )}
          </div>
          
-         <label className="block text-xs font-bold text-black dark:text-white mb-2">Password Website</label>
-         <input 
-           type="password" 
-           value={webPassword}
-           onChange={(e) => setWebPassword(e.target.value)}
-           placeholder="Masukkan password (default: 31102008)..."
-           className="w-full bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all mb-4"
-           autoFocus
-         />
+         <label className="block text-xs font-bold text-black dark:text-white mb-2">Kata Sandi Website</label>
+         <div className="relative mb-4">
+           <input 
+             type={showPassword ? "text" : "password"} 
+             value={webPassword}
+             onChange={(e) => setWebPassword(e.target.value)}
+             placeholder="••••••••"
+             autoComplete="new-password"
+             className="w-full bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 pr-11 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all tracking-widest font-mono"
+             autoFocus
+           />
+           <button
+             type="button"
+             onClick={() => setShowPassword(!showPassword)}
+             className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+             tabIndex={-1}
+             aria-label={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
+           >
+             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+           </button>
+         </div>
          
          <AnimatePresence>
           {error && (

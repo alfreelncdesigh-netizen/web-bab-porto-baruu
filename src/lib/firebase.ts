@@ -4,7 +4,9 @@ import {
   initializeFirestore, 
   persistentLocalCache, 
   persistentMultipleTabManager,
-  memoryLocalCache 
+  memoryLocalCache,
+  doc,
+  getDocFromServer
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAuth, initializeAuth, browserLocalPersistence, inMemoryPersistence, browserPopupRedirectResolver, signInWithPopup, signInWithCredential, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
@@ -32,20 +34,36 @@ try {
       });
 } catch (e) {
   try {
-    dbInstance = dbId 
-      ? initializeFirestore(app, { 
-          localCache: memoryLocalCache(),
-          experimentalAutoDetectLongPolling: true 
-        }, dbId) 
-      : initializeFirestore(app, { 
-          localCache: memoryLocalCache(),
-          experimentalAutoDetectLongPolling: true 
-        });
-  } catch (e2) {
     dbInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
+  } catch (e2) {
+    dbInstance = getFirestore(app);
   }
 }
 export const db = dbInstance;
+
+/**
+ * Validasi dan uji koneksi Firestore ke server cloud
+ */
+export async function testConnection(): Promise<boolean> {
+  try {
+    if (typeof window !== 'undefined') {
+      await getDocFromServer(doc(db, 'test', 'connection'));
+      return true;
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn("Firestore client berjalan dalam mode offline / cache lokal.");
+    }
+  }
+  return false;
+}
+
+if (typeof window !== 'undefined') {
+  // Jalankan uji koneksi secara asynchronous setelah inisialisasi awal tanpa menghalangi UI
+  setTimeout(() => {
+    testConnection().catch(() => {});
+  }, 2000);
+}
 
 let authInstance;
 try {

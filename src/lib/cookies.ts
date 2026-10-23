@@ -14,6 +14,8 @@ export interface CookieConsentPreferences {
   essential: boolean;
   preferences: boolean;
   analytics: boolean;
+  portfolioImagesOnly?: boolean;
+  cacheLevel?: 'all' | 'essential_images';
   timestamp: string;
 }
 
@@ -99,10 +101,14 @@ export function getStoredCookieConsent(): CookieConsentPreferences | null {
  * Save user cookie consent preferences
  */
 export function saveCookieConsent(prefs: Partial<CookieConsentPreferences>): void {
+  const isEssentialOnly = prefs.portfolioImagesOnly === true || prefs.cacheLevel === 'essential_images';
+  
   const fullPreferences: CookieConsentPreferences = {
     essential: true,
-    preferences: prefs.preferences ?? true,
-    analytics: prefs.analytics ?? true,
+    preferences: isEssentialOnly ? false : (prefs.preferences ?? true),
+    analytics: isEssentialOnly ? false : (prefs.analytics ?? true),
+    portfolioImagesOnly: isEssentialOnly,
+    cacheLevel: isEssentialOnly ? 'essential_images' : 'all',
     timestamp: new Date().toISOString(),
   };
 

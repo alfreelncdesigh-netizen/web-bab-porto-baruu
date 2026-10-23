@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { useState, useEffect, useRef } from 'react';
+import { resolveImageUrl, handleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
 
 interface ImageWithSkeletonProps {
   src?: string | null;
@@ -27,23 +27,55 @@ export default function ImageWithSkeleton({
   children
 }: ImageWithSkeletonProps) {
   const resolvedSrc = resolveImageUrl(src);
-  const [isLoaded, setIsLoaded] = useState(false);
+  const isInline = typeof resolvedSrc === 'string' && (resolvedSrc.startsWith('data:') || resolvedSrc.startsWith('blob:'));
+  const [isLoaded, setIsLoaded] = useState<boolean>(() => isInline);
   const [hasError, setHasError] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
 
-  // Reset state if src changes
+  // Reset & detect image completion
   useEffect(() => {
-    setIsLoaded(false);
+    if (isInline) {
+      setIsLoaded(true);
+      return;
+    }
+
     setHasError(false);
 
-    // Fast check: if image is already cached in browser, it might complete immediately
-    if (resolvedSrc) {
-      const img = new Image();
-      img.src = resolvedSrc;
-      if (img.complete && img.naturalWidth > 0) {
+    // 1. Check if the DOM image is already complete (cached in memory)
+    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      setIsLoaded(true);
+      return;
+    }
+
+    // 2. Preloader fallback for background decoding
+    let active = true;
+    if (resolvedSrc && resolvedSrc !== FALLBACK_IMAGE) {
+      const tester = new Image();
+      tester.onload = () => {
+        if (active) setIsLoaded(true);
+      };
+      tester.onerror = () => {
+        if (active) {
+          setHasError(true);
+          setIsLoaded(true);
+        }
+      };
+      tester.src = resolvedSrc;
+      if (tester.complete && tester.naturalWidth > 0) {
         setIsLoaded(true);
       }
     }
-  }, [resolvedSrc]);
+
+    // 3. Safety timeout: never leave an image permanently stuck at opacity-0
+    const safetyTimer = setTimeout(() => {
+      if (active) setIsLoaded(true);
+    }, 1200);
+
+    return () => {
+      active = false;
+      clearTimeout(safetyTimer);
+    };
+  }, [resolvedSrc, isInline]);
 
   const isPdf = typeof resolvedSrc === 'string' && (resolvedSrc.toLowerCase().includes('.pdf') || resolvedSrc.startsWith('data:application/pdf'));
 
@@ -51,7 +83,7 @@ export default function ImageWithSkeleton({
     <div className={`relative ${containerClassName}`}>
       {/* Gradient Shimmer Silhouette Skeleton Placeholder */}
       <div 
-        className={`absolute inset-0 z-0 pointer-events-none bg-zinc-200 dark:bg-zinc-800 animate-shimmer transition-opacity duration-500 ease-out ${
+        className={`absolute inset-0 z-0 pointer-events-none bg-zinc-200 dark:bg-zinc-800 animate-shimmer transition-opacity duration-300 ease-out ${
           isLoaded ? 'opacity-0' : 'opacity-100'
         } ${skeletonClassName}`}
         aria-hidden="true"
@@ -72,27 +104,29 @@ export default function ImageWithSkeleton({
       ) : (
         /* Actual Content Image */
         <img
+          ref={imgRef}
           src={resolvedSrc}
-        alt={alt}
-        loading={priority ? 'eager' : loading}
-        fetchPriority={priority ? 'high' : 'auto'}
-        onLoad={() => {
-          setIsLoaded(true);
-          onLoad?.();
-        }}
-        onError={(e) => {
-          setHasError(true);
-          setIsLoaded(true);
-          if (onError) {
-            onError(e);
-          } else {
-            handleImageError(e);
-          }
-        }}
-        className={`${className} transition-opacity duration-500 ease-out relative z-[1] ${
-          isLoaded ? 'opacity-100' : 'opacity-0'
-        }`}
-      />
+          alt={alt}
+          loading={priority ? 'eager' : loading}
+          fetchPriority={priority ? 'high' : 'auto'}
+          decoding="async"
+          onLoad={() => {
+            setIsLoaded(true);
+            onLoad?.();
+          }}
+          onError={(e) => {
+            setHasError(true);
+            setIsLoaded(true);
+            if (onError) {
+              onError(e);
+            } else {
+              handleImageError(e);
+            }
+          }}
+          className={`${className} transition-opacity duration-300 ease-out relative z-[1] ${
+            isLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
       )}
 
       {/* Optional Overlay Children (e.g. gradient badges, buttons) */}

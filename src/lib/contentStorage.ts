@@ -116,8 +116,23 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
     cleaned.cvSections = defaultCvSections;
   }
   if (Array.isArray(cleaned.heroBanners)) {
-    // Pertahankan semua banner yang ada atau kosong jika dihapus oleh pengguna
-    cleaned.heroBanners = cleaned.heroBanners.filter((b: any) => b && typeof b === 'object');
+    // Normalisasi format path gambar banner dan filter banner valid
+    cleaned.heroBanners = cleaned.heroBanners
+      .filter((b: any) => b && typeof b === 'object')
+      .map((b: any) => {
+        let img = b.image || '';
+        if (typeof img === 'string') {
+          if (img.includes('/src/assets/images/')) {
+            img = `/images/${img.split('/src/assets/images/')[1]}`;
+          } else if (img.startsWith('src/assets/images/')) {
+            img = `/images/${img.replace('src/assets/images/', '')}`;
+          }
+        }
+        return { ...b, image: img || '/images/banner_promo_bca_1788696791480.jpg' };
+      });
+    if (cleaned.heroBanners.length === 0) {
+      cleaned.heroBanners = defaultSettings.heroBanners || [];
+    }
   } else if (cleaned.heroBanners === undefined) {
     cleaned.heroBanners = defaultSettings.heroBanners || [];
   }
@@ -187,7 +202,7 @@ export function getStoredSettings(): SiteSettings {
 
 export function setLocalSettings(newSettings: Partial<SiteSettings>): SiteSettings {
   const cleaned = cleanSettings(newSettings);
-  const timestamp = Date.now();
+  const timestamp = newSettings.savedAt || Date.now();
   const merged: SiteSettings = { ...defaultSettings, ...cleaned, savedAt: timestamp };
   try {
     localStorage.setItem('app_settings', JSON.stringify(merged));

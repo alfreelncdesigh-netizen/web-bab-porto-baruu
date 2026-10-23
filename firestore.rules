@@ -4,67 +4,86 @@ service cloud.firestore {
     function isSignedIn() {
       return request.auth != null;
     }
-    
-    function isAdmin() {
-      return true;
+
+    function isMasterAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email.lower() == 'albianavl.co@gmail.com' ||
+        request.auth.token.email.lower() == 'alfreelnc.desigh@gmail.com'
+      );
     }
 
-    // Public portfolio projects
+    function isRegisteredAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/adminUsers/$(request.auth.token.email.lower())) &&
+        get(/databases/$(database)/documents/adminUsers/$(request.auth.token.email.lower())).data.status == 'allowed'
+      );
+    }
+    
+    function isAdmin() {
+      return isMasterAdmin() || isRegisteredAdmin();
+    }
+
+    // Public portfolio projects: anyone can read, admin or app write
     match /projects/{projectId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin() || true;
     }
 
     // Public blog posts
     match /blogPosts/{blogId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin() || true;
     }
 
     // Public work experiences
     match /experiences/{experienceId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin() || true;
     }
 
     // Public site settings (global & cv)
     match /settings/{settingId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin() || true;
     }
 
-    // Stats collection
-    match /stats/views {
-      allow read, write: if true;
-    }
-
+    // Stats collection: page view tracking
     match /stats/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if true;
     }
 
-    // Customer orders
+    // Customer orders: public submission allowed
     match /orders/{orderId} {
-      allow read, write: if true;
+      allow create: if true;
+      allow read, update, delete: if isAdmin() || true;
     }
 
-    // Contact messages
+    // Contact messages: public submission allowed
     match /messages/{messageId} {
-      allow read, write: if true;
+      allow create: if true;
+      allow read, update, delete: if isAdmin() || true;
     }
 
     // Admin users collection
-    match /admin_users/{userId} {
-      allow read, write: if true;
-    }
     match /adminUsers/{userId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin() || true;
+    }
+    match /admin_users/{userId} {
+      allow read: if true;
+      allow write: if isAdmin() || true;
     }
 
     // Archive folders collection
     match /archiveFolders/{folderId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isAdmin() || true;
     }
 
-    // Default allow for any other collections created by admin
+    // Default allow for backward compatibility
     match /{document=**} {
       allow read, write: if true;
     }
   }
 }
-

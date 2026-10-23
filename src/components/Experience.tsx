@@ -106,7 +106,7 @@ export default function Experience() {
                   }
                 }}
               >
-                <div className={`flex flex-col md:flex-row items-start md:items-center gap-1.5 sm:gap-4 md:gap-8 w-full ${isEven ? 'md:flex-row-reverse' : ''}`}>
+                  <div className={`flex flex-col md:flex-row items-start md:items-center gap-3 sm:gap-5 md:gap-8 w-full ${isEven ? 'md:flex-row-reverse' : ''}`}>
                   {/* Text Content */}
                   <div className="w-full md:w-1/2 flex flex-col justify-center text-left">
                     <h3 className="text-sm sm:text-base md:text-2xl font-bold text-black dark:text-white mb-0.5 sm:mb-1 leading-snug md:leading-tight tracking-tight">
@@ -142,7 +142,7 @@ export default function Experience() {
                     )}
                   </div>
 
-                  {/* Image Gallery - Menampilkan gambar sertifikat besar di desktop tanpa latar belakang bingkai */}
+                  {/* Image Gallery - Menampilkan gambar sertifikat besar tanpa terpotong (object-contain) */}
                   <div className="w-full md:w-1/2 flex items-center justify-center">
                     {exp.images && exp.images.length > 0 && (
                       <div 
@@ -150,12 +150,12 @@ export default function Experience() {
                           e.stopPropagation();
                           setSelectedImg({url: exp.images[0], exp: exp});
                         }}
-                        className="relative rounded-xl md:rounded-2xl cursor-pointer group w-full max-w-sm sm:max-w-md md:max-w-none md:bg-transparent md:border-0 md:p-0 bg-zinc-100/90 dark:bg-zinc-900/90 border border-zinc-200/80 dark:border-zinc-800/80 p-1 sm:p-2.5 flex items-center justify-center overflow-hidden"
+                        className="relative rounded-xl md:rounded-2xl cursor-pointer group w-full max-w-md sm:max-w-lg md:max-w-none md:bg-transparent md:border-0 md:p-0 bg-zinc-100/90 dark:bg-zinc-900/90 border border-zinc-200/80 dark:border-zinc-800/80 p-1.5 sm:p-3 flex items-center justify-center overflow-hidden"
                       >
                         <img 
                           src={resolveImageUrl(exp.images[0])} 
                           alt={exp.header} 
-                          className="w-full h-auto max-h-[190px] sm:max-h-[240px] md:max-h-[380px] lg:max-h-[460px] xl:max-h-[520px] object-contain rounded-lg md:rounded-2xl shadow-xs md:shadow-md transition-transform duration-500 group-hover:scale-[1.02] block mx-auto" 
+                          className="w-full h-auto max-h-[290px] sm:max-h-[380px] md:max-h-[460px] lg:max-h-[540px] xl:max-h-[600px] object-contain rounded-lg md:rounded-2xl shadow-xs md:shadow-md transition-transform duration-500 group-hover:scale-[1.02] block mx-auto" 
                           loading="lazy"
                           onError={handleImageError}
                         />

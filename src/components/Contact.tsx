@@ -1,8 +1,7 @@
-import { motion } from 'framer-motion';
-import { Mail, MapPin, Phone, Check, ArrowRight, MessageSquare, MessageCircle, Send } from 'lucide-react';
-import { useState, useEffect } from 'react';
-import { db, auth } from '../lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Mail, MapPin, Phone, Check, ArrowRight, MessageSquare, MessageCircle, Send, CheckCircle2, X, Clock } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { db } from '../lib/firebase';
 import { doc, onSnapshot, collection, addDoc, query, orderBy } from 'firebase/firestore';
 import { defaultSettings, SiteSettings } from '../data/settings';
 import { getStoredSettings } from '../lib/contentStorage';
@@ -22,6 +21,46 @@ export default function Contact() {
  const [messages, setMessages] = useState<any[]>([]);
  const [loadingMessages, setLoadingMessages] = useState(true);
  const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
+ const [toast, setToast] = useState<{ show: boolean; type: 'success' | 'error'; title: string; text: string } | null>(null);
+ const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+ const triggerToast = (type: 'success' | 'error', title: string, text: string) => {
+   if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+   setToast({ show: true, type, title, text });
+   toastTimerRef.current = setTimeout(() => {
+     setToast(null);
+   }, 5000);
+ };
+
+ const formatCommentDate = (dateAdded: any): string => {
+   if (!dateAdded) return 'Baru saja';
+   try {
+     let dateObj: Date;
+     if (typeof dateAdded?.toDate === 'function') {
+       dateObj = dateAdded.toDate();
+     } else if (typeof dateAdded?.toMillis === 'function') {
+       dateObj = new Date(dateAdded.toMillis());
+     } else if (dateAdded instanceof Date) {
+       dateObj = dateAdded;
+     } else if (typeof dateAdded === 'string' || typeof dateAdded === 'number') {
+       dateObj = new Date(dateAdded);
+     } else {
+       return 'Baru saja';
+     }
+
+     if (isNaN(dateObj.getTime())) return 'Baru saja';
+
+     return new Intl.DateTimeFormat('id-ID', {
+       day: 'numeric',
+       month: 'short',
+       year: 'numeric',
+       hour: '2-digit',
+       minute: '2-digit'
+     }).format(dateObj);
+   } catch {
+     return 'Baru saja';
+   }
+ };
 
  useEffect(() => {
   const handleSettingsUpdate = (e: any) => {
@@ -29,29 +68,23 @@ export default function Contact() {
   };
   window.addEventListener('app_settings_updated', handleSettingsUpdate);
 
-  let unsubscribeMessages: (() => void) | null = null;
-  const unsubAuth = onAuthStateChanged(auth, (user) => {
-    if (user && user.email && ['alfreelnc.desigh@gmail.com', 'albianavl.co@gmail.com'].includes(user.email.toLowerCase().trim())) {
-      unsubscribeMessages = onSnapshot(
-        query(collection(db, 'messages'), orderBy('dateAdded', 'desc')),
-        (snapshot) => {
-          const msgData: any[] = [];
-          snapshot.forEach((doc) => {
-            msgData.push({ id: doc.id, ...doc.data() });
-          });
-          setMessages(msgData);
-          setLoadingMessages(false);
-        },
-        (err) => {
-          console.warn("Messages notice:", err);
-          setLoadingMessages(false);
-        }
-      );
-    } else {
-      setMessages([]);
+  // Berlangganan data seluruh komentar secara publik untuk semua pengunjung
+  const qMessages = query(collection(db, 'messages'), orderBy('dateAdded', 'desc'));
+  const unsubscribeMessages = onSnapshot(
+    qMessages,
+    (snapshot) => {
+      const msgData: any[] = [];
+      snapshot.forEach((doc) => {
+        msgData.push({ id: doc.id, ...doc.data() });
+      });
+      setMessages(msgData);
+      setLoadingMessages(false);
+    },
+    (err) => {
+      console.warn("Messages public subscription notice:", err);
       setLoadingMessages(false);
     }
-  });
+  );
 
   const docRef = doc(db, 'settings', 'global');
   const unsubscribe = onSnapshot(
@@ -68,16 +101,18 @@ export default function Contact() {
   );
   return () => {
     unsubscribe();
-    unsubAuth();
-    if (unsubscribeMessages) unsubscribeMessages();
+    unsubscribeMessages();
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     window.removeEventListener('app_settings_updated', handleSettingsUpdate);
   };
  }, []);
 
  const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
+  if (isSubmitting) return;
   setIsSubmitting(true);
   try {
+   const currentName = formData.name.trim();
    await addDoc(collection(db, 'messages'), {
     ...formData,
     dateAdded: new Date()
@@ -85,10 +120,20 @@ export default function Contact() {
    setIsSubmitting(false);
    setIsSuccess(true);
    setFormData({ name: '', email: '', message: '' });
+   triggerToast(
+     'success',
+     'Pesan Berhasil Terkirim!',
+     `Terima kasih${currentName ? `, ${currentName}` : ''}. Pesan Anda telah kami terima dan akan segera kami balas.`
+   );
    setTimeout(() => setIsSuccess(false), 5000);
   } catch (error) {
    console.warn("Error adding document: ", error);
    setIsSubmitting(false);
+   triggerToast(
+     'error',
+     'Gagal Mengirim Pesan',
+     'Terjadi kendala saat mengirim pesan ke server. Silakan coba lagi atau hubungi kami langsung via WhatsApp.'
+   );
   }
  };
 
@@ -242,34 +287,125 @@ export default function Contact() {
      </form>
     </motion.div>
 
-    {/* Buku Tamu (Guestbook) Ringkas di Bawah Form */}
-    {messages.length > 0 && (
-     <div className="mt-10 pt-8 border-t border-zinc-200/50 dark:border-zinc-800/50 text-left">
-      <h4 className="text-xs sm:text-sm font-bold text-black dark:text-white mb-4 flex items-center gap-2">
-       <MessageSquare className="w-4 h-4 text-zinc-500" /> Buku Tamu ({messages.length})
-      </h4>
-      <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
-       {messages.slice(0, 5).map((msg) => (
-        <div 
-         key={msg.id} 
-         className="bg-zinc-50 dark:bg-[#111111] p-3.5 rounded-xl border border-zinc-200/50 dark:border-zinc-800/50 text-xs"
-        >
-         <div className="flex items-center justify-between mb-1">
-          <span className="font-bold text-black dark:text-white">{msg.name}</span>
-          <span className="text-[10px] text-zinc-400">
-           {msg.dateAdded?.toDate ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'short' }).format(msg.dateAdded.toDate()) : 'Baru saja'}
-          </span>
-         </div>
-         <p className="text-zinc-600 dark:text-zinc-400 text-[11px] leading-relaxed">
-          {msg.message}
-         </p>
+    {/* Kolom Semua Komentar Pengunjung di Bawah Kolom Pesan */}
+    <motion.div 
+      variants={sectionContentItem}
+      className="mt-8 sm:mt-10 bg-zinc-50 dark:bg-[#111111] border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl sm:rounded-3xl p-5 sm:p-8 md:p-10 shadow-sm text-left"
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 sm:pb-6 border-b border-zinc-200/70 dark:border-zinc-800/70">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
+            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+              Ulasan Pengunjung
+            </span>
+          </div>
+          <h3 className="text-base sm:text-xl font-bold text-black dark:text-white tracking-tight flex items-center gap-2.5">
+            <MessageSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <span>Semua Komentar & Pesan</span>
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-bold">
+              {messages.length}
+            </span>
+          </h3>
         </div>
-       ))}
       </div>
-     </div>
-    )}
+
+      {loadingMessages ? (
+        <div className="py-12 flex flex-col items-center justify-center gap-3 text-zinc-400">
+          <div className="w-6 h-6 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
+          <p className="text-xs">Memuat daftar komentar...</p>
+        </div>
+      ) : messages.length === 0 ? (
+        <div className="py-12 px-4 text-center flex flex-col items-center justify-center">
+          <div className="w-12 h-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 mb-3">
+            <MessageSquare className="w-6 h-6" />
+          </div>
+          <p className="text-xs sm:text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+            Belum ada komentar yang masuk
+          </p>
+          <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-sm">
+            Jadilah yang pertama menuliskan pesan melalui formulir di atas!
+          </p>
+        </div>
+      ) : (
+        <div className="mt-6 space-y-3.5 max-h-[520px] overflow-y-auto pr-1 sm:pr-2 custom-scrollbar">
+          {messages.map((msg, index) => {
+            const initial = (msg.name && msg.name.trim().length > 0) ? msg.name.trim().charAt(0).toUpperCase() : 'U';
+            return (
+              <div 
+                key={msg.id || index}
+                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#0A0A0A] border border-zinc-200/80 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-xs"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center font-bold text-xs sm:text-sm shadow-xs shrink-0 select-none mt-0.5">
+                    {initial}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white truncate">
+                        {msg.name || 'Pengunjung Anonim'}
+                      </h4>
+                      <div className="inline-flex items-center gap-1 text-zinc-400 dark:text-zinc-500 text-[10px] sm:text-[11px] font-medium shrink-0">
+                        <Clock className="w-3 h-3 text-zinc-400 shrink-0" />
+                        <span>{formatCommentDate(msg.dateAdded)}</span>
+                      </div>
+                    </div>
+                    <p className="text-xs sm:text-[13px] text-zinc-700 dark:text-zinc-300 leading-relaxed mt-0.5 whitespace-pre-wrap break-words">
+                      {msg.message}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </motion.div>
 
    </div>
+
+   {/* Floating Toast Notification */}
+   <AnimatePresence>
+    {toast?.show && (
+     <motion.div
+      initial={{ opacity: 0, y: -24, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -20, scale: 0.95 }}
+      transition={{ duration: 0.25, ease: 'easeOut' }}
+      className="fixed top-20 sm:top-24 left-1/2 -translate-x-1/2 z-[220] max-w-md w-[calc(100%-2rem)] sm:w-auto flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-zinc-950/95 dark:bg-white/95 text-white dark:text-zinc-950 backdrop-blur-xl shadow-2xl border border-zinc-800/80 dark:border-zinc-200/80 select-none"
+      role="alert"
+      aria-live="polite"
+     >
+      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+       toast.type === 'success' 
+        ? 'bg-emerald-500/20 text-emerald-400 dark:text-emerald-600' 
+        : 'bg-red-500/20 text-red-400 dark:text-red-600'
+      }`}>
+       {toast.type === 'success' ? (
+        <CheckCircle2 className="w-5 h-5" />
+       ) : (
+        <Mail className="w-4 h-4" />
+       )}
+      </div>
+      <div className="flex-1 pr-1 text-left min-w-0">
+       <h4 className="text-xs sm:text-sm font-bold leading-tight">
+        {toast.title}
+       </h4>
+       <p className="text-[11px] sm:text-xs text-zinc-400 dark:text-zinc-600 mt-0.5 leading-snug">
+        {toast.text}
+       </p>
+      </div>
+      <button
+       type="button"
+       onClick={() => setToast(null)}
+       className="p-1 rounded-lg text-zinc-400 hover:text-white dark:hover:text-black transition-colors cursor-pointer shrink-0"
+       aria-label="Tutup notifikasi"
+      >
+       <X className="w-4 h-4" />
+      </button>
+     </motion.div>
+    )}
+   </AnimatePresence>
   </motion.section>
  );
 }

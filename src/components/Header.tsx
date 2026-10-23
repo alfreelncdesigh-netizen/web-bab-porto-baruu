@@ -111,7 +111,6 @@ export default function Header({ setView, currentView }: HeaderProps) {
   { name: 'Order', id: 'store', view: 'store' },
   { name: 'Blog', id: 'blog', view: 'blog' },
   { name: 'Statistik', id: 'stats', view: 'stats' },
-  { name: 'Admin', id: 'admin', view: 'admin' },
  ];
 
  const handleNavClick = (e: React.MouseEvent<HTMLButtonElement>, link: any) => {

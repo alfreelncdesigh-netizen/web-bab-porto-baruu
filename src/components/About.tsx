@@ -84,10 +84,7 @@ export default function About() {
     (docSnap) => {
       if (docSnap.exists()) {
         const cloudData = docSnap.data() as Partial<SiteSettings>;
-        const local = getStoredSettings();
-        const cloudTime = cloudData?.savedAt || 0;
-        const localTime = local?.savedAt || 0;
-        if (cloudTime >= localTime) {
+        if (cloudData && Object.keys(cloudData).length > 0) {
           const merged = { ...defaultSettings, ...cleanSettings(cloudData) };
           setSettings(merged);
           try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
@@ -116,14 +113,14 @@ export default function About() {
    whileInView="visible"
    viewport={{ once: true, amount: 0 }}
    variants={sectionStaggerContainer}
-   className="pt-1 pb-6 md:py-10 bg-[var(--bg-main,#ffffff)] dark:bg-[#0a0a0a] scroll-mt-24 md:scroll-mt-32"
+   className="pt-1 sm:pt-2 md:py-10 -mt-1 sm:-mt-2 md:mt-0 pb-6 md:pb-10 bg-[var(--bg-main,#ffffff)] dark:bg-[#0a0a0a] scroll-mt-24 md:scroll-mt-32"
   >
    <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18">
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 xl:gap-16 items-center">
      
      <motion.div 
       variants={sectionContentItem}
-      className="order-2 lg:order-1 text-left mt-6 lg:mt-0 lg:col-span-7"
+      className="order-2 lg:order-1 text-left mt-2 sm:mt-3 lg:mt-0 lg:col-span-7"
      >
       <motion.div variants={sectionHeaderItem}>
        <h2 className="text-xl sm:text-3xl md:text-5xl font-semibold tracking-tight mb-4 md:mb-5 text-black dark:text-white leading-[1.1]">
@@ -215,24 +212,14 @@ export default function About() {
       variants={slideInRightItem}
       className="order-1 lg:order-2 lg:col-span-5 relative aspect-[1080/1350] rounded-3xl sm:rounded-[2rem] overflow-hidden bg-zinc-200 dark:bg-[#1A1A1A] border border-zinc-100 dark:border-zinc-800 shadow-xl w-full max-w-md mx-auto lg:max-w-none"
      >
-      {settings.aboutImage && !settings.aboutImage.includes('photo-1499951360447') ? (
-        <ImageWithSkeleton 
-         src={settings.aboutImage} 
-         alt={settings.fullName || "Tentang Saya"} 
-         className="w-full h-full object-cover opacity-90 hover:opacity-100 hover:scale-105 transition-all duration-500 ease-out"
-         priority={true}
-         containerClassName="w-full h-full overflow-hidden"
-         skeletonClassName="rounded-3xl sm:rounded-[2rem]"
-        />
-      ) : (
-        <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-900 dark:to-zinc-950">
-          <div className="w-20 h-20 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center text-2xl font-bold text-black dark:text-white mb-4 shadow-inner">
-            {(settings.fullName || 'A').slice(0, 2).toUpperCase()}
-          </div>
-          <h4 className="text-base font-bold text-black dark:text-white">{settings.fullName || 'Alfreelnc'}</h4>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{settings.cvRole || 'Desainer Grafis'}</p>
-        </div>
-      )}
+      <ImageWithSkeleton 
+        src={settings.aboutImage && !settings.aboutImage.includes('photo-1499951360447') ? settings.aboutImage : "/images/minimalist_3d_illustration_1787122966121.jpg"} 
+        alt={settings.fullName || "Tentang Saya"} 
+        className="w-full h-full object-cover opacity-90 hover:opacity-100 hover:scale-105 transition-all duration-500 ease-out"
+        priority={true}
+        containerClassName="w-full h-full overflow-hidden"
+        skeletonClassName="rounded-3xl sm:rounded-[2rem]"
+      />
      </motion.div>
      
     </div>

@@ -135,7 +135,7 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
   return (
     <section 
       id="hero-promotional-carousel"
-      className="w-full relative py-6 md:py-10 select-none overflow-hidden transition-colors"
+      className="w-full relative pt-1 pb-1 md:pt-2 md:pb-1 select-none overflow-hidden transition-colors"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       ref={containerRef}
@@ -145,13 +145,13 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
       <div className="w-full relative">
         {/* Carousel Track */}
         <div 
-          className="w-full overflow-visible py-2"
+          className="w-full overflow-visible py-1"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
           {activeBanners.length === 1 ? (
-            /* Single Banner Layout: Centered 3:1 aspect ratio card with clean HTML promo text */
+            /* Single Banner Layout: Centered 3:1 aspect ratio card with clean visual */
             <div className="w-full flex flex-col items-center px-0">
               <div 
                 style={{ width: '100%', maxWidth: '1440px' }}
@@ -174,34 +174,6 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
                   }}
                 />
               </div>
-
-              {/* Teks Promo HTML (Penyederhanaan Visual: Teks dipindahkan ke HTML rapi di luar gambar) */}
-              {(activeBanners[0].title || activeBanners[0].subtitle || activeBanners[0].badge || activeBanners[0].link) && (
-                <div 
-                  style={{ width: isMobile ? '100%' : `${Math.min(containerWidth * 0.94, 1400)}px` }}
-                  className="mt-3 px-1 sm:px-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-left"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      {activeBanners[0].badge && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 text-[10px] sm:text-xs font-bold tracking-wider uppercase">
-                          {activeBanners[0].badge}
-                        </span>
-                      )}
-                      {activeBanners[0].title && (
-                        <h3 className="text-sm sm:text-base md:text-lg font-bold text-black dark:text-white tracking-tight">
-                          {activeBanners[0].title}
-                        </h3>
-                      )}
-                    </div>
-                    {activeBanners[0].subtitle && (
-                      <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 font-medium line-clamp-1 sm:line-clamp-2">
-                        {activeBanners[0].subtitle}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           ) : (
             /* Multi-Banner Horizontal Promotional Card Carousel */
@@ -238,31 +210,6 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
                         skeletonClassName="rounded-2xl sm:rounded-3xl lg:rounded-[32px]"
                       />
                     </div>
-
-                    {/* Teks Promo HTML Bersih di Bawah Gambar */}
-                    {(banner.title || banner.subtitle || banner.badge || banner.link) && (
-                      <div className="mt-2.5 px-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-left">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                            {banner.badge && (
-                              <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50 text-[9px] sm:text-[10px] font-bold tracking-wider uppercase">
-                                {banner.badge}
-                              </span>
-                            )}
-                            {banner.title && (
-                              <h3 className="text-xs sm:text-sm font-bold text-black dark:text-white tracking-tight truncate">
-                                {banner.title}
-                              </h3>
-                            )}
-                          </div>
-                          {banner.subtitle && (
-                            <p className="text-[11px] sm:text-xs text-zinc-600 dark:text-zinc-400 font-medium truncate">
-                              {banner.subtitle}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -300,7 +247,7 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
 
       {/* Pagination Dots (Under the active card) */}
       {activeBanners.length > 1 && (
-        <div className="flex items-center justify-center gap-1.5 md:gap-2 mt-4 sm:mt-5">
+        <div className="flex items-center justify-center gap-1.5 md:gap-2 mt-2 sm:mt-2.5">
           {activeBanners.map((_, dotIndex) => {
             const isCurrent = dotIndex === currentIndex;
             return (

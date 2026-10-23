@@ -7,6 +7,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { getStoredProjects, saveStoredProjects, cleanProjects } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import ImageWithSkeleton from './ImageWithSkeleton';
+import ShareProjectModal from './ShareProjectModal';
 import { 
   sectionStaggerContainer, 
   sectionHeaderItem, 
@@ -108,6 +109,97 @@ function getProjectMetrics(project: Project) {
   };
 }
 
+/**
+ * PortfolioLazyImage:
+ * Mengimplementasikan 'lazy loading' bertenaga Intersection Observer secara presisi.
+ * Menunda penarikan sumber gambar (network fetch) sampai elemen kartu mendekati atau memasuki
+ * viewport pengguna (rootMargin 200px), menghemat bandwidth dan mempercepat waktu muat awal.
+ */
+interface PortfolioLazyImageProps {
+  src?: string | null;
+  alt: string;
+  priority?: boolean;
+  className?: string;
+  containerClassName?: string;
+  skeletonClassName?: string;
+  aspectClass?: string;
+  onError?: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
+  onLoad?: () => void;
+}
+
+function PortfolioLazyImage({
+  src,
+  alt,
+  priority = false,
+  className = "w-full h-auto min-h-[320px] sm:min-h-[420px] md:min-h-[520px] lg:min-h-[600px] xl:min-h-[680px] 2xl:min-h-[740px] object-cover transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100",
+  containerClassName = "relative w-full h-full overflow-hidden",
+  skeletonClassName = "rounded-xl sm:rounded-2xl",
+  aspectClass = "min-h-[320px] sm:min-h-[420px] md:min-h-[520px] lg:min-h-[600px] xl:min-h-[680px] 2xl:min-h-[740px]",
+  onError,
+  onLoad
+}: PortfolioLazyImageProps) {
+  const [isInView, setIsInView] = useState<boolean>(priority);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Jika priority (kartu pertama) atau sudah terlihat di layar, observer tidak diperlukan
+    if (priority || isInView) return;
+
+    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) {
+      setIsInView(true);
+      return;
+    }
+
+    const currentEl = containerRef.current;
+    if (!currentEl) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setIsInView(true);
+            observer.unobserve(entry.target);
+            observer.disconnect();
+            break;
+          }
+        }
+      },
+      {
+        rootMargin: '200px 0px 200px 0px', // Prefetch saat berjarak 200px dari layar agar transisi mulus
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(currentEl);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [priority, isInView]);
+
+  return (
+    <div ref={containerRef} className={`relative w-full overflow-hidden ${containerClassName}`}>
+      {isInView && src ? (
+        <ImageWithSkeleton
+          src={src}
+          alt={alt}
+          priority={priority}
+          loading={priority ? 'eager' : 'lazy'}
+          className={className}
+          skeletonClassName={skeletonClassName}
+          onError={onError}
+          onLoad={onLoad}
+        />
+      ) : (
+        <div 
+          className={`w-full ${aspectClass} bg-gradient-to-br from-zinc-200 to-zinc-300 dark:from-zinc-800 dark:to-zinc-900 animate-shimmer ${skeletonClassName}`} 
+          aria-hidden="true" 
+        />
+      )}
+    </div>
+  );
+}
+
 export interface PortfolioProps {
   isSecondHalfLoaded?: boolean;
   onExpandRemaining?: () => void;
@@ -123,6 +215,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   const [imageFitMode, setImageFitMode] = useState<'cover' | 'contain'>('contain');
   const [copied, setCopied] = useState(false);
   const [showSharePopup, setShowSharePopup] = useState(false);
+  const [sharingProject, setSharingProject] = useState<Project | null>(null);
+  const [shareToast, setShareToast] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Refs untuk navigasi dan auto-scroll ke paling atas
@@ -268,14 +362,49 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     return matchCategory && matchSearch;
   });
 
+  const handleShareProject = async (proj: Project, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://alfreelnc.com';
+    const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+    const shareUrl = `${origin}${pathname}?project=${proj.id}`;
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setShareToast(`Tautan karya "${proj.title}" berhasil disalin ke clipboard!`);
+      setTimeout(() => {
+        setCopied(false);
+        setShareToast(null);
+      }, 3000);
+    } catch {
+      // Fallback
+    }
+
+    setSharingProject(proj);
+  };
+
   const handleCopyLink = () => {
     if (selectedProject) {
-      const shareUrl = window.location.origin + window.location.pathname + '?project=' + selectedProject.id;
-      navigator.clipboard.writeText(shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      handleShareProject(selectedProject);
     }
   };
+
+  // Deteksi tautan khusus dari URL (?project=ID)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && projects.length > 0 && !selectedProject) {
+      const params = new URLSearchParams(window.location.search);
+      const projectId = params.get('project');
+      if (projectId) {
+        const found = projects.find(p => String(p.id) === String(projectId));
+        if (found) {
+          handleOpenArticle(found);
+        }
+      }
+    }
+  }, [projects]);
 
   // Buka Quick View modal dan picu auto-scroll ke paling atas
   const handleOpenArticle = (projectToOpen: Project) => {
@@ -294,15 +423,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     }, 20);
   };
 
-  // Daftar artikel yang belum dibaca (tidak termasuk artikel yang sedang dibuka)
-  const unreadProjects = projects.filter(
-    p => !p.draft && String(p.id) !== String(selectedProject?.id) && !readProjectIds.has(String(p.id))
+  // Semua karya lainnya (seluruh karya yang tidak termasuk karya yang sedang dibuka)
+  const otherProjects = projects.filter(
+    p => !p.draft && String(p.id) !== String(selectedProject?.id)
   );
-
-  // Jika semua sudah dibaca, tampilkan karya lainnya agar lampiran tetap ada dan informatif
-  const displayRecommendations = unreadProjects.length > 0
-    ? unreadProjects
-    : projects.filter(p => !p.draft && String(p.id) !== String(selectedProject?.id));
 
   // Helper untuk mendapatkan semua gambar dalam proyek (gambar utama + galeri)
   const projectGalleryImages: string[] = selectedProject ? [
@@ -329,7 +453,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           <motion.div variants={sectionHeaderItem} className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4 md:mb-6">
             <div>
               <h2 className="text-3xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-black dark:text-white">
-                Karya <span className="text-black dark:text-zinc-600">Pilihan</span>
+                Karya <span className="text-black dark:text-zinc-600">Saya</span>
               </h2>
               <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
                 Jelajahi portofolio desain grafis, visual identity, dan kreasi visual interaktif.
@@ -426,16 +550,29 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           style={{ display: 'inline-block', width: '100%' }}
                           onClick={() => handleOpenArticle(project)}
                         >
+                          {/* Tombol Bagikan di Setiap Gambar Karya */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleShareProject(project, e)}
+                            className="absolute top-3 right-3 z-20 flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-full bg-black/65 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 shadow-lg text-[10px] sm:text-xs font-semibold transition-all duration-200 active:scale-90 hover:scale-105 group/share cursor-pointer"
+                            title={`Bagikan ${project.title}`}
+                            aria-label={`Bagikan ${project.title}`}
+                          >
+                            <Share2 className="w-3.5 h-3.5 text-white stroke-[2]" />
+                            <span className="font-medium text-[11px] hidden sm:inline">Bagikan</span>
+                          </button>
+
                           {project.image ? (
-                            <ImageWithSkeleton 
+                            <PortfolioLazyImage 
                               src={project.image} 
                               alt={project.title} 
+                              priority={index < 2}
                               className="w-full h-auto min-h-[320px] sm:min-h-[420px] md:min-h-[520px] lg:min-h-[600px] xl:min-h-[680px] 2xl:min-h-[740px] object-cover transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100" 
                               skeletonClassName="rounded-xl sm:rounded-2xl"
-                              loading="lazy"
+                              aspectClass="min-h-[320px] sm:min-h-[420px] md:min-h-[520px] lg:min-h-[600px] xl:min-h-[680px] 2xl:min-h-[740px]"
                             />
                           ) : (
-                            <div className="w-full aspect-[4/5] min-h-[320px] sm:min-h-[420px] lg:min-h-[600px] transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800 animate-shimmer"></div>
+                            <div className="w-full aspect-[4/5] min-h-[320px] sm:min-h-[420px] lg:min-h-[600px] transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800 animate-shimmer rounded-xl sm:rounded-2xl"></div>
                           )}
                           <div className="absolute inset-0 opacity-60 group-hover:opacity-80 transition-opacity duration-500 bg-gradient-to-t from-[#0A0A0A]/90 via-[#0A0A0A]/30 to-transparent"></div>
                           
@@ -452,8 +589,18 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               <h3 className="text-sm sm:text-base md:text-lg font-bold tracking-tight mb-0 leading-[1.2]">
                                 {project.title}
                               </h3>
-                              <div className="mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100 flex items-center text-[9px] md:text-[11px] font-semibold gap-1.5 bg-white text-black px-3.5 py-1.5 rounded-full w-fit shadow-xl shadow-black/20">
-                                <Eye size={14} /> Quick View
+                              <div className="mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100 flex items-center gap-2">
+                                <div className="flex items-center text-[9px] md:text-[11px] font-semibold gap-1.5 bg-white text-black px-3.5 py-1.5 rounded-full w-fit shadow-xl shadow-black/20">
+                                  <Eye size={14} /> Quick View
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={(e) => handleShareProject(project, e)}
+                                  className="flex items-center text-[9px] md:text-[11px] font-semibold gap-1.5 bg-white/20 hover:bg-white/35 backdrop-blur-md text-white px-3 py-1.5 rounded-full border border-white/20 shadow-xl transition-all active:scale-95 cursor-pointer"
+                                  title="Bagikan Karya"
+                                >
+                                  <Share2 size={13} /> Bagikan
+                                </button>
                               </div>
                             </motion.div>
                           </div>
@@ -638,49 +785,14 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
 
                         {/* Tombol Bagikan Gambar */}
                         <button
-                          onClick={(e) => { e.stopPropagation(); setShowSharePopup(true); }}
-                          className="absolute bottom-3 right-3 z-20 p-2 sm:p-2.5 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md border border-white/15 flex items-center justify-center shadow-md cursor-pointer transition-all active:scale-90"
-                          title="Bagikan Gambar"
+                          type="button"
+                          onClick={(e) => handleShareProject(selectedProject, e)}
+                          className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-full bg-black/65 hover:bg-black/85 text-white backdrop-blur-md border border-white/20 flex items-center gap-1.5 shadow-lg cursor-pointer transition-all active:scale-90"
+                          title="Bagikan Karya"
                         >
-                          <Share2 className="w-4 h-4 stroke-[1.5]" />
+                          <Share2 className="w-4 h-4 stroke-[1.8]" />
+                          <span className="text-xs font-semibold">Bagikan</span>
                         </button>
-                        
-                        <AnimatePresence>
-                          {showSharePopup && (
-                            <motion.div 
-                              initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                              animate={{ opacity: 1, scale: 1, y: 0 }}
-                              exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                              className="absolute bottom-14 right-3 z-[70] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xl rounded-2xl p-4 w-[280px]"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <div className="flex items-center justify-between mb-3">
-                                <span className="text-xs font-bold text-black dark:text-white">Bagikan Tautan Karya</span>
-                                <button onClick={() => setShowSharePopup(false)} className="text-zinc-500 hover:text-black dark:hover:text-white cursor-pointer">
-                                  <X className="w-4 h-4" />
-                                </button>
-                              </div>
-                              <div className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-2">
-                                <input 
-                                  type="text" 
-                                  readOnly 
-                                  value={window.location.origin + window.location.pathname + '?project=' + selectedProject.id} 
-                                  className="flex-1 bg-transparent text-[10px] text-zinc-600 dark:text-zinc-400 outline-none truncate" 
-                                />
-                                <button 
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(window.location.origin + window.location.pathname + '?project=' + selectedProject.id);
-                                    setCopied(true);
-                                    setTimeout(() => setCopied(false), 2000);
-                                  }} 
-                                  className="p-1.5 rounded-md bg-white dark:bg-zinc-700 shadow-sm hover:scale-105 active:scale-95 transition-all text-black dark:text-white cursor-pointer"
-                                >
-                                  {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                                </button>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
                       </div>
                     )
                   ) : (
@@ -913,21 +1025,19 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                 <div className="mt-2 pt-4 border-t border-zinc-200/70 dark:border-zinc-800/70">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${unreadProjects.length > 0 ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500'}`}></span>
+                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
                       <h4 className="text-[11px] md:text-xs font-semibold tracking-wide text-black dark:text-white flex items-center gap-1.5">
                         <Layers size={13} className="text-blue-500" />
-                        {unreadProjects.length > 0 ? 'Karya Lainnya' : 'Koleksi Desain Lainnya'}
+                        Karya Lainnya
                       </h4>
                     </div>
                     <span className="text-[9px] md:text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
-                      {unreadProjects.length > 0 ? `${unreadProjects.length} belum kamu lihat` : `${displayRecommendations.length} karya`}
+                      {otherProjects.length} karya
                     </span>
                   </div>
 
                   <div className="columns-2 gap-2 [column-fill:_balance]">
-                    {displayRecommendations.map((item) => {
-                      const isUnread = !readProjectIds.has(String(item.id));
-
+                    {otherProjects.map((item) => {
                       return (
                         <div 
                           key={item.id} 
@@ -935,45 +1045,74 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           className="break-inside-avoid mb-2 group cursor-pointer relative rounded-lg sm:rounded-xl overflow-hidden border border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-100 dark:bg-zinc-900 shadow-2xs hover:border-zinc-400 dark:hover:border-zinc-600 transition-all duration-200 active:scale-[0.97]"
                         >
                           {item.image ? (
-                            <div className="relative w-full overflow-hidden">
-                              <img 
-                                src={resolveImageUrl(item.image)} 
-                                alt={item.title || 'Karya'} 
-                                className="w-full h-auto block object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]" 
-                                onError={handleImageError} 
-                                loading="lazy"
-                              />
-                              {isUnread && (
-                                <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-blue-500 ring-2 ring-white dark:ring-black shadow-xs"></span>
-                              )}
-                              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 dark:group-hover:bg-white/5 transition-colors pointer-events-none" />
-                            </div>
+                            <PortfolioLazyImage 
+                              src={item.image} 
+                              alt={item.title || 'Karya'} 
+                              priority={false}
+                              className="w-full h-auto block object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]" 
+                              containerClassName="relative w-full overflow-hidden"
+                              skeletonClassName="rounded-t-lg sm:rounded-t-xl"
+                              aspectClass="aspect-[4/3] min-h-[120px]"
+                            />
                           ) : (
                             <div className="w-full aspect-[4/3] bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 text-xs">
                               Karya
                             </div>
                           )}
+                          <div className="p-2 bg-white dark:bg-[#111111] border-t border-zinc-200/50 dark:border-zinc-800/50">
+                            <span className="text-[8px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider block mb-0.5">
+                              {item.category}
+                            </span>
+                            <h5 className="text-[10px] font-bold text-black dark:text-white line-clamp-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                              {item.title}
+                            </h5>
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 </div>
 
-                {/* Tombol Salin Tautan Proyek Footer Modal */}
+                {/* Tombol Bagikan Karya Footer Modal */}
                 <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800/40">
                   <button 
-                    onClick={handleCopyLink}
-                    className={`w-full py-3 text-xs md:text-sm font-semibold transition-all flex items-center justify-center gap-2 rounded-xl border shadow-sm active:scale-95 duration-200 cursor-pointer ${
-                      copied 
-                        ? 'bg-green-500 text-white border-green-500 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/30' 
-                        : 'bg-zinc-900 text-white border-zinc-900 hover:bg-black dark:bg-white dark:text-black dark:border-white dark:hover:bg-zinc-200'
-                    }`}
+                    type="button"
+                    onClick={(e) => handleShareProject(selectedProject, e)}
+                    className="w-full py-3 text-xs md:text-sm font-semibold transition-all flex items-center justify-center gap-2 rounded-xl bg-zinc-900 text-white border border-zinc-900 hover:bg-black dark:bg-white dark:text-black dark:border-white dark:hover:bg-zinc-200 shadow-md active:scale-95 duration-200 cursor-pointer"
                   >
-                    {copied ? <><Check size={16} /> Tautan Tersalin</> : <><ExternalLink size={16} /> Salin Tautan Proyek</>}
+                    <Share2 size={16} />
+                    <span>Bagikan Karya ke Media Sosial</span>
                   </button>
                 </div>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Dynamic Social Share Modal with WhatsApp, Instagram, TikTok, Telegram, Pinterest, Facebook */}
+      <ShareProjectModal
+        project={sharingProject}
+        isOpen={!!sharingProject}
+        onClose={() => setSharingProject(null)}
+        onLinkCopied={() => {
+          setShareToast('Tautan berhasil disalin ke clipboard!');
+          setTimeout(() => setShareToast(null), 3000);
+        }}
+      />
+
+      {/* Floating Clipboard Copy Toast Feedback */}
+      <AnimatePresence>
+        {shareToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999999] flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-zinc-950/95 dark:bg-white/95 text-white dark:text-zinc-950 backdrop-blur-xl shadow-2xl border border-zinc-800 dark:border-zinc-200 text-xs font-semibold select-none max-w-sm w-[calc(100%-2rem)] text-center justify-center"
+          >
+            <Check className="w-4 h-4 text-emerald-400 dark:text-emerald-600 stroke-[3] shrink-0" />
+            <span className="truncate">{shareToast}</span>
           </motion.div>
         )}
       </AnimatePresence>
