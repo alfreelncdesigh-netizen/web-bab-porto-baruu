@@ -131,16 +131,9 @@ export default function SettingsAdmin() {
           ctx.imageSmoothingQuality = 'high';
           ctx.drawImage(img, 0, 0, width, height);
 
-          // Pertahankan transparansi latar belakang (PNG / WebP)
-          const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
-          if (isPng) {
-            try {
-              resolve(canvas.toDataURL('image/png'));
-              return;
-            } catch {}
-          }
+          // Konversi semua gambar ke WebP (mendukung transparansi penuh dengan ukuran jauh lebih kecil)
           try {
-            resolve(canvas.toDataURL('image/webp', 0.85));
+            resolve(canvas.toDataURL('image/webp', 0.8));
           } catch {
             resolve(canvas.toDataURL('image/jpeg', 0.8));
           }

@@ -144,35 +144,35 @@ export default function Header({ setView, currentView }: HeaderProps) {
     )}
    </AnimatePresence>
 
-   <header className="fixed top-0 left-0 right-0 z-50 pt-1.5 sm:pt-2 md:pt-2.5 px-3 sm:px-5 md:px-8 pointer-events-none flex justify-center max-w-[1280px] mx-auto">
+   <header className="fixed top-0 left-0 right-0 z-50 pt-2 sm:pt-2.5 md:pt-3 px-3 sm:px-5 md:px-8 pointer-events-none flex justify-center max-w-[1300px] mx-auto">
     <motion.div 
      initial={{ y: -100, opacity: 0 }}
      animate={{ y: 0, opacity: 1 }}
      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-     className={`pointer-events-auto flex items-center justify-between w-full rounded-full px-3.5 py-1.5 sm:px-4 sm:py-1.5 md:px-5 md:py-2 transition-all duration-300 ${
+     className={`pointer-events-auto flex items-center justify-between w-full rounded-full px-4 py-2 sm:px-5 sm:py-2.5 md:px-6 md:py-2.5 transition-all duration-300 ${
       isScrolled 
-       ? 'bg-white/90 dark:bg-[#111111]/90 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 shadow-md' 
-       : 'bg-white/75 dark:bg-[#0A0A0A]/75 backdrop-blur-md border border-zinc-200/30 dark:border-zinc-800/30 shadow-sm'
+       ? 'bg-white/92 dark:bg-[#111111]/92 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 shadow-md' 
+       : 'bg-white/80 dark:bg-[#0A0A0A]/80 backdrop-blur-md border border-zinc-200/30 dark:border-zinc-800/30 shadow-sm'
      }`}
     >
-     {/* Logo ALFREELNC Resmi: Hitam di Light Mode, Putih di Dark Mode, Detail Asli Terjaga */}
+     {/* Logo ALFREELNC: Proporsional, Lebih Besar dan Jelas */}
      <button 
       onClick={() => { setView('home'); }} 
       className="group relative flex items-center justify-center hover:opacity-85 active:scale-95 transition-all select-none focus:outline-none shrink-0"
       aria-label="ALFREELNC Beranda"
      >
-      <BrandLogo className="h-5.5 sm:h-6.5 md:h-7" />
+      <BrandLogo className="h-6 sm:h-7 md:h-8" />
      </button>
 
      {/* Desktop Nav */}
-     <nav className="hidden md:flex gap-5 lg:gap-6 text-[12.5px] items-center">
+     <nav className="hidden md:flex gap-6 lg:gap-7 text-[13.5px] lg:text-[14px] items-center">
       {navLinks.map((link) => {
        const isActive = currentView === link.view;
        return (
         <button 
          key={link.name} 
          onClick={(e) => handleNavClick(e, link)} 
-         className={`transition-colors relative group py-1 ${isActive ? 'text-black dark:text-white font-bold' : 'text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white font-medium'}`}
+         className={`transition-colors relative group py-1.5 ${isActive ? 'text-black dark:text-white font-bold' : 'text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white font-medium'}`}
         >
          {link.name}
         </button>
@@ -186,11 +186,11 @@ export default function Header({ setView, currentView }: HeaderProps) {
          onClick={() => {
            setIsThemeDropdownOpen(!isThemeDropdownOpen);
          }} 
-         className="text-black hover:opacity-70 dark:text-white dark:hover:opacity-70 transition-colors p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 focus:outline-none"
+         className="text-black hover:opacity-70 dark:text-white dark:hover:opacity-70 transition-colors p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 focus:outline-none flex items-center justify-center cursor-pointer"
          aria-label="Ganti Tema" 
          title={`Tema Saat Ini: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`}
         >
-         {theme === 'light' ? <Moon size={15} /> : theme === 'dark' ? <Sun size={15} /> : <Palette size={15} />}
+         {theme === 'light' ? <Moon size={17} /> : theme === 'dark' ? <Sun size={17} /> : <Palette size={17} />}
         </button>
         
         <AnimatePresence>
@@ -201,13 +201,13 @@ export default function Header({ setView, currentView }: HeaderProps) {
            animate={{ opacity: 1, y: 0, scale: 1 }}
            exit={{ opacity: 0, y: 10, scale: 0.95 }}
            transition={{ duration: 0.15 }}
-           className="absolute right-0 mt-2 w-40 bg-white/95 dark:bg-[#111111]/95 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl p-2 flex flex-col gap-1 shadow-xl z-50 pointer-events-auto"
+           className="absolute right-0 mt-2 w-44 bg-white/95 dark:bg-[#111111]/95 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl p-2 flex flex-col gap-1 shadow-xl z-50 pointer-events-auto"
           >
             {['light', 'dark', 'tiffany', 'charcoal', 'cyprus'].map((t) => (
               <button
                 key={t}
                 onClick={() => { setTheme(t as any); setIsThemeDropdownOpen(false); }}
-                className={`text-left text-[11px] font-bold px-3 py-2 rounded-lg transition-colors ${theme === t ? 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white' : 'text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900'}`}
+                className={`text-left text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer ${theme === t ? 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white' : 'text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900'}`}
               >
                 {t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
@@ -223,14 +223,14 @@ export default function Header({ setView, currentView }: HeaderProps) {
         setIsThemeDropdownOpen(false);
         setView('contact'); 
        }} 
-       className="bg-black text-white dark:bg-white dark:text-black px-4 py-1.5 rounded-full text-xs font-bold hover:opacity-90 transition-opacity active:scale-95 duration-200 shadow-xs"
+       className="bg-black text-white dark:bg-white dark:text-black px-4.5 py-2 rounded-full text-xs sm:text-[13px] font-bold hover:opacity-90 transition-opacity active:scale-95 duration-200 shadow-xs cursor-pointer"
       >
        Kontak
       </button>
      </nav>
 
      {/* Mobile Toggle Icons (Theme + Hamburger) */}
-     <div className="md:hidden flex items-center gap-1 sm:gap-1.5">
+     <div className="md:hidden flex items-center gap-1.5 sm:gap-2">
       <div className="relative">
         <button 
          ref={mobileThemeToggleRef}
@@ -238,10 +238,10 @@ export default function Header({ setView, currentView }: HeaderProps) {
            setIsMobileMenuOpen(false);
            setIsThemeDropdownOpen(!isThemeDropdownOpen);
          }} 
-         className="text-black dark:text-white p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors flex items-center justify-center focus:outline-none"
+         className="text-black dark:text-white p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors flex items-center justify-center focus:outline-none cursor-pointer"
          aria-label="Ganti Tema"
         >
-         {theme === 'light' ? <Moon className="w-4 h-4" /> : theme === 'dark' ? <Sun className="w-4 h-4" /> : <Palette className="w-4 h-4" />}
+         {theme === 'light' ? <Moon className="w-5 h-5" /> : theme === 'dark' ? <Sun className="w-5 h-5" /> : <Palette className="w-5 h-5" />}
         </button>
 
         <AnimatePresence>
@@ -252,13 +252,13 @@ export default function Header({ setView, currentView }: HeaderProps) {
            animate={{ opacity: 1, y: 0, scale: 1 }}
            exit={{ opacity: 0, y: 10, scale: 0.95 }}
            transition={{ duration: 0.15 }}
-           className="absolute right-0 mt-2 w-36 bg-white/95 dark:bg-[#111111]/95 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl p-2 flex flex-col gap-1 shadow-xl z-50 pointer-events-auto"
+           className="absolute right-0 mt-2 w-40 bg-white/95 dark:bg-[#111111]/95 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl p-2 flex flex-col gap-1 shadow-xl z-50 pointer-events-auto"
           >
             {['light', 'dark', 'tiffany', 'charcoal', 'cyprus'].map((t) => (
               <button
                 key={t}
                 onClick={() => { setTheme(t as any); setIsThemeDropdownOpen(false); }}
-                className={`text-left text-[11px] font-bold px-3 py-2 rounded-lg transition-colors ${theme === t ? 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white' : 'text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900'}`}
+                className={`text-left text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer ${theme === t ? 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white' : 'text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900'}`}
               >
                 {t.charAt(0).toUpperCase() + t.slice(1)}
               </button>
@@ -270,14 +270,14 @@ export default function Header({ setView, currentView }: HeaderProps) {
 
       <button 
        ref={mobileToggleRef}
-       className="text-black dark:text-white p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors focus:outline-none flex items-center justify-center" 
+       className="text-black dark:text-white p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors focus:outline-none flex items-center justify-center cursor-pointer" 
        onClick={() => {
          setIsThemeDropdownOpen(false);
          setIsMobileMenuOpen(!isMobileMenuOpen);
        }}
        aria-label={isMobileMenuOpen ? "Tutup Menu" : "Buka Menu"}
       >
-       {isMobileMenuOpen ? <X className="w-4.5 h-4.5" /> : <Menu className="w-4.5 h-4.5" />}
+       {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </button>
      </div>
     </motion.div>
@@ -287,36 +287,43 @@ export default function Header({ setView, currentView }: HeaderProps) {
      {isMobileMenuOpen && (
       <motion.div 
        ref={mobileMenuRef}
-       initial={{ opacity: 0, y: -15, scale: 0.95 }}
+       initial={{ opacity: 0, y: -12, scale: 0.95 }}
        animate={{ opacity: 1, y: 0, scale: 1 }}
-       exit={{ opacity: 0, y: -15, scale: 0.95 }}
-       transition={{ duration: 0.15, ease: 'easeOut' }}
-       className="md:hidden pointer-events-auto absolute top-[48px] sm:top-[50px] right-3 w-52 bg-white/95 dark:bg-[#111111]/95 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 rounded-2xl p-4 flex flex-col gap-1 shadow-2xl z-50"
+       exit={{ opacity: 0, y: -12, scale: 0.95 }}
+       transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+       className="md:hidden pointer-events-auto absolute top-[58px] sm:top-[64px] right-3 w-[calc(100vw-1.5rem)] max-w-[340px] sm:max-w-[370px] bg-white/98 dark:bg-[#121212]/98 backdrop-blur-2xl border border-zinc-200/80 dark:border-zinc-800/80 rounded-3xl p-5 sm:p-6 flex flex-col gap-1.5 shadow-2xl z-50 select-none"
       >
        {navLinks.map((link) => {
+        const isActive = currentView === link.view;
         return (
          <button 
           key={link.name} 
           onClick={(e) => handleNavClick(e, link)} 
-          className={`flex items-center text-left text-[12px] font-semibold tracking-wide py-2.5 border-b border-zinc-100 dark:border-zinc-800/50 last:border-0 transition-colors ${
-            currentView === link.view 
-              ? 'text-black dark:text-white font-bold' 
-              : 'text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white'
+          className={`flex items-center justify-between text-left text-[14px] sm:text-[15px] tracking-tight py-3 px-3.5 rounded-2xl transition-all cursor-pointer ${
+            isActive 
+              ? 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white font-bold' 
+              : 'text-zinc-600 dark:text-zinc-300 font-semibold hover:text-black dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900/60'
           }`}
          >
-          {link.name}
+          <span>{link.name}</span>
+          {isActive && (
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+          )}
          </button>
         )
        })}
-       <button 
-        onClick={() => {
-         setIsMobileMenuOpen(false);
-         setView('contact'); 
-        }}
-        className="mt-2 w-full bg-black text-white dark:bg-white dark:text-black py-2.5 rounded-xl text-[11px] font-bold hover:opacity-90 transition-opacity"
-       >
-        Hubungi Saya
-       </button>
+
+       <div className="pt-2 mt-1 border-t border-zinc-100 dark:border-zinc-800/80">
+         <button 
+          onClick={() => {
+           setIsMobileMenuOpen(false);
+           setView('contact'); 
+          }}
+          className="w-full bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 py-3.5 rounded-2xl text-[13px] sm:text-[14px] font-bold shadow-md transition-all active:scale-95 cursor-pointer"
+         >
+          Hubungi Saya
+         </button>
+       </div>
       </motion.div>
      )}
     </AnimatePresence>

@@ -205,13 +205,13 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
       whileInView="visible"
       viewport={{ once: true, amount: 0 }}
       variants={sectionStaggerContainer}
-      className="py-6 md:py-10 px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 w-full max-w-[1536px] mx-auto scroll-mt-24 md:scroll-mt-32"
+      className="pt-2 pb-4 md:pt-3 md:pb-6 px-4 sm:px-6 md:px-8 lg:px-10 xl:px-12 w-full max-w-[1536px] mx-auto scroll-mt-24 md:scroll-mt-32"
     >
       <motion.div variants={sectionHeaderItem}>
-        <h4 className="text-[9px] md:text-xs font-bold text-black dark:text-zinc-400 mb-3 md:mb-4 flex items-center gap-2 tracking-widest uppercase">
+        <h4 className="text-[9px] md:text-xs font-bold text-black dark:text-zinc-400 mb-2 md:mb-3 flex items-center gap-2 tracking-widest uppercase">
           Catatan & Tulisan Desain
         </h4>
-        <h2 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 md:mb-8 text-black dark:text-white leading-[1.08]">
+        <h2 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-4 md:mb-6 text-black dark:text-white leading-[1.08]">
           Blog <span className="text-black dark:text-zinc-600">Saya</span>
         </h2>
       </motion.div>

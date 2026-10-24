@@ -67,9 +67,9 @@ export default function Experience() {
       whileInView="visible"
       viewport={{ once: true, amount: 0 }}
       variants={sectionStaggerContainer}
-      className="py-6 md:py-10 px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18 w-full max-w-[1440px] mx-auto scroll-mt-24 md:scroll-mt-32"
+      className="pt-2 pb-4 md:pt-3 md:pb-6 px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18 w-full max-w-[1440px] mx-auto scroll-mt-24 md:scroll-mt-32"
     >
-      <motion.div variants={sectionHeaderItem} className="mb-6 md:mb-8">
+      <motion.div variants={sectionHeaderItem} className="mb-4 md:mb-6">
         <h4 className="text-[9px] md:text-xs font-bold text-black dark:text-zinc-400 mb-3 flex items-center gap-2 tracking-widest uppercase">
           Jejak Langkah & Karir
         </h4>

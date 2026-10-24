@@ -239,7 +239,7 @@ const SectionDivider = () => (
     whileInView={{ opacity: 1, scaleX: 1 }}
     viewport={{ once: true, margin: "-20px" }}
     transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-    className="w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 py-2 sm:py-3.5 select-none pointer-events-none" 
+    className="w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 py-1 sm:py-2 select-none pointer-events-none" 
     aria-hidden="true"
   >
     <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-zinc-300/70 dark:via-zinc-800/80 to-transparent" />
@@ -723,6 +723,7 @@ export default function App() {
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+                        className="-mt-2 sm:-mt-4"
                       >
                         <SectionDivider />
                         <Blog isSecondHalfLoaded={true} />

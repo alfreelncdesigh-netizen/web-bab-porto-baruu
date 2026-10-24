@@ -19,17 +19,15 @@ export async function compressImageToWebP(
       (typeof source === 'string' && (source.includes('data:image/png') || source.toLowerCase().endsWith('.png')));
 
     const makeFile = (b: Blob, originalName = 'compressed.webp'): File => {
-      const isPng = isOriginalPng || b.type === 'image/png' || originalName.toLowerCase().endsWith('.png');
-      const ext = isPng ? '.png' : '.webp';
-      const cleanName = originalName.replace(/\.[^/.]+$/, '') + ext;
-      return new File([b], cleanName, { type: isPng ? 'image/png' : 'image/webp', lastModified: Date.now() });
+      const cleanName = originalName.replace(/\.[^/.]+$/, '') + '.webp';
+      return new File([b], cleanName, { type: 'image/webp', lastModified: Date.now() });
     };
 
     const processImage = (img: HTMLImageElement, originalName: string) => {
       let width = img.naturalWidth || img.width || 1200;
       let height = img.naturalHeight || img.height || 800;
 
-      // Batasi max-width ke 1200px secara proporsional
+      // Batasi max-width ke maxWidth (default 1200px) secara proporsional
       if (width > maxWidth || height > maxWidth) {
         if (width >= height) {
           height = Math.round((height * maxWidth) / width);
@@ -45,8 +43,7 @@ export async function compressImageToWebP(
       canvas.height = Math.max(1, height);
       const ctx = canvas.getContext('2d');
 
-      const isPng = isOriginalPng || originalName.toLowerCase().endsWith('.png');
-      const targetMime = isPng ? 'image/png' : 'image/webp';
+      const targetMime = 'image/webp';
 
       if (!ctx) {
         // Fallback jika canvas context tidak tersedia
@@ -59,20 +56,19 @@ export async function compressImageToWebP(
         return;
       }
 
-      // Pastikan canvas bersih dan transparan (jangan beri warna latar belakang apapun)
+      // Pastikan canvas bersih dan transparan (WebP mendukung alpha channel penuh)
       ctx.clearRect(0, 0, width, height);
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(img, 0, 0, width, height);
 
-      // WebP dan PNG keduanya mendukung transparansi (alpha channel) penuh.
-      // WebP berukuran jauh lebih kecil (70-90% lebih ramping) sehingga upload selesai seketika (<200ms).
+      // WebP berukuran jauh lebih kecil (75-90% lebih ramping) dan mempertahankan transparansi penuh
       canvas.toBlob(
         (blob) => {
           const finalBlob = blob || new Blob([], { type: targetMime });
           let dataUrl = '';
           try {
-            dataUrl = canvas.toDataURL(targetMime, isPng ? undefined : quality);
+            dataUrl = canvas.toDataURL(targetMime, quality);
           } catch {
             dataUrl = img.src;
           }
@@ -84,7 +80,7 @@ export async function compressImageToWebP(
           });
         },
         targetMime,
-        isPng ? undefined : quality
+        quality
       );
     };
 

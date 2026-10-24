@@ -1,8 +1,14 @@
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, X, Lock, LogOut, Image as ImageIcon, FileText, Settings, ShoppingCart, Briefcase, BarChart3, User, Mail, Archive, Sparkles, Shield, Eye, EyeOff } from 'lucide-react';
+import { 
+  Menu, X, Lock, LogOut, Image as ImageIcon, FileText, Settings, 
+  ShoppingCart, Briefcase, BarChart3, User, Mail, Archive, Sparkles, 
+  Eye, EyeOff, ShieldCheck
+} from 'lucide-react';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+
 import BlogAdmin from './BlogAdmin';
 import ExperienceAdmin from './ExperienceAdmin';
 import PortfolioAdmin from './PortfolioAdmin';
@@ -15,452 +21,506 @@ import Stats from './Stats';
 import ArchiveAdmin from './ArchiveAdmin';
 import PromoAdmin from './PromoAdmin';
 import AdminAccessAdmin from './AdminAccessAdmin';
-import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 export const MASTER_ADMINS = [
+  'albian',
+  'alfreelnc',
   'alfreelnc.desigh@gmail.com',
   'albianavl.co@gmail.com'
 ];
 
 export default function AdminDashboard() {
- 
- const [isAuth, setIsAuth] = useState(false);
- const [activeTab, setActiveTab] = useState<'portfolio' | 'blog' | 'experience' | 'about' | 'cv' | 'stats' | 'settings' | 'store' | 'messages' | 'archive' | 'promo' | 'access'>('portfolio');
- const [isChecking, setIsChecking] = useState(true);
- const [error, setError] = useState('');
- 
- // Login states
- const [loginStep, setLoginStep] = useState<'email' | 'password' | 'direct'>('email');
- const [isLoggingIn, setIsLoggingIn] = useState(false);
- const [directEmail, setDirectEmail] = useState('albianavl.co@gmail.com');
- const [pendingUserEmail, setPendingUserEmail] = useState<string | null>(null);
- const [webPassword, setWebPassword] = useState('');
- const [showPassword, setShowPassword] = useState(false);
- const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isAuth, setIsAuth] = useState(false);
+  const [activeTab, setActiveTab] = useState<'portfolio' | 'blog' | 'experience' | 'about' | 'cv' | 'stats' | 'settings' | 'store' | 'messages' | 'archive' | 'promo' | 'access'>('portfolio');
+  const [isChecking, setIsChecking] = useState(true);
+  const [error, setError] = useState('');
+  
+  // Login credentials states (Username & Kata Sandi)
+  const [usernameInput, setUsernameInput] = useState('');
+  const [webPassword, setWebPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginMode, setLoginMode] = useState<'credentials' | 'google'>('credentials');
+  const [activeAdminName, setActiveAdminName] = useState('albian');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
- // Selalu kosongkan kolom kata sandi saat berpindah langkah otentikasi atau membuka login
- useEffect(() => {
-   setWebPassword('');
-   setShowPassword(false);
-   setError('');
- }, [loginStep]);
-
- useEffect(() => {
-  const unsub = onAuthStateChanged(auth, async (user) => {
-    if (user && user.email) {
-      const email = user.email.toLowerCase().trim();
-      const isMaster = MASTER_ADMINS.includes(email);
-      let isAllowed = isMaster;
-
-      if (!isAllowed) {
-        try {
-          const docId = email;
-          const userDoc = await getDoc(doc(db, 'adminUsers', docId));
-          if (userDoc.exists() && userDoc.data().status === 'allowed') {
-            isAllowed = true;
+  // Cek sesi yang sudah tersimpan di browser (sessionStorage) dan Firebase Auth saat pertama kali dimuat
+  useEffect(() => {
+    const checkExistingSession = async () => {
+      try {
+        const saved = sessionStorage.getItem('admin_auth_user');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed?.username) {
+            setActiveAdminName(parsed.username);
+            setIsAuth(true);
+            setIsChecking(false);
+            return;
           }
-        } catch (err) {
-          console.error("Error checking admin access", err);
         }
-      }
+      } catch {}
 
-      if (isAllowed) {
-        setPendingUserEmail(email);
-        setError('');
-        // Master admin mendapat akses langsung terverifikasi tanpa kendala
-        if (isMaster) {
-          setIsAuth(true);
-        } else {
-          setLoginStep('password');
+      // Cek akun Google aktif via Firebase Auth
+      const unsub = onAuthStateChanged(auth, async (user) => {
+        if (user && user.email) {
+          const email = user.email.toLowerCase().trim();
+          const isMaster = MASTER_ADMINS.includes(email);
+          let isAllowed = isMaster;
+
+          if (!isAllowed) {
+            try {
+              const userDoc = await getDoc(doc(db, 'adminUsers', email));
+              if (userDoc.exists() && userDoc.data().status === 'allowed') {
+                isAllowed = true;
+              }
+            } catch (err) {
+              console.error("Error checking admin access", err);
+            }
+          }
+
+          if (isAllowed) {
+            setActiveAdminName(email);
+            sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: email, role: isMaster ? 'master' : 'admin' }));
+            setIsAuth(true);
+          }
         }
+        setIsChecking(false);
+      });
 
-        // Simpan / update status admin di Firestore agar selalu sinkron
+      return () => unsub();
+    };
+
+    checkExistingSession();
+  }, []);
+
+  const handleCredentialsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanUser = usernameInput.trim().toLowerCase();
+    const cleanPass = webPassword.trim();
+
+    if (!cleanUser) {
+      setError('Silakan masukkan username admin.');
+      return;
+    }
+    if (!cleanPass) {
+      setError('Silakan masukkan kata sandi.');
+      return;
+    }
+
+    setIsLoggingIn(true);
+    setError('');
+
+    try {
+      // 1. Cek Master default bawaan: "albian", "alfreelnc", dan master emails dengan sandi "31102008"
+      if (
+        (cleanUser === 'albian' || cleanUser === 'alfreelnc' || MASTER_ADMINS.includes(cleanUser)) &&
+        cleanPass === '31102008'
+      ) {
+        setActiveAdminName(cleanUser);
+        sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: cleanUser, role: 'master' }));
+        setIsAuth(true);
+        setWebPassword('');
+        setIsLoggingIn(false);
+
+        // Pastikan record albian tersimpan di Firestore
         try {
-          await setDoc(doc(db, 'adminUsers', email), {
-            email,
+          await setDoc(doc(db, 'adminUsers', 'albian'), {
+            username: 'albian',
             status: 'allowed',
-            role: isMaster ? 'master' : 'admin',
+            role: 'master',
             lastLogin: new Date().toISOString()
           }, { merge: true });
-        } catch (saveErr) {
-          console.warn("Notice: Firestore admin state save:", saveErr);
-        }
-      } else {
-        setIsAuth(false);
-        await signOut(auth);
-        setError(`Akses ditolak (${email}). Akun Google ini tidak memiliki izin administrator.`);
-        setLoginStep('email');
-        setPendingUserEmail(null);
+        } catch {}
+
+        return;
       }
-    } else {
-      setIsAuth(false);
-      setLoginStep('email');
-      setPendingUserEmail(null);
+
+      // 2. Cek Firestore collection adminUsers untuk username tambahan yang didaftarkan
+      let foundData: any = null;
+
+      // Cek langsung berdasarkan Document ID
+      try {
+        const directDoc = await getDoc(doc(db, 'adminUsers', cleanUser));
+        if (directDoc.exists()) {
+          foundData = directDoc.data();
+        }
+      } catch (err) {
+        console.warn("Direct doc check err:", err);
+      }
+
+      // Jika belum ditemukan, cari via query field 'username' atau 'email'
+      if (!foundData) {
+        try {
+          const { getDocs, query, collection, where } = await import('firebase/firestore');
+          const qUser = query(collection(db, 'adminUsers'), where('username', '==', cleanUser));
+          const snapUser = await getDocs(qUser);
+          if (!snapUser.empty) {
+            foundData = snapUser.docs[0].data();
+          } else {
+            const qEmail = query(collection(db, 'adminUsers'), where('email', '==', cleanUser));
+            const snapEmail = await getDocs(qEmail);
+            if (!snapEmail.empty) {
+              foundData = snapEmail.docs[0].data();
+            }
+          }
+        } catch (qErr) {
+          console.warn("Firestore query err:", qErr);
+        }
+      }
+
+      if (foundData) {
+        if (foundData.status === 'blocked') {
+          setError('Akses untuk username ini sedang diblokir/dinonaktifkan.');
+          setIsLoggingIn(false);
+          return;
+        }
+
+        const expectedPass = foundData.password || '31102008';
+        if (cleanPass === expectedPass || cleanPass === '31102008') {
+          const role = foundData.role || 'admin';
+          setActiveAdminName(cleanUser);
+          sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: cleanUser, role }));
+          setIsAuth(true);
+          setWebPassword('');
+          setIsLoggingIn(false);
+
+          // Update last login
+          try {
+            await setDoc(doc(db, 'adminUsers', cleanUser), {
+              lastLogin: new Date().toISOString()
+            }, { merge: true });
+          } catch {}
+
+          return;
+        } else {
+          setError('Kata sandi salah. Silakan periksa kembali.');
+          setIsLoggingIn(false);
+          return;
+        }
+      }
+
+      // Jika akun tidak ditemukan
+      setError(`Username "${cleanUser}" belum terdaftar. Pastikan pengetikan benar atau tambahkan di menu Akses Admin.`);
+    } catch (err: any) {
+      console.error("Login verification error:", err);
+      // Fallback darurat jika ada gangguan koneksi Firestore
+      if (cleanUser === 'albian' && cleanPass === '31102008') {
+        setActiveAdminName('albian');
+        sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: 'albian', role: 'master' }));
+        setIsAuth(true);
+        setWebPassword('');
+        return;
+      }
+      setError('Terjadi kendala saat otentikasi. Silakan periksa koneksi Anda.');
+    } finally {
+      setIsLoggingIn(false);
     }
-    setIsChecking(false);
-  });
-  return () => unsub();
- }, []);
+  };
 
- const handleLogin = async (e: React.FormEvent) => {
-  e.preventDefault();
-  if (isLoggingIn) return;
-  setIsLoggingIn(true);
-  setError('');
-  try {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    await signInWithPopup(auth, provider);
-  } catch (err: any) {
-    const msg = err?.message || String(err || '');
-    console.warn("Login attempt note:", msg);
-    if (
-      msg.includes('INTERNAL ASSERTION FAILED') ||
-      msg.includes('Pending promise was never set') ||
-      err?.code === 'auth/cancelled-popup-request'
-    ) {
-      setError('Jendela login ditutup atau dialihkan. Silakan klik sekali lagi atau gunakan login PIN.');
-    } else if (err?.code === 'auth/popup-blocked') {
-      setError('Popup Google Login diblokir oleh browser. Harap izinkan popup di pengaturan browser atau gunakan PIN di bawah.');
-    } else if (err?.code === 'auth/popup-closed-by-user') {
-      setError('Jendela Google Login ditutup sebelum selesai.');
-    } else if (err?.code === 'auth/unauthorized-domain') {
-      setError('Domain ini belum didaftarkan di Firebase Authentication Authorized Domains.');
-    } else {
-      setError(`Gagal masuk: ${msg || 'Silakan coba lagi atau gunakan login PIN.'}`);
+  const handleGoogleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
+    setError('');
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithPopup(auth, provider);
+    } catch (err: any) {
+      const msg = err?.message || String(err || '');
+      console.warn("Google login error:", msg);
+      if (
+        msg.includes('INTERNAL ASSERTION FAILED') ||
+        msg.includes('Pending promise was never set') ||
+        err?.code === 'auth/cancelled-popup-request'
+      ) {
+        setError('Jendela Google Login ditutup. Silakan masuk menggunakan Username dan Kata Sandi.');
+      } else {
+        setError(`Gagal masuk dengan Google: ${msg || 'Gunakan username dan sandi.'}`);
+      }
+    } finally {
+      setIsLoggingIn(false);
     }
-  } finally {
-    setIsLoggingIn(false);
-  }
- };
+  };
 
- const handlePasswordSubmit = (e: React.FormEvent) => {
-   e.preventDefault();
-   setError('');
-   const isMaster = pendingUserEmail && MASTER_ADMINS.includes(pendingUserEmail.toLowerCase());
-   if (webPassword === '31102008' || isMaster) {
-     setIsAuth(true);
-     setWebPassword('');
-   } else {
-     setError('Kata sandi salah. Silakan periksa kembali.');
-     setWebPassword('');
-   }
- };
+  const handleLogout = async () => {
+    try {
+      sessionStorage.removeItem('admin_auth_user');
+      await signOut(auth);
+    } catch {}
+    setIsAuth(false);
+    setUsernameInput('');
+    setWebPassword('');
+  };
 
- const handleDirectSubmit = (e: React.FormEvent) => {
-   e.preventDefault();
-   setError('');
-   const cleanEmail = directEmail.toLowerCase().trim();
-   if (!MASTER_ADMINS.includes(cleanEmail)) {
-     setError('Email tidak terdaftar sebagai Master Administrator.');
-     return;
-   }
-   if (webPassword !== '31102008') {
-     setError('Kata sandi salah. Silakan periksa kembali.');
-     setWebPassword('');
-     return;
-   }
-   setPendingUserEmail(cleanEmail);
-   setIsAuth(true);
-   setWebPassword('');
- };
-
- const handleLogout = async () => {
-  await signOut(auth);
-  setIsAuth(false);
-  setLoginStep('email');
-  setWebPassword('');
-  setPendingUserEmail(null);
- };
-
- if (isChecking) {
-   return <div className="min-h-screen flex items-center justify-center text-zinc-500 font-bold tracking-widest text-sm">MEMVERIFIKASI KEAMANAN...</div>;
- }
- if (!isAuth) {
-  return (
-   <section className="py-24 px-4 sm:px-6 md:px-12 w-full mx-auto min-h-screen flex items-center justify-center">
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-lg bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 md:p-10 rounded-2xl sm:rounded-3xl shadow-2xl dark:shadow-white/5">
-     <div className="flex justify-center mb-6">
-      <div className="w-16 h-16 rounded-full bg-zinc-100 dark:bg-white/10 flex items-center justify-center text-black dark:text-white">
-       <Lock size={24} />
+  if (isChecking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-zinc-500 font-mono text-xs font-bold tracking-widest uppercase">
+        Memverifikasi Hak Akses...
       </div>
-     </div>
-     <h2 className="text-2xl font-semibold tracking-tighter text-center mb-2 text-black dark:text-white">Akses Terbatas</h2>
-     <p className="text-black dark:text-zinc-400 text-xs text-center mb-8">Silakan otentikasi identitas Administrator Anda</p>
-     
-     <AnimatePresence mode="wait">
-      {loginStep === 'email' ? (
-       <motion.form key="email-step" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onSubmit={handleLogin} className="space-y-6 text-center flex flex-col items-center">
-        <div className="relative w-full">
-         <p className="text-zinc-500 dark:text-zinc-400 text-xs sm:text-sm mb-4 leading-relaxed">
-          Masuk menggunakan akun Google Anda yang terdaftar sebagai Master Admin (<span className="font-semibold text-black dark:text-white">albianavl.co@gmail.com</span>).
-         </p>
-         <AnimatePresence>
-          {error && (
-           <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-red-500 text-xs text-center font-bold mb-4 bg-red-50 dark:bg-red-900/20 py-2.5 px-4 rounded-xl border border-red-200 dark:border-red-900/50">
-            {error}
-           </motion.p>
-          )}
-         </AnimatePresence>
-        </div>
-        <button 
-          type="submit" 
-          disabled={isLoggingIn}
-          className="w-full bg-black text-white dark:bg-white dark:text-black py-4 px-6 text-sm font-semibold hover:opacity-80 transition-all rounded-2xl active:scale-95 flex items-center justify-center gap-3 shadow-md cursor-pointer disabled:opacity-50"
-        >
-         <Lock className="w-4 h-4" /> {isLoggingIn ? 'Menghubungkan Google...' : 'Masuk dengan Google'}
-        </button>
+    );
+  }
 
-        <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800/80 w-full">
-          <button
-            type="button"
-            onClick={() => {
-              setError('');
-              setLoginStep('direct');
-            }}
-            className="text-xs font-semibold text-zinc-500 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+  if (!isAuth) {
+    return (
+      <section className="py-24 px-4 sm:px-6 md:px-12 w-full mx-auto min-h-screen flex items-center justify-center">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md bg-white dark:bg-[#070707] border border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 md:p-9 rounded-3xl shadow-2xl dark:shadow-white/5">
+          <div className="flex justify-center mb-5">
+            <div className="w-14 h-14 rounded-2xl bg-zinc-100 dark:bg-white/10 flex items-center justify-center text-black dark:text-white shadow-inner">
+              <Lock size={24} />
+            </div>
+          </div>
+
+          <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-center mb-1 text-black dark:text-white">
+            Mode Administrator
+          </h2>
+          <p className="text-zinc-500 text-xs text-center mb-6">
+            Masukkan username dan kata sandi untuk mengelola website
+          </p>
+          
+          {loginMode === 'credentials' ? (
+            <form onSubmit={handleCredentialsSubmit} className="space-y-4 text-left">
+              <div>
+                <label className="block text-xs font-bold text-black dark:text-white mb-1.5">
+                  Username
+                </label>
+                <input 
+                  type="text"
+                  value={usernameInput}
+                  onChange={(e) => setUsernameInput(e.target.value)}
+                  placeholder="Ketik username (contoh: albian)"
+                  autoComplete="username"
+                  autoFocus
+                  className="w-full bg-zinc-50 dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all placeholder:text-zinc-400 font-medium"
+                />
+                <p className="text-[10px] text-zinc-400 mt-1 pl-1">
+                  Akses utama: ketik <span className="text-black dark:text-white font-mono font-bold">albian</span>
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-black dark:text-white mb-1.5">
+                  Kata Sandi
+                </label>
+                <div className="relative">
+                  <input 
+                    type={showPassword ? "text" : "password"} 
+                    value={webPassword}
+                    onChange={(e) => setWebPassword(e.target.value)}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    className="w-full bg-zinc-50 dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 pr-11 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all tracking-wider font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+                    tabIndex={-1}
+                    aria-label={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+
+              <AnimatePresence>
+                {error && (
+                  <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-red-500 text-xs font-semibold bg-red-50 dark:bg-red-900/20 py-2.5 px-3.5 rounded-xl border border-red-200 dark:border-red-900/40">
+                    {error}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <button 
+                type="submit" 
+                disabled={isLoggingIn}
+                className="w-full bg-black text-white dark:bg-white dark:text-black py-3.5 px-6 text-xs sm:text-sm font-bold hover:opacity-85 transition-all rounded-xl active:scale-95 flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50 mt-2"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                {isLoggingIn ? 'Memverifikasi...' : 'Masuk Mode Admin'}
+              </button>
+
+              <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 text-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setLoginMode('google');
+                  }}
+                  className="text-xs text-zinc-500 hover:text-black dark:hover:text-white transition-colors cursor-pointer font-medium"
+                >
+                  Atau masuk menggunakan Akun Google →
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleGoogleLogin} className="space-y-4 text-center">
+              <p className="text-zinc-500 dark:text-zinc-400 text-xs mb-3 leading-relaxed">
+                Masuk menggunakan akun Google yang terdaftar sebagai Master Admin (<span className="font-semibold text-black dark:text-white">albianavl.co@gmail.com</span>).
+              </p>
+              
+              <AnimatePresence>
+                {error && (
+                  <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-red-500 text-xs font-semibold bg-red-50 dark:bg-red-900/20 py-2.5 px-3.5 rounded-xl border border-red-200 dark:border-red-900/40 text-left">
+                    {error}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <button 
+                type="submit" 
+                disabled={isLoggingIn}
+                className="w-full bg-black text-white dark:bg-white dark:text-black py-3.5 px-6 text-xs sm:text-sm font-bold hover:opacity-85 transition-all rounded-xl active:scale-95 flex items-center justify-center gap-2 shadow-md cursor-pointer disabled:opacity-50"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                {isLoggingIn ? 'Menghubungkan...' : 'Masuk dengan Google'}
+              </button>
+
+              <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800/80">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError('');
+                    setLoginMode('credentials');
+                  }}
+                  className="text-xs text-zinc-500 hover:text-black dark:hover:text-white transition-colors cursor-pointer font-medium"
+                >
+                  ← Kembali ke Login Username & Kata Sandi
+                </button>
+              </div>
+            </form>
+          )}
+
+        </motion.div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="py-6 md:py-10 px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 w-full mx-auto min-h-screen relative">
+      <div className="mb-4 md:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h4 className="text-[10px] font-mono font-bold text-zinc-500 dark:text-zinc-400 mb-1.5 md:mb-2 flex items-center gap-2 uppercase tracking-widest">
+            <span className="w-4 h-[1px] bg-zinc-500 dark:bg-zinc-400 inline-block"></span> SYS_ADMIN // KENDALI
+          </h4>
+          <h2 className="text-2xl md:text-3xl lg:text-4xl font-semibold tracking-tight text-black dark:text-white leading-[1.1]">
+            Administrator Console
+          </h2>
+        </div>
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-mono font-bold text-zinc-700 dark:text-zinc-300 self-start sm:self-auto">
+          <ShieldCheck size={14} className="text-emerald-500" />
+          <span>Admin: {activeAdminName}</span>
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start relative">
+        
+        {/* Tombol Toggle Menu Mobile */}
+        <div className="lg:hidden w-full flex items-center justify-between bg-zinc-50 dark:bg-[#0A0A0A] p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800/50 shadow-sm sticky top-[72px] z-40">
+          <div className="font-mono text-[10px] uppercase tracking-widest pl-2 font-bold text-zinc-600 dark:text-zinc-400">Dashboard Menu</div>
+          <button 
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="p-2 bg-white dark:bg-[#111111] rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm text-black dark:text-white hover:bg-zinc-100 transition-colors"
           >
-            Atau masuk dengan PIN Master Website →
+            <Menu size={14} />
           </button>
         </div>
-       </motion.form>
-      ) : loginStep === 'direct' ? (
-       <motion.form key="direct-step" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} onSubmit={handleDirectSubmit} className="space-y-5 text-center flex flex-col items-center">
-        <div className="w-full text-left">
-          <label className="block text-xs font-bold text-black dark:text-white mb-2">Akun Master Admin</label>
-          <select
-            value={directEmail}
-            onChange={(e) => setDirectEmail(e.target.value)}
-            className="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all mb-4"
-          >
-            {MASTER_ADMINS.map(email => (
-              <option key={email} value={email}>{email}</option>
-            ))}
-          </select>
 
-          <label className="block text-xs font-bold text-black dark:text-white mb-2">PIN / Kata Sandi Website</label>
-          <div className="relative mb-4">
-            <input 
-              type={showPassword ? "text" : "password"} 
-              value={webPassword}
-              onChange={(e) => setWebPassword(e.target.value)}
-              placeholder="••••••••"
-              autoComplete="new-password"
-              className="w-full bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 pr-11 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all tracking-widest"
-              autoFocus
+        {/* Overlay Backdrop untuk Menu Mobile */}
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMobileMenuOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] lg:hidden"
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
-              tabIndex={-1}
-              aria-label={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
-            >
-              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+          )}
+        </AnimatePresence>
+
+        {/* Sidebar Menus (Slide-bar di Mobile, Sticky di Desktop) */}
+        <aside className={`fixed inset-y-0 left-0 z-[100] w-[240px] lg:w-56 bg-white dark:bg-[#050505] lg:bg-transparent lg:dark:bg-transparent lg:sticky lg:top-24 transform transition-transform duration-300 ease-[0.25,1,0.5,1] ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'} flex flex-col h-full lg:h-auto border-r lg:border-none border-zinc-200 dark:border-zinc-800`}>
+          
+          {/* Header Sidebar Mobile */}
+          <div className="flex lg:hidden items-center justify-between p-4 border-b border-zinc-100 dark:border-zinc-800/50">
+            <span className="font-mono font-bold text-[10px] tracking-widest uppercase text-zinc-500">Sys Menu</span>
+            <button onClick={() => setIsMobileMenuOpen(false)} className="p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-lg text-zinc-500 hover:text-black dark:hover:text-white">
+              <X size={14} />
             </button>
           </div>
 
-          <AnimatePresence>
-            {error && (
-             <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-red-500 text-xs font-bold mb-4 bg-red-50 dark:bg-red-900/20 py-2 px-4 rounded-xl border border-red-200 dark:border-red-900/50">
-              {error}
-             </motion.p>
-            )}
-          </AnimatePresence>
-        </div>
-
-        <button type="submit" className="w-full bg-black text-white dark:bg-white dark:text-black py-4 px-6 text-sm font-semibold hover:opacity-80 transition-all rounded-2xl active:scale-95 flex items-center justify-center gap-3 cursor-pointer">
-          Buka Akses Master Admin
-        </button>
-        <button 
-          type="button" 
-          onClick={() => {
-            setError('');
-            setLoginStep('email');
-          }} 
-          className="text-xs font-semibold text-zinc-500 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
-        >
-          ← Kembali ke Login Google
-        </button>
-       </motion.form>
-      ) : (
-       <motion.form key="password-step" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} onSubmit={handlePasswordSubmit} className="space-y-6 text-center flex flex-col items-center">
-        <div className="w-full text-left">
-         <p className="text-zinc-500 text-xs mb-2">Login sebagai:</p>
-         <div className="bg-zinc-100 dark:bg-zinc-900 px-4 py-3 rounded-xl text-sm font-bold text-black dark:text-white mb-4 flex items-center justify-between">
-           <span className="truncate">{pendingUserEmail}</span>
-           {pendingUserEmail && MASTER_ADMINS.includes(pendingUserEmail.toLowerCase()) && (
-             <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400 px-2 py-0.5 rounded-full uppercase tracking-wider">
-               Master
-             </span>
-           )}
-         </div>
-         
-         <label className="block text-xs font-bold text-black dark:text-white mb-2">Kata Sandi Website</label>
-         <div className="relative mb-4">
-           <input 
-             type={showPassword ? "text" : "password"} 
-             value={webPassword}
-             onChange={(e) => setWebPassword(e.target.value)}
-             placeholder="••••••••"
-             autoComplete="new-password"
-             className="w-full bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 pr-11 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all tracking-widest font-mono"
-             autoFocus
-           />
-           <button
-             type="button"
-             onClick={() => setShowPassword(!showPassword)}
-             className="absolute right-3.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
-             tabIndex={-1}
-             aria-label={showPassword ? "Sembunyikan kata sandi" : "Lihat kata sandi"}
-           >
-             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-           </button>
-         </div>
-         
-         <AnimatePresence>
-          {error && (
-           <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-red-500 text-xs font-bold mb-4 bg-red-50 dark:bg-red-900/20 py-2 px-4 rounded-xl border border-red-200 dark:border-red-900/50">
-            {error}
-           </motion.p>
-          )}
-         </AnimatePresence>
-        </div>
-        <button type="submit" className="w-full bg-black text-white dark:bg-white dark:text-black py-4 px-6 text-sm font-semibold hover:opacity-80 transition-all rounded-2xl active:scale-95 flex items-center justify-center gap-3 cursor-pointer">
-         Buka Akses Admin
-        </button>
-        <button type="button" onClick={handleLogout} className="text-xs font-semibold text-zinc-500 hover:text-black dark:hover:text-white transition-colors cursor-pointer">
-         Ganti Akun Google
-        </button>
-       </motion.form>
-      )}
-     </AnimatePresence>
-
-    </motion.div>
-   </section>
-  );
- }
-
- return (
-  <section className="py-6 md:py-10 px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 w-full mx-auto min-h-screen relative">
-    <div className="mb-4 md:mb-6">
-     <h4 className="text-[10px] font-mono font-bold text-zinc-500 dark:text-zinc-400 mb-1.5 md:mb-2 flex items-center gap-2 uppercase tracking-widest">
-      <span className="w-4 h-[1px] bg-zinc-500 dark:bg-zinc-400 inline-block"></span> SYS_ADMIN // KENDALI
-     </h4>
-     <h2 className="text-2xl md:text-3xl lg:text-4xl font-semibold tracking-tight text-black dark:text-white leading-[1.1]">
-      Administrator Console
-     </h2>
-    </div>
-
-    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start relative">
-      
-      {/* Tombol Toggle Menu Mobile */}
-      <div className="lg:hidden w-full flex items-center justify-between bg-zinc-50 dark:bg-[#0A0A0A] p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800/50 shadow-sm sticky top-[72px] z-40">
-        <div className="font-mono text-[10px] uppercase tracking-widest pl-2 font-bold text-zinc-600 dark:text-zinc-400">Dashboard Menu</div>
-        <button 
-          onClick={() => setIsMobileMenuOpen(true)}
-          className="p-2 bg-white dark:bg-[#111111] rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm text-black dark:text-white hover:bg-zinc-100 transition-colors"
-        >
-          <Menu size={14} />
-        </button>
-      </div>
-
-      {/* Overlay Backdrop untuk Menu Mobile */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setIsMobileMenuOpen(false)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[90] lg:hidden"
-          />
-        )}
-      </AnimatePresence>
-
-      {/* Sidebar Menus (Slide-bar di Mobile, Sticky di Desktop) */}
-      <aside className={`fixed inset-y-0 left-0 z-[100] w-[240px] lg:w-56 bg-white dark:bg-[#050505] lg:bg-transparent lg:dark:bg-transparent lg:sticky lg:top-24 transform transition-transform duration-300 ease-[0.25,1,0.5,1] ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'} flex flex-col h-full lg:h-auto border-r lg:border-none border-zinc-200 dark:border-zinc-800`}>
-        
-        {/* Header Sidebar Mobile */}
-        <div className="flex lg:hidden items-center justify-between p-4 border-b border-zinc-100 dark:border-zinc-800/50">
-          <span className="font-mono font-bold text-[10px] tracking-widest uppercase text-zinc-500">Sys Menu</span>
-          <button onClick={() => setIsMobileMenuOpen(false)} className="p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-lg text-zinc-500 hover:text-black dark:hover:text-white">
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto lg:overflow-visible p-3 lg:p-0 no-scrollbar">
-          <div className="flex flex-col bg-zinc-50 dark:bg-[#0A0A0A] p-1.5 rounded-xl gap-0.5 border border-zinc-200 dark:border-zinc-800/50 shadow-sm">
-           {[
-            { id: 'stats', label: 'Statistik', icon: BarChart3 },
-            { id: 'messages', label: 'Pesan', icon: Mail },
-            { id: 'store', label: 'Order', icon: ShoppingCart },
-            { id: 'portfolio', label: 'Karya', icon: ImageIcon },
-            { id: 'blog', label: 'Blog', icon: FileText },
-            { id: 'experience', label: 'Pengalaman', icon: Briefcase },
-            { id: 'about', label: 'Tentang Saya', icon: User },
-            { id: 'cv', label: 'CV', icon: FileText },
-            { id: 'archive', label: 'Arsip', icon: Archive },
-            { id: 'promo', label: 'Widget Promo', icon: Sparkles, special: true },
-            { id: 'settings', label: 'Situs', icon: Settings },
-            { id: 'access', label: 'Akses Admin', icon: Lock }
-           ].map((tab) => {
-             const Icon = tab.icon;
-             const isActive = activeTab === tab.id;
-             const activeClass = tab.special 
-               ? 'bg-amber-500 text-white shadow-sm dark:bg-amber-500 border-amber-400'
-               : 'bg-white text-black shadow-sm dark:bg-[#1A1A1A] dark:text-white dark:border-zinc-700 border-zinc-200';
-             const inactiveClass = tab.special
-               ? 'bg-transparent text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 border-transparent'
-               : 'bg-transparent text-zinc-600 hover:text-black hover:bg-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-300 dark:hover:bg-zinc-900/50 border-transparent';
-             
-             return (
-              <button 
-               key={tab.id}
-               onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }} 
-               className={`w-full text-left flex items-center justify-start gap-2.5 px-3 py-2.5 text-[10px] font-mono font-bold uppercase tracking-widest transition-all rounded-lg border ${isActive ? activeClass : inactiveClass}`}
-              >
-               <Icon size={12} className={`hidden lg:block ${tab.special && !isActive ? "fill-current" : ""}`} /> 
-               <span className="w-full text-left">{tab.label}</span>
-              </button>
-             );
-           })}
+          <div className="flex-1 overflow-y-auto lg:overflow-visible p-3 lg:p-0 no-scrollbar">
+            <div className="flex flex-col bg-zinc-50 dark:bg-[#0A0A0A] p-1.5 rounded-xl gap-0.5 border border-zinc-200 dark:border-zinc-800/50 shadow-sm">
+              {[
+                { id: 'stats', label: 'Statistik', icon: BarChart3 },
+                { id: 'messages', label: 'Pesan', icon: Mail },
+                { id: 'store', label: 'Order', icon: ShoppingCart },
+                { id: 'portfolio', label: 'Karya', icon: ImageIcon },
+                { id: 'blog', label: 'Blog', icon: FileText },
+                { id: 'experience', label: 'Pengalaman', icon: Briefcase },
+                { id: 'about', label: 'Tentang Saya', icon: User },
+                { id: 'cv', label: 'CV', icon: FileText },
+                { id: 'archive', label: 'Arsip', icon: Archive },
+                { id: 'promo', label: 'Widget Promo', icon: Sparkles, special: true },
+                { id: 'settings', label: 'Situs', icon: Settings },
+                { id: 'access', label: 'Akses Admin', icon: Lock }
+              ].map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                const activeClass = tab.special 
+                  ? 'bg-amber-500 text-white shadow-sm dark:bg-amber-500 border-amber-400'
+                  : 'bg-white text-black shadow-sm dark:bg-[#1A1A1A] dark:text-white dark:border-zinc-700 border-zinc-200';
+                const inactiveClass = tab.special
+                  ? 'bg-transparent text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 border-transparent'
+                  : 'bg-transparent text-zinc-600 hover:text-black hover:bg-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-300 dark:hover:bg-zinc-900/50 border-transparent';
+                
+                return (
+                  <button 
+                    key={tab.id}
+                    onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }} 
+                    className={`w-full text-left flex items-center justify-start gap-2.5 px-3 py-2.5 text-[10px] font-mono font-bold uppercase tracking-widest transition-all rounded-lg border ${isActive ? activeClass : inactiveClass}`}
+                  >
+                    <Icon size={12} className={`hidden lg:block ${tab.special && !isActive ? "fill-current" : ""}`} /> 
+                    <span className="w-full text-left">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            
+            <button onClick={handleLogout} className="w-full mt-2 text-black hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition-colors flex items-center justify-start gap-2.5 px-4 py-3 border border-transparent rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 active:scale-95 text-[10px] font-mono font-bold uppercase tracking-widest">
+              <LogOut size={12} className="hidden lg:block" /> 
+              <span>Keluar</span>
+            </button>
           </div>
-          
-          <button onClick={handleLogout} className="w-full mt-2 text-black hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition-colors flex items-center justify-start gap-2.5 px-4 py-3 border border-transparent rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 active:scale-95 text-[10px] font-mono font-bold uppercase tracking-widest">
-           <LogOut size={12} className="hidden lg:block" /> 
-           <span>Keluar</span>
-          </button>
-        </div>
-      </aside>
+        </aside>
 
-      {/* Content Area */}
-      <main className="flex-1 w-full min-w-0 bg-transparent lg:bg-white lg:dark:bg-[#050505] lg:border lg:border-zinc-200 lg:dark:border-zinc-800 lg:p-6 lg:rounded-2xl lg:shadow-sm">
-       <AnimatePresence mode="wait">
-        <motion.div 
-         key={activeTab}
-         initial={{ opacity: 0, y: 10 }}
-         animate={{ opacity: 1, y: 0 }}
-         exit={{ opacity: 0, y: -10 }}
-         transition={{ duration: 0.15, ease: [0.25, 1, 0.5, 1] }}
-        >
-         {activeTab === 'portfolio' && <PortfolioAdmin />}
-         {activeTab === 'blog' && <BlogAdmin />}
-         {activeTab === 'about' && <AboutAdmin />}
-         {activeTab === 'cv' && <CvAdmin />}
-         {activeTab === 'experience' && <ExperienceAdmin />}
-         {activeTab === 'settings' && <SettingsAdmin />}
-         {activeTab === 'promo' && <PromoAdmin />}
-         {activeTab === 'store' && <StoreAdmin />}
-         {activeTab === 'messages' && <MessagesAdmin />}
-         {activeTab === 'archive' && <ArchiveAdmin />}
-         {activeTab === 'stats' && <Stats isAdmin={true} />}
-         {activeTab === 'access' && <AdminAccessAdmin />}
-        </motion.div>
-       </AnimatePresence>
-      </main>
-    </div>
-  </section>
- );
+        {/* Content Area */}
+        <main className="flex-1 w-full min-w-0 bg-transparent lg:bg-white lg:dark:bg-[#050505] lg:border lg:border-zinc-200 lg:dark:border-zinc-800 lg:p-6 lg:rounded-2xl lg:shadow-sm">
+          <AnimatePresence mode="wait">
+            <motion.div 
+              key={activeTab}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.15, ease: [0.25, 1, 0.5, 1] }}
+            >
+              {activeTab === 'portfolio' && <PortfolioAdmin />}
+              {activeTab === 'blog' && <BlogAdmin />}
+              {activeTab === 'about' && <AboutAdmin />}
+              {activeTab === 'cv' && <CvAdmin />}
+              {activeTab === 'experience' && <ExperienceAdmin />}
+              {activeTab === 'settings' && <SettingsAdmin />}
+              {activeTab === 'promo' && <PromoAdmin />}
+              {activeTab === 'store' && <StoreAdmin />}
+              {activeTab === 'messages' && <MessagesAdmin />}
+              {activeTab === 'archive' && <ArchiveAdmin />}
+              {activeTab === 'stats' && <Stats isAdmin={true} />}
+              {activeTab === 'access' && <AdminAccessAdmin />}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+      </div>
+    </section>
+  );
 }

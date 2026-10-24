@@ -1,6 +1,7 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper function untuk cek autentikasi
     function isSignedIn() {
       return request.auth != null;
     }
@@ -12,76 +13,59 @@ service cloud.firestore {
       );
     }
 
-    function isRegisteredAdmin() {
-      return isSignedIn() && (
-        exists(/databases/$(database)/documents/adminUsers/$(request.auth.token.email.lower())) &&
-        get(/databases/$(database)/documents/adminUsers/$(request.auth.token.email.lower())).data.status == 'allowed'
-      );
-    }
-    
-    function isAdmin() {
-      return isMasterAdmin() || isRegisteredAdmin();
-    }
-
-    // Public portfolio projects: anyone can read, admin or app write
+    // Koleksi portofolio proyek: bebas dibaca semua pengunjung, bisa diupdate admin
     match /projects/{projectId} {
-      allow read: if true;
-      allow write: if isAdmin() || true;
-    }
-
-    // Public blog posts
-    match /blogPosts/{blogId} {
-      allow read: if true;
-      allow write: if isAdmin() || true;
-    }
-
-    // Public work experiences
-    match /experiences/{experienceId} {
-      allow read: if true;
-      allow write: if isAdmin() || true;
-    }
-
-    // Public site settings (global & cv)
-    match /settings/{settingId} {
-      allow read: if true;
-      allow write: if isAdmin() || true;
-    }
-
-    // Stats collection: page view tracking
-    match /stats/{docId} {
       allow read: if true;
       allow write: if true;
     }
 
-    // Customer orders: public submission allowed
-    match /orders/{orderId} {
-      allow create: if true;
-      allow read, update, delete: if isAdmin() || true;
-    }
-
-    // Contact messages: public submission allowed
-    match /messages/{messageId} {
-      allow create: if true;
-      allow read, update, delete: if isAdmin() || true;
-    }
-
-    // Admin users collection
-    match /adminUsers/{userId} {
+    // Koleksi artikel & blog: bebas dibaca semua pengunjung
+    match /blogPosts/{blogId} {
       allow read: if true;
-      allow write: if isAdmin() || true;
+      allow write: if true;
+    }
+
+    // Koleksi riwayat pengalaman & sertifikasi
+    match /experiences/{experienceId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Pengaturan website (global & CV)
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Statistik & jumlah kunjungan web
+    match /stats/{docId} {
+      allow read, write: if true;
+    }
+
+    // Pesanan layanan desain dari pengunjung
+    match /orders/{orderId} {
+      allow read, write: if true;
+    }
+
+    // Pesan kontak & formulir diskusi dari pengunjung
+    match /messages/{messageId} {
+      allow read, write: if true;
+    }
+
+    // Pengguna admin & hak akses
+    match /adminUsers/{userId} {
+      allow read, write: if true;
     }
     match /admin_users/{userId} {
-      allow read: if true;
-      allow write: if isAdmin() || true;
+      allow read, write: if true;
     }
 
-    // Archive folders collection
+    // Folder arsip
     match /archiveFolders/{folderId} {
-      allow read: if true;
-      allow write: if isAdmin() || true;
+      allow read, write: if true;
     }
 
-    // Default allow for backward compatibility
+    // Fallback umum agar tidak ada fitur atau pengunjung yang terblokir secara tidak sengaja
     match /{document=**} {
       allow read, write: if true;
     }

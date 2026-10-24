@@ -39,12 +39,17 @@ export async function uploadImageToStorage(
   folder = 'blog_posts',
   timeoutMs = 15000
 ): Promise<string> {
-  const isPng = (fileOrBlob instanceof File && fileOrBlob.name.toLowerCase().endsWith('.png')) || 
-                fileOrBlob.type === 'image/png' ||
-                Boolean(filename && filename.toLowerCase().endsWith('.png'));
-  const ext = isPng ? '.png' : '.webp';
   const rawFileName = filename || (fileOrBlob instanceof File ? fileOrBlob.name : '');
-  const cleanName = rawFileName || `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}${ext}`;
+  const isSvg = (fileOrBlob instanceof File && fileOrBlob.name.toLowerCase().endsWith('.svg')) ||
+                fileOrBlob.type === 'image/svg+xml' ||
+                Boolean(filename && filename.toLowerCase().endsWith('.svg'));
+  const isPdf = (fileOrBlob instanceof File && fileOrBlob.name.toLowerCase().endsWith('.pdf')) ||
+                fileOrBlob.type === 'application/pdf' ||
+                Boolean(filename && filename.toLowerCase().endsWith('.pdf'));
+  
+  const ext = isSvg ? '.svg' : isPdf ? '.pdf' : '.webp';
+  const baseOnly = rawFileName ? rawFileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_') : `img_${Date.now()}`;
+  const cleanName = `${baseOnly}_${Math.random().toString(36).substring(2, 8)}${ext}`;
   const abortController = new AbortController();
 
   const doUpload = async (): Promise<string> => {

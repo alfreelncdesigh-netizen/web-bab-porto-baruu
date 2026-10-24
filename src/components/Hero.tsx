@@ -100,42 +100,42 @@ export default function Hero() {
             </p>
           </div>
 
-          {/* Headline Mobile: Ukuran pas untuk layar mobile agar tidak terpotong */}
+          {/* Headline Mobile: Ukuran diperbesar dan tegas untuk tampilan mobile */}
           <h1 
             style={{
               fontFamily: "'Many Years Ago', 'Plus Jakarta Sans', 'Outfit', sans-serif",
               letterSpacing: '-0.025em',
-              lineHeight: 1.1,
+              lineHeight: 1.04,
             }}
-            className="font-black text-[34px] sm:text-[40px] text-zinc-950 dark:text-white mb-2 select-none w-full"
+            className="font-black text-[42px] sm:text-[48px] text-zinc-950 dark:text-white mb-1 select-none w-full"
           >
             <span className="block text-zinc-950 dark:text-white font-black">{title1Text}</span>
             <span className="block text-zinc-950 dark:text-white font-black mt-1">{title2Text}</span>
           </h1>
 
-          {/* Group Tombol CTA Mobile: Diperkecil & dinaikkan posisinya lebih dekat ke teks judul */}
-          <div className="inline-flex items-center p-0.5 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-0.5 max-w-full select-none">
+          {/* Group Tombol CTA Mobile: Diturunkan sedikit dengan proporsi rapi */}
+          <div className="inline-flex items-center p-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-3.5 sm:mt-4 max-w-full select-none">
             <button 
               onClick={() => scrollTo('portfolio')}
-              className="h-[28px] sm:h-[30px] px-3 sm:px-3.5 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-[10.5px] sm:text-[11px] font-bold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
+              className="h-[34px] sm:h-[36px] px-4 sm:px-4.5 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-xs font-bold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
             >
-              Lihat Karya <ArrowRight className="w-2.5 h-2.5 shrink-0" />
+              Lihat Karya <ArrowRight className="w-3 h-3 shrink-0" />
             </button>
             <button 
               onClick={() => scrollTo('contact')}
-              className="h-[28px] sm:h-[30px] px-3 sm:px-3.5 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-[10.5px] sm:text-[11px] font-bold cursor-pointer active:scale-95 transition-all shrink-0"
+              className="h-[34px] sm:h-[36px] px-4 sm:px-4.5 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-xs font-bold cursor-pointer active:scale-95 transition-all shrink-0"
             >
               Kontak
             </button>
           </div>
         </motion.div>
 
-        {/* Foto Desainer Mobile: Dibuat lebih besar, dinaikkan posisinya sedikit ke atas */}
+        {/* Foto Desainer Mobile: Diposisikan rapi di bawah teks dan tombol tanpa ruang kosong berlebihan */}
         <motion.div 
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.12, ease: "easeOut" }}
-          className="w-full -mt-1 sm:-mt-2 px-3 sm:px-6 flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none -translate-y-2 sm:-translate-y-3"
+          className="w-full mt-3 sm:mt-4 px-3 sm:px-6 flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none"
         >
           <div className="relative w-full max-w-[380px] sm:max-w-[420px] aspect-[4/5] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
             {/* Ambient subtle glow */}

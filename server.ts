@@ -1,8 +1,9 @@
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,11 +15,107 @@ const cliPort = portArgIndex !== -1 && process.argv[portArgIndex + 1] ? Number(p
 const PORT = Number(process.env.PORT) || cliPort || 3000;
 
 // Determine whether the app is in production mode.
-// In dev server, it runs via `npm run dev` (lifecycle event 'dev').
-// In Cloud Run deployment, it runs via `npm start` or `node server.ts` where lifecycle event is 'start' or undefined.
-const hasDist = fs.existsSync(path.resolve(__dirname, 'dist/index.html'));
-const isDev = process.env.npm_lifecycle_event === 'dev' || (!hasDist && process.env.NODE_ENV === 'development');
-const isProd = !isDev;
+const isProd = process.env.NODE_ENV === 'production';
+
+// Sembunyikan fingerprint server untuk keamanan
+app.disable('x-powered-by');
+
+// ============================================================================
+// 1. HEADER KEAMANAN ADAPTIF & RAMAH AKSES (Bebas Iframe & Akses Multi-Device)
+// ============================================================================
+app.use((_req: Request, res: Response, next: NextFunction): void => {
+  // CSP yang ramah terhadap semua asset, font, gambar Cloudinary/Firebase, Google Auth, dan Iframe
+  res.setHeader(
+    'Content-Security-Policy',
+    [
+      "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https: http: data: blob:",
+      "style-src 'self' 'unsafe-inline' https: http: data:",
+      "font-src 'self' https: http: data:",
+      "img-src * data: blob: https: http:",
+      "media-src * data: blob: https: http:",
+      "connect-src * https: http: wss: ws:",
+      "frame-src * https: http:",
+      "frame-ancestors *", // Pastikan web dapat dibuka dengan lancar di AI Studio preview, mobile webview, atau embed lain tanpa blokir
+      "object-src 'none'",
+      "base-uri 'self'"
+    ].join('; ')
+  );
+
+  // Jangan pasang X-Frame-Options: SAMEORIGIN agar iframe preview AI Studio dan browser mobile tidak diblokir
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+
+  next();
+});
+
+// ============================================================================
+// 2. RATE LIMITER AMAN & ANTI-PEMBLOKIRAN SALAH (Zero False-Positive)
+// ============================================================================
+// Catatan: Tidak pernah membatasi GET request (membaca web, melihat karya, download asset)
+// Hanya melindungi POST write dari serangan spam ekstrim tanpa melakukan pemblokiran IP permanen
+interface ApiLimitEntry {
+  count: number;
+  resetAt: number;
+}
+
+const apiLimitStore = new Map<string, ApiLimitEntry>();
+const API_POST_LIMIT = 150; // Kuota 150 request POST per menit per IP (sangat aman untuk pengguna asli)
+const WINDOW_MS = 60 * 1000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of apiLimitStore.entries()) {
+    if (entry.resetAt < now) {
+      apiLimitStore.delete(ip);
+    }
+  }
+}, 3 * 60 * 1000);
+
+function getClientIp(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.socket.remoteAddress || '127.0.0.1';
+}
+
+const softApiProtection = (req: Request, res: Response, next: NextFunction): void => {
+  // Pengunjung yang hanya membuka web, melihat gambar, atau membaca API GET TIDAK PERNAH dibatasi
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    return next();
+  }
+
+  // Hanya periksa request mutasi API
+  if (req.path.startsWith('/api/')) {
+    const ip = getClientIp(req);
+    const now = Date.now();
+    let entry = apiLimitStore.get(ip);
+
+    if (!entry || now > entry.resetAt) {
+      entry = { count: 1, resetAt: now + WINDOW_MS };
+      apiLimitStore.set(ip, entry);
+    } else {
+      entry.count++;
+    }
+
+    if (entry.count > API_POST_LIMIT) {
+      const remainingSecs = Math.ceil((entry.resetAt - now) / 1000);
+      res.setHeader('Retry-After', remainingSecs);
+      res.status(429).json({
+        error: 'Aktivitas pengiriman data terlalu cepat. Mohon tunggu beberapa detik.',
+        code: 'PLEASE_SLOW_DOWN'
+      });
+      return;
+    }
+  }
+
+  next();
+};
+
+app.use(softApiProtection);
 
 // Ensure public/uploads directory exists safely
 const uploadsDir = path.resolve(__dirname, 'public/uploads');
@@ -30,7 +127,7 @@ try {
   console.warn('Notice: uploads directory creation:', e);
 }
 
-// 1. Static file serving for uploads (/uploads/*) and public assets (/images/*)
+// Static file serving for uploads (/uploads/*) and public assets (/images/*)
 const publicDir = path.resolve(__dirname, 'public');
 
 // Service Worker must always be fresh
@@ -41,12 +138,17 @@ app.get('/sw.js', (_req: Request, res: Response) => {
   res.sendFile(swPath);
 });
 
+// Static serving for user uploads
 app.use('/uploads', express.static(uploadsDir, {
   maxAge: '1y',
   immutable: true,
-  setHeaders: (res) => {
+  setHeaders: (res, filePath) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (/\.svg$/i.test(filePath)) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+    }
   }
 }));
 
@@ -56,21 +158,26 @@ app.use('/images', express.static(path.join(publicDir, 'images'), {
   setHeaders: (res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
   }
 }));
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Body parser
+app.use(express.json({ limit: '35mb' }));
+app.use(express.urlencoded({ extended: true, limit: '35mb' }));
 
 app.use(express.static(publicDir, {
   setHeaders: (res, filePath) => {
     if (/\.(?:png|jpe?g|webp|svg|gif|avif|ico)$/i.test(filePath)) {
       res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
     }
   }
 }));
 
-// Settings persistence on server disk (instant fallback and cross-session persistence)
+// ============================================================================
+// 3. REST DATA ENDPOINTS (Penyimpanan Lokal / Disk Backup)
+// ============================================================================
 const settingsFilePath = path.resolve(__dirname, 'settings-storage.json');
 const projectsFilePath = path.resolve(__dirname, 'projects-storage.json');
 const blogsFilePath = path.resolve(__dirname, 'blogs-storage.json');
@@ -97,14 +204,13 @@ app.post('/api/settings', (req: Request, res: Response): void => {
       res.status(200).json({ success: true });
       return;
     }
-    res.status(400).json({ error: 'Invalid settings payload' });
+    res.status(400).json({ error: 'Data pengaturan tidak valid' });
   } catch (err: any) {
     console.error('Error writing settings-storage.json:', err);
-    res.status(500).json({ error: err?.message || 'Failed to save settings' });
+    res.status(500).json({ error: 'Gagal menyimpan pengaturan' });
   }
 });
 
-// Projects endpoint
 app.get('/api/projects', (_req: Request, res: Response): void => {
   try {
     if (fs.existsSync(projectsFilePath)) {
@@ -124,13 +230,12 @@ app.post('/api/projects', (req: Request, res: Response): void => {
       res.status(200).json({ success: true });
       return;
     }
-    res.status(400).json({ error: 'Invalid projects payload' });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Failed to save projects' });
+    res.status(400).json({ error: 'Format data proyek tidak valid' });
+  } catch {
+    res.status(500).json({ error: 'Gagal menyimpan proyek' });
   }
 });
 
-// Blogs endpoint
 app.get('/api/blogs', (_req: Request, res: Response): void => {
   try {
     if (fs.existsSync(blogsFilePath)) {
@@ -150,13 +255,12 @@ app.post('/api/blogs', (req: Request, res: Response): void => {
       res.status(200).json({ success: true });
       return;
     }
-    res.status(400).json({ error: 'Invalid blogs payload' });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Failed to save blogs' });
+    res.status(400).json({ error: 'Format data blog tidak valid' });
+  } catch {
+    res.status(500).json({ error: 'Gagal menyimpan blog' });
   }
 });
 
-// Experiences endpoint
 app.get('/api/experiences', (_req: Request, res: Response): void => {
   try {
     if (fs.existsSync(experiencesFilePath)) {
@@ -176,42 +280,67 @@ app.post('/api/experiences', (req: Request, res: Response): void => {
       res.status(200).json({ success: true });
       return;
     }
-    res.status(400).json({ error: 'Invalid experiences payload' });
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message || 'Failed to save experiences' });
+    res.status(400).json({ error: 'Format data pengalaman tidak valid' });
+  } catch {
+    res.status(500).json({ error: 'Gagal menyimpan pengalaman' });
   }
 });
 
-// 2. Upload endpoint: /api/upload
+// ============================================================================
+// 4. FIREWALL UPLOAD DENGAN PROTEKSI FILE AMAN
+// ============================================================================
+// Blokir file script berbahaya (.html, .php, .js, .exe, .sh), izinkan semua media & dokumen desain
+const FORBIDDEN_EXTENSIONS = new Set([
+  '.html', '.htm', '.php', '.phtml', '.php3', '.php4', '.php5',
+  '.js', '.mjs', '.cjs', '.exe', '.sh', '.bat', '.cmd', '.py',
+  '.pl', '.cgi', '.asp', '.aspx', '.jsp', '.jar'
+]);
+
 app.post('/api/upload', (req: Request, res: Response): void => {
-  // A. Jika request berupa JSON (sudah di-parse oleh express.json)
+  // A. JSON base64 upload
   if (req.body && (req.body.data || req.body.file)) {
     try {
-      let filename = req.body.filename || `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webp`;
+      let rawFilename = req.body.filename || 'upload.webp';
+      let cleanExt = path.extname(rawFilename).toLowerCase();
+      if (!cleanExt) cleanExt = '.webp';
+
+      if (FORBIDDEN_EXTENSIONS.has(cleanExt)) {
+        res.status(400).json({ error: 'Format file ini dibatasi untuk alasan keamanan' });
+        return;
+      }
+
       const rawData = req.body.data || req.body.file;
       const base64Data = rawData.replace(/^data:[^;]+;base64,/, '');
       const fileBuffer = Buffer.from(base64Data, 'base64');
-      const cleanExt = path.extname(filename) || '.webp';
-      const baseName = path.basename(filename, cleanExt).replace(/[^a-zA-Z0-9_-]/g, '_');
-      const safeName = `${baseName}_${Date.now()}${cleanExt}`;
+
+      if (fileBuffer.length === 0) {
+        res.status(400).json({ error: 'File kosong' });
+        return;
+      }
+
+      // Sanitasi nama file agar aman dari path traversal
+      const baseName = path.basename(rawFilename, cleanExt).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
+      const randomSuffix = crypto.randomBytes(4).toString('hex');
+      const safeName = `${baseName || 'file'}_${Date.now()}_${randomSuffix}${cleanExt}`;
       const filePath = path.join(uploadsDir, safeName);
+
       fs.writeFileSync(filePath, fileBuffer);
       res.status(200).json({ url: `/uploads/${safeName}` });
       return;
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || 'JSON upload failed' });
+    } catch {
+      res.status(500).json({ error: 'Gagal memproses upload file' });
       return;
     }
   }
 
-  // B. Jika request berupa multipart/form-data atau binary stream
+  // B. Multipart / stream upload
   const chunks: Buffer[] = [];
   req.on('data', (chunk: Buffer) => chunks.push(chunk));
   req.on('end', () => {
     try {
       const fullBuffer = Buffer.concat(chunks);
       const contentType = req.headers['content-type'] || '';
-      let filename = `img_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.webp`;
+      let filename = 'upload.webp';
       let fileBuffer: Buffer | null = null;
 
       if (contentType.includes('multipart/form-data')) {
@@ -259,28 +388,51 @@ app.post('/api/upload', (req: Request, res: Response): void => {
         }
       }
 
-      if (fileBuffer && fileBuffer.length > 0) {
-        const cleanExt = path.extname(filename) || '.webp';
-        const baseName = path.basename(filename, cleanExt).replace(/[^a-zA-Z0-9_-]/g, '_');
-        const safeName = `${baseName}_${Date.now()}${cleanExt}`;
-        const filePath = path.join(uploadsDir, safeName);
-        fs.writeFileSync(filePath, fileBuffer);
-        res.status(200).json({ url: `/uploads/${safeName}` });
-      } else {
-        res.status(400).json({ error: 'No file data received' });
+      if (!fileBuffer || fileBuffer.length === 0) {
+        res.status(400).json({ error: 'Tidak ada data file yang diterima' });
+        return;
       }
-    } catch (err: any) {
-      res.status(500).json({ error: err?.message || 'Upload failed' });
+
+      let cleanExt = path.extname(filename).toLowerCase();
+      if (!cleanExt) cleanExt = '.webp';
+
+      if (FORBIDDEN_EXTENSIONS.has(cleanExt)) {
+        res.status(400).json({ error: 'Format file ini dibatasi untuk alasan keamanan' });
+        return;
+      }
+
+      const baseName = path.basename(filename, cleanExt).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
+      const randomSuffix = crypto.randomBytes(4).toString('hex');
+      const safeName = `${baseName || 'file'}_${Date.now()}_${randomSuffix}${cleanExt}`;
+      const filePath = path.join(uploadsDir, safeName);
+
+      fs.writeFileSync(filePath, fileBuffer);
+      res.status(200).json({ url: `/uploads/${safeName}` });
+    } catch {
+      res.status(500).json({ error: 'Upload gagal diproses' });
     }
   });
 });
 
-// 3. Health check endpoints for Cloud Run and monitoring probes
+// Health check endpoints for monitoring and probes
 app.get(['/api/health', '/health', '/healthz', '/_health'], (_req: Request, res: Response): void => {
   res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// 4. Vite middleware (in development) or static files (in production)
+// Centralized error handling
+app.use((err: any, _req: Request, res: Response, _next: NextFunction): void => {
+  console.error('[SERVER ERROR]', err?.message || err);
+  if (!res.headersSent) {
+    res.status(500).json({
+      error: 'Terjadi kendala pada server. Silakan coba kembali.',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// ============================================================================
+// 5. VITE MIDDLEWARE (DEV) OR DIST STATIC SERVING (PROD)
+// ============================================================================
 async function startServer() {
   const server = http.createServer(app);
 
@@ -302,6 +454,7 @@ async function startServer() {
       setHeaders: (res, filePath) => {
         if (/\.(?:png|jpe?g|webp|svg|gif|avif|ico|woff2?|ttf|eot)$/i.test(filePath)) {
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          res.setHeader('X-Content-Type-Options', 'nosniff');
         }
       }
     }));

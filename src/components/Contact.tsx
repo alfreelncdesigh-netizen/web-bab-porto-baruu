@@ -149,14 +149,14 @@ export default function Contact() {
    whileInView="visible"
    viewport={{ once: true, amount: 0 }}
    variants={sectionStaggerContainer}
-   className="pt-8 pb-28 mb-20 bg-white dark:bg-[#0A0A0A] scroll-mt-24 md:scroll-mt-32"
+   className="pt-2 sm:pt-3 pb-16 md:pb-20 mb-6 md:mb-10 bg-white dark:bg-[#0A0A0A] scroll-mt-24 md:scroll-mt-32"
   >
    <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18">
     
     {/* Section Header */}
     <motion.div 
      variants={sectionHeaderItem}
-     className="text-left md:text-center mb-8 md:mb-12"
+     className="text-left md:text-center mb-5 md:mb-7"
     >
      <div className="inline-block px-3.5 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800/50 text-[11px] md:text-xs font-semibold tracking-widest text-black dark:text-zinc-400 mb-3 uppercase">
       Yuk Ngobrol & Diskusi

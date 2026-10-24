@@ -458,15 +458,15 @@ export default function Stats({
       variants={sectionStaggerContainer}
       className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 scroll-mt-24 md:scroll-mt-32"
     >
-      <div ref={statsRef} className="p-4 sm:p-6 md:p-8 rounded-3xl bg-[#F0EEEE] dark:bg-[#0A0A0A] relative">
-        <div id="stats-watermark" style={{ display: 'none' }} className="flex justify-between items-center w-full pb-6 border-b border-zinc-200 dark:border-zinc-800 mb-6">
+      <div ref={statsRef} className="p-3.5 sm:p-5 md:p-6 rounded-3xl bg-[#F0EEEE] dark:bg-[#0A0A0A] relative">
+        <div id="stats-watermark" style={{ display: 'none' }} className="flex justify-between items-center w-full pb-4 border-b border-zinc-200 dark:border-zinc-800 mb-4">
           <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-black dark:text-white">Statistik Web</h2>
           <div className="flex items-center">
             <BrandLogo className="h-8" />
           </div>
         </div>
          
-        <motion.div variants={sectionHeaderItem} id="stats-normal-header" className="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-6 md:mb-8">
+        <motion.div variants={sectionHeaderItem} id="stats-normal-header" className="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-4 md:mb-6">
           <div>
             <h4 className="text-[9px] md:text-xs font-bold text-black dark:text-zinc-400 mb-3 flex items-center gap-2 tracking-widest uppercase">
               Ringkasan & Aktivitas

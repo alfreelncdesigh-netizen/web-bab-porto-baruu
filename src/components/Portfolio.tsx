@@ -224,6 +224,20 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   const modalContentRef = useRef<HTMLDivElement>(null);
   const modalTopRef = useRef<HTMLDivElement>(null);
 
+  // Status auto-hide tombol silang (X) modal: hilang jika tidak disentuh 3 detik, muncul kembali saat disentuh / scroll
+  const [isCloseButtonVisible, setIsCloseButtonVisible] = useState(true);
+  const closeButtonTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const resetCloseButtonTimer = () => {
+    setIsCloseButtonVisible(true);
+    if (closeButtonTimerRef.current) {
+      clearTimeout(closeButtonTimerRef.current);
+    }
+    closeButtonTimerRef.current = setTimeout(() => {
+      setIsCloseButtonVisible(false);
+    }, 3000);
+  };
+
   // Status tracking artikel yang sudah dibaca (disimpan di localStorage)
   const [readProjectIds, setReadProjectIds] = useState<Set<string>>(() => {
     try {
@@ -328,6 +342,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   }, []);
 
   // Auto-scroll ke paling atas modal saat artikel dibuka atau berpindah artikel
+  // serta manajemen timer auto-hide tombol silang (hilang jika tidak disentuh 3 detik)
   useEffect(() => {
     if (selectedProject) {
       setActiveImageIndex(0);
@@ -343,7 +358,42 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
 
       scrollToTop();
       const timer = setTimeout(scrollToTop, 60);
-      return () => clearTimeout(timer);
+
+      // Inisialisasi tombol silang tampil dan mulai timer 3 detik
+      resetCloseButtonTimer();
+
+      const handleUserActivity = () => {
+        resetCloseButtonTimer();
+      };
+
+      // Dengarkan aktivitas sentuhan layar, scroll, dan pergerakan pointer
+      window.addEventListener('touchstart', handleUserActivity, { passive: true });
+      window.addEventListener('touchmove', handleUserActivity, { passive: true });
+      window.addEventListener('touchend', handleUserActivity, { passive: true });
+      window.addEventListener('pointerdown', handleUserActivity, { passive: true });
+      window.addEventListener('pointermove', handleUserActivity, { passive: true });
+      window.addEventListener('scroll', handleUserActivity, { capture: true, passive: true });
+      window.addEventListener('wheel', handleUserActivity, { passive: true });
+
+      return () => {
+        clearTimeout(timer);
+        if (closeButtonTimerRef.current) {
+          clearTimeout(closeButtonTimerRef.current);
+          closeButtonTimerRef.current = null;
+        }
+        window.removeEventListener('touchstart', handleUserActivity);
+        window.removeEventListener('touchmove', handleUserActivity);
+        window.removeEventListener('touchend', handleUserActivity);
+        window.removeEventListener('pointerdown', handleUserActivity);
+        window.removeEventListener('pointermove', handleUserActivity);
+        window.removeEventListener('scroll', handleUserActivity, { capture: true });
+        window.removeEventListener('wheel', handleUserActivity);
+      };
+    } else {
+      if (closeButtonTimerRef.current) {
+        clearTimeout(closeButtonTimerRef.current);
+        closeButtonTimerRef.current = null;
+      }
     }
   }, [selectedProject?.id]);
 
@@ -550,18 +600,6 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           style={{ display: 'inline-block', width: '100%' }}
                           onClick={() => handleOpenArticle(project)}
                         >
-                          {/* Tombol Bagikan di Setiap Gambar Karya */}
-                          <button
-                            type="button"
-                            onClick={(e) => handleShareProject(project, e)}
-                            className="absolute top-3 right-3 z-20 flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3 sm:py-1.5 rounded-full bg-black/65 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 shadow-lg text-[10px] sm:text-xs font-semibold transition-all duration-200 active:scale-90 hover:scale-105 group/share cursor-pointer"
-                            title={`Bagikan ${project.title}`}
-                            aria-label={`Bagikan ${project.title}`}
-                          >
-                            <Share2 className="w-3.5 h-3.5 text-white stroke-[2]" />
-                            <span className="font-medium text-[11px] hidden sm:inline">Bagikan</span>
-                          </button>
-
                           {project.image ? (
                             <PortfolioLazyImage 
                               src={project.image} 
@@ -672,14 +710,23 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
             className="fixed inset-0 z-[120] flex items-center justify-center p-0 md:p-3 lg:p-5 xl:p-6 bg-black/80 dark:bg-black/90 overflow-hidden"
             onClick={() => setSelectedProject(null)}
           >
-            {/* Tombol Tutup (X) Fixed/Sticky dengan z-index tinggi agar selalu terlihat */}
-            <button 
-              onClick={() => setSelectedProject(null)} 
-              aria-label="Tutup Quick View"
-              className="fixed top-3 right-3 sm:top-4 sm:right-4 md:absolute md:top-5 md:right-5 z-[140] p-2.5 sm:p-3 rounded-full hover:scale-105 active:scale-95 duration-200 shadow-xl border text-black dark:text-white bg-white/85 dark:bg-[#18181b]/85 backdrop-blur-md border-zinc-200/70 dark:border-zinc-700/70 cursor-pointer"
-            >
-              <X className="w-5 h-5 md:w-[18px] md:h-[18px]" />
-            </button>
+            {/* Tombol Tutup (X): Hilang jika layar tidak disentuh selama 3 detik, muncul kembali saat layar disentuh / di-scroll */}
+            <AnimatePresence>
+              {isCloseButtonVisible && (
+                <motion.button 
+                  key="modal-close-button"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
+                  onClick={() => setSelectedProject(null)} 
+                  aria-label="Tutup Quick View"
+                  className="fixed top-3 right-3 sm:top-4 sm:right-4 md:absolute md:top-5 md:right-5 z-[140] p-2.5 sm:p-3 rounded-full hover:scale-105 active:scale-95 duration-200 shadow-xl border text-black dark:text-white bg-white/85 dark:bg-[#18181b]/85 backdrop-blur-md border-zinc-200/70 dark:border-zinc-700/70 cursor-pointer"
+                >
+                  <X className="w-5 h-5 md:w-[18px] md:h-[18px]" />
+                </motion.button>
+              )}
+            </AnimatePresence>
 
             <motion.div 
               initial={{ scale: 0.98, opacity: 0 }} 
@@ -689,7 +736,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               ref={modalRootRef}
               id="portfolio-modal-root" 
               className="w-full h-[100dvh] md:w-[98vw] lg:w-[98vw] xl:w-[98vw] 2xl:w-[98vw] md:max-w-none md:h-[94vh] md:max-h-[96vh] overflow-y-auto md:overflow-hidden rounded-none md:rounded-3xl flex flex-col md:flex-row shadow-2xl relative bg-white dark:bg-[#0A0A0A] border-0 md:border md:border-zinc-200/60 dark:md:border-zinc-800/60"
-              onClick={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); resetCloseButtonTimer(); }}
+              onTouchStart={() => resetCloseButtonTimer()}
+              onTouchMove={() => resetCloseButtonTimer()}
+              onScroll={() => resetCloseButtonTimer()}
             >
               {/* Target Scroll Paling Atas */}
               <div ref={modalTopRef} id="portfolio-modal-top" className="w-full h-0 opacity-0 pointer-events-none absolute top-0 left-0" />
