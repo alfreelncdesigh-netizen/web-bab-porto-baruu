@@ -6,7 +6,8 @@ import { BlogPost } from '../types/blog';
 import { Edit, Trash, Plus, X, Check, Cloud, Upload, Loader2, Image as ImageIcon, Archive, AlertCircle, Handshake } from 'lucide-react';
 import { db, ensureFreshAuthToken } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { getStoredBlogs, saveStoredBlogs, cleanBlogs, getStoredSettings } from '../lib/contentStorage';
+import { getStoredBlogs, saveStoredBlogs, cleanBlogs, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { SiteSettings } from '../data/settings';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
 
@@ -90,6 +91,32 @@ export default function BlogAdmin() {
       newPosts = [payloadToSave, ...posts];
     }
     savePosts(newPosts);
+
+    // Jika kolaborasi aktif pada blog ini, langsung terapkan ke pengaturan website agar logo langsung tampil di header & website
+    if (payloadToSave.isCollaboration) {
+      try {
+        const siteSettings = getStoredSettings();
+        const partnerLogo = payloadToSave.collaborationLogo || siteSettings.collaboration?.partnerLogo || '';
+        const partnerName = payloadToSave.collaborationPartner || siteSettings.collaboration?.partnerName || '';
+        const collabText = payloadToSave.collaborationText || siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama';
+
+        const updatedSettings: SiteSettings = {
+          ...siteSettings,
+          collaboration: {
+            ...siteSettings.collaboration,
+            enabled: true,
+            partnerName: partnerName || siteSettings.collaboration?.partnerName || '',
+            partnerLogo: partnerLogo || siteSettings.collaboration?.partnerLogo || '',
+            collaborationText: collabText,
+            autoTagNewItems: Boolean(siteSettings.collaboration?.autoTagNewItems)
+          },
+          savedAt: Date.now()
+        };
+        saveStoredSettings(updatedSettings);
+      } catch (collabErr) {
+        console.warn("Notice: Syncing blog collaboration to settings:", collabErr);
+      }
+    }
 
     try {
       await withTimeout(
@@ -212,7 +239,22 @@ export default function BlogAdmin() {
 
   const createNew = () => {
     const siteSettings = getStoredSettings();
-    const isAutoCollab = Boolean(siteSettings.collaboration?.enabled && siteSettings.collaboration?.autoTagNewItems);
+    const authSession = typeof window !== 'undefined' ? sessionStorage.getItem('admin_auth_user') : null;
+    let isCollabUser = false;
+    let collabPartner = '';
+    let collabLogo = '';
+    if (authSession) {
+      try {
+        const p = JSON.parse(authSession);
+        if (p.role === 'collaborator') {
+          isCollabUser = true;
+          collabPartner = p.partnerName || '';
+          collabLogo = p.partnerLogo || '';
+        }
+      } catch {}
+    }
+
+    const isAutoCollab = isCollabUser || Boolean(siteSettings.collaboration?.enabled && siteSettings.collaboration?.autoTagNewItems);
 
     setEditingPost({
       id: Date.now().toString(),
@@ -223,8 +265,8 @@ export default function BlogAdmin() {
       category: 'Umum',
       published: true,
       isCollaboration: isAutoCollab,
-      collaborationPartner: isAutoCollab ? (siteSettings.collaboration?.partnerName || '') : '',
-      collaborationLogo: isAutoCollab ? (siteSettings.collaboration?.partnerLogo || '') : '',
+      collaborationPartner: collabPartner || (isAutoCollab ? (siteSettings.collaboration?.partnerName || '') : ''),
+      collaborationLogo: collabLogo || (isAutoCollab ? (siteSettings.collaboration?.partnerLogo || '') : ''),
       collaborationText: isAutoCollab ? (siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama') : ''
     });
   };
@@ -452,9 +494,9 @@ export default function BlogAdmin() {
 
                 <div className="sm:col-span-2">
                   <label className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300 mb-1 block">
-                    Logo Mitra Kolaborasi (URL / Gambar)
+                    Logo Mitra Kolaborasi (URL / Unggah Gambar)
                   </label>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
                     {editingPost.collaborationLogo && (
                       <img
                         src={resolveImageUrl(editingPost.collaborationLogo)}
@@ -467,9 +509,32 @@ export default function BlogAdmin() {
                       type="text"
                       value={editingPost.collaborationLogo || ''}
                       onChange={e => setEditingPost({ ...editingPost, collaborationLogo: e.target.value })}
-                      placeholder="Masukkan URL logo atau gunakan logo global..."
-                      className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                      placeholder="Masukkan URL logo atau unggah file..."
+                      className="flex-1 min-w-[180px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
                     />
+                    <label className="cursor-pointer px-3 py-2 text-[10px] font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 flex items-center gap-1.5 transition-colors active:scale-95 shadow-xs">
+                      <Upload size={12} />
+                      <span>Upload Logo</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={async (e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          try {
+                            setUploadStatusText("Mengunggah logo mitra...");
+                            const url = await compressAndUpload(file, 'collaboration', 600, 0.85);
+                            setEditingPost(prev => prev ? { ...prev, collaborationLogo: url } : null);
+                            showToast("Logo kolaborasi berhasil diunggah!");
+                          } catch (err: any) {
+                            showToast("Gagal mengunggah logo mitra", "error");
+                          } finally {
+                            e.target.value = '';
+                          }
+                        }}
+                      />
+                    </label>
                     {getStoredSettings().collaboration?.partnerLogo && editingPost.collaborationLogo !== getStoredSettings().collaboration?.partnerLogo && (
                       <button
                         type="button"
@@ -482,7 +547,7 @@ export default function BlogAdmin() {
                             collaborationPartner: editingPost.collaborationPartner || partner
                           });
                         }}
-                        className="px-3 py-2 text-[10px] font-semibold rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-black dark:text-white shrink-0 transition-colors"
+                        className="px-3 py-2 text-[10px] font-semibold rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-black dark:text-white shrink-0 transition-colors cursor-pointer"
                       >
                         Gunakan Logo Global
                       </button>

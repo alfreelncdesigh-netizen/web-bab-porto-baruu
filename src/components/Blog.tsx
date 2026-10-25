@@ -300,8 +300,18 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                         {post.category}
                       </span>
                       {(post.isCollaboration || post.collaborationPartner) && (
-                        <span className="bg-indigo-600/90 text-white border border-indigo-400/30 px-2 py-0.5 rounded-full text-[9px] font-bold shadow-xs flex items-center gap-1">
-                          <Handshake size={10} /> Kolaborasi
+                        <span className="bg-indigo-600/90 text-white border border-indigo-400/30 px-2 py-0.5 rounded-full text-[9px] font-bold shadow-xs flex items-center gap-1.5">
+                          {post.collaborationLogo ? (
+                            <img 
+                              src={resolveImageUrl(post.collaborationLogo)} 
+                              alt={post.collaborationPartner || "Mitra Kolaborasi"} 
+                              className="h-3.5 w-auto max-w-[28px] object-contain rounded-xs bg-white/20 p-0.5"
+                              onError={handleImageError}
+                            />
+                          ) : (
+                            <Handshake size={10} />
+                          )}
+                          <span>{post.collaborationPartner || 'Kolaborasi'}</span>
                         </span>
                       )}
                       <span className="text-zinc-400 dark:text-zinc-500">&bull;</span>

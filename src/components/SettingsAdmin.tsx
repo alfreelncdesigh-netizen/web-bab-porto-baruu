@@ -163,20 +163,48 @@ export default function SettingsAdmin() {
         finalUrl = await uploadImageToStorage(fileToUpload, fileToUpload.name, undefined, 'settings');
       }
 
+      // Khusus foto hero utama: simpan cadangan kompresi WebP & link permanen
+      if (field === 'heroImage') {
+        try {
+          const compressedDataUrl = await compressImage(fileToUpload);
+          if (compressedDataUrl) {
+            localStorage.setItem('app_custom_hero_image_backup', compressedDataUrl);
+          }
+          localStorage.setItem('app_custom_hero_image', finalUrl);
+          // Simpan ke disk cadangan server
+          fetch('/api/hero-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ heroImage: finalUrl, dataUrl: compressedDataUrl || finalUrl }),
+          }).catch(() => {});
+        } catch (e) {
+          console.warn('Backup hero image error:', e);
+        }
+      }
+
       const updated = { ...settings, [field]: finalUrl, savedAt: Date.now() };
       setSettings(updated);
-      // Auto-save instan dan aman ke database, server, dan local storage
+      // Auto-save instan dan aman ke database Firestore, server, dan local storage
       await saveStoredSettings(updated);
       window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-      showToast("Gambar berhasil diunggah & tersimpan permanen!");
+      showToast("Foto utama beranda berhasil diunggah & tersimpan permanen di Firebase!");
     } catch (err: any) {
       try {
         const compressed = await compressImage(fileToUpload);
+        if (field === 'heroImage') {
+          localStorage.setItem('app_custom_hero_image_backup', compressed);
+          localStorage.setItem('app_custom_hero_image', compressed);
+          fetch('/api/hero-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ heroImage: compressed, dataUrl: compressed }),
+          }).catch(() => {});
+        }
         const updated = { ...settings, [field]: compressed, savedAt: Date.now() };
         setSettings(updated);
         await saveStoredSettings(updated);
         window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-        showToast("Gambar berhasil disimpan & langsung tampil di website!");
+        showToast("Foto utama beranda berhasil disimpan permanen ke Firebase & website!");
       } catch {
         console.warn(err);
         showToast("Gagal memproses gambar", "error");
@@ -446,6 +474,14 @@ export default function SettingsAdmin() {
          }} 
          onBlur={async (e) => {
            const val = e.target.value.trim();
+           if (val) {
+             localStorage.setItem('app_custom_hero_image', val);
+             fetch('/api/hero-image', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ heroImage: val })
+             }).catch(() => {});
+           }
            const updated = { ...settings, heroImage: val, savedAt: Date.now() };
            setSettings(updated);
            await saveStoredSettings(updated);
@@ -457,37 +493,61 @@ export default function SettingsAdmin() {
         <button
          type="button"
          onClick={async () => {
-           const updated = { ...settings, heroImage: (settings.heroImage || '').trim(), savedAt: Date.now() };
+           const val = (settings.heroImage || '').trim();
+           if (val) {
+             localStorage.setItem('app_custom_hero_image', val);
+             fetch('/api/hero-image', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ heroImage: val })
+             }).catch(() => {});
+           }
+           const updated = { ...settings, heroImage: val, savedAt: Date.now() };
            setSettings(updated);
            await saveStoredSettings(updated);
            window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-           showToast('Link gambar utama berhasil diterapkan & disimpan!');
+           showToast('Link gambar utama berhasil disimpan permanen ke Firebase & website!');
          }}
-         title="Terapkan dan simpan link gambar"
-         className="px-3 py-2 text-xs font-semibold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-85 rounded-xl transition-all shrink-0 cursor-pointer"
+         title="Terapkan dan simpan permanen ke Firebase"
+         className="px-3.5 py-2 text-xs font-semibold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-85 rounded-xl transition-all shrink-0 cursor-pointer flex items-center gap-1.5"
         >
-         Terapkan
+         <span>Terapkan</span>
         </button>
         {settings.heroImage && (
          <button
           type="button"
           onClick={async () => {
-            const updated = { ...settings, heroImage: '', savedAt: Date.now() };
-            setSettings(updated);
+            const updated = { ...settings, heroImage: '__RESET_DEFAULT__', savedAt: Date.now() };
+            localStorage.removeItem('app_custom_hero_image');
+            localStorage.removeItem('app_custom_hero_image_backup');
+            fetch('/api/hero-image', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ heroImage: '' })
+            }).catch(() => {});
+            setSettings({ ...settings, heroImage: '' });
             await saveStoredSettings(updated);
-            window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-            showToast('Foto utama beranda dihapus.');
+            window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: { ...settings, heroImage: '' } }));
+            showToast('Foto utama beranda dikembalikan ke default bawaan.');
           }}
-          title="Hapus gambar"
+          title="Reset gambar ke default bawaan"
           className="p-2 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-900/40 transition-colors shrink-0 cursor-pointer"
          >
           <Trash2 size={14} />
          </button>
         )}
        </div>
-       <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1.5">
-        Foto ini tampil di samping judul pada layar desktop dan di bawah judul pada layar mobile. Gambar disimpan sebagai link cloud permanen di Firebase.
-       </p>
+       <div className="flex items-center justify-between gap-2 mt-2">
+        <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+         Foto tampil di sebelah judul di layar desktop dan di bawah judul di layar mobile.
+        </p>
+        {settings.heroImage && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 shrink-0">
+           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+           Tersimpan di Firebase
+          </span>
+        )}
+       </div>
       </div>
      </div>
     </div>

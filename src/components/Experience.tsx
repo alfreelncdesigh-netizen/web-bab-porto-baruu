@@ -120,8 +120,18 @@ export default function Experience() {
                           <span>{exp.subtheme}</span>
                         </p>
                         {(exp.isCollaboration || exp.collaborationPartner) && (
-                          <span className="bg-indigo-600/90 text-white border border-indigo-400/30 px-2 py-0.5 rounded-full text-[9px] font-bold shadow-xs flex items-center gap-1">
-                            <Handshake size={10} /> Kolaborasi
+                          <span className="bg-indigo-600/90 text-white border border-indigo-400/30 px-2 py-0.5 rounded-full text-[9px] font-bold shadow-xs flex items-center gap-1.5">
+                            {exp.collaborationLogo ? (
+                              <img
+                                src={resolveImageUrl(exp.collaborationLogo)}
+                                alt=""
+                                className="w-3.5 h-3.5 object-contain rounded-full bg-white p-0.5 shrink-0"
+                                onError={handleImageError}
+                              />
+                            ) : (
+                              <Handshake size={10} />
+                            )}
+                            <span>{exp.collaborationPartner ? `Kolaborasi: ${exp.collaborationPartner}` : 'Kolaborasi'}</span>
                           </span>
                         )}
                       </div>

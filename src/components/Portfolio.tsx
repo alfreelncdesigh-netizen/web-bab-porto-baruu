@@ -626,8 +626,18 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                   {project.category}
                                 </span>
                                 {(project.isCollaboration || project.collaborationPartner) && (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-600/90 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase border border-indigo-400/30 text-white shadow-sm">
-                                    <Handshake size={11} /> Kolaborasi
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-600/90 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase border border-indigo-400/30 text-white shadow-sm">
+                                    {project.collaborationLogo ? (
+                                      <img 
+                                        src={resolveImageUrl(project.collaborationLogo)} 
+                                        alt={project.collaborationPartner || "Mitra Kolaborasi"} 
+                                        className="h-3.5 w-auto max-w-[28px] object-contain rounded-xs bg-white/20 p-0.5"
+                                        onError={handleImageError}
+                                      />
+                                    ) : (
+                                      <Handshake size={11} />
+                                    )}
+                                    <span>{project.collaborationPartner || 'Kolaborasi'}</span>
                                   </span>
                                 )}
                               </div>

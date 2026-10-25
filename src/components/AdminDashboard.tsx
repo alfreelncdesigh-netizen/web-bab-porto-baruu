@@ -22,6 +22,7 @@ import ArchiveAdmin from './ArchiveAdmin';
 import PromoAdmin from './PromoAdmin';
 import AdminAccessAdmin from './AdminAccessAdmin';
 import CollaborationAdmin from './CollaborationAdmin';
+import { getStoredSettings } from '../lib/contentStorage';
 import { Handshake } from 'lucide-react';
 
 export const MASTER_ADMINS = [
@@ -33,6 +34,7 @@ export const MASTER_ADMINS = [
 
 export default function AdminDashboard() {
   const [isAuth, setIsAuth] = useState(false);
+  const [adminRole, setAdminRole] = useState<'master' | 'admin' | 'collaborator'>('master');
   const [activeTab, setActiveTab] = useState<'portfolio' | 'blog' | 'experience' | 'about' | 'cv' | 'stats' | 'settings' | 'store' | 'messages' | 'archive' | 'promo' | 'access' | 'collaboration'>('portfolio');
   const [isChecking, setIsChecking] = useState(true);
   const [error, setError] = useState('');
@@ -55,6 +57,11 @@ export default function AdminDashboard() {
           const parsed = JSON.parse(saved);
           if (parsed?.username) {
             setActiveAdminName(parsed.username);
+            const role = parsed.role === 'collaborator' ? 'collaborator' : (parsed.role === 'master' ? 'master' : 'admin');
+            setAdminRole(role);
+            if (role === 'collaborator') {
+              setActiveTab('portfolio');
+            }
             setIsAuth(true);
             setIsChecking(false);
             return;
@@ -82,6 +89,7 @@ export default function AdminDashboard() {
 
           if (isAllowed) {
             setActiveAdminName(email);
+            setAdminRole(isMaster ? 'master' : 'admin');
             sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: email, role: isMaster ? 'master' : 'admin' }));
             setIsAuth(true);
           }
@@ -119,6 +127,7 @@ export default function AdminDashboard() {
         cleanPass === '31102008'
       ) {
         setActiveAdminName(cleanUser);
+        setAdminRole('master');
         sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: cleanUser, role: 'master' }));
         sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
         setIsAuth(true);
@@ -138,7 +147,49 @@ export default function AdminDashboard() {
         return;
       }
 
-      // 2. Cek Firestore collection adminUsers untuk username tambahan yang didaftarkan
+      // 2. Cek Kredensial Khusus Kolaborator dari Settings
+      const siteSettings = getStoredSettings();
+      const collabCfg = siteSettings.collaboration;
+      const accounts = collabCfg?.collaboratorAccounts || [];
+
+      const matchedAccount = accounts.find(
+        (a) => a.username?.toLowerCase().trim() === cleanUser && a.password?.trim() === cleanPass
+      );
+
+      const isDirectCollabMatch = 
+        (collabCfg?.collaboratorUsername &&
+         collabCfg.collaboratorUsername.toLowerCase().trim() === cleanUser &&
+         collabCfg?.collaboratorPassword &&
+         collabCfg.collaboratorPassword.trim() === cleanPass) ||
+        (cleanUser === 'kolaborator' && cleanPass === 'kolaborasi123');
+
+      if (matchedAccount || isDirectCollabMatch) {
+        if (matchedAccount && !matchedAccount.active) {
+          setError('Akses akun kolaborator ini sedang dinonaktifkan.');
+          setIsLoggingIn(false);
+          return;
+        }
+
+        const partnerName = matchedAccount?.partnerName || collabCfg?.partnerName || 'Kolaborator';
+        const partnerLogo = matchedAccount?.partnerLogo || collabCfg?.partnerLogo || '';
+
+        setActiveAdminName(cleanUser);
+        setAdminRole('collaborator');
+        setActiveTab('portfolio');
+        sessionStorage.setItem('admin_auth_user', JSON.stringify({
+          username: cleanUser,
+          role: 'collaborator',
+          partnerName,
+          partnerLogo
+        }));
+        sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
+        setIsAuth(true);
+        setWebPassword('');
+        setIsLoggingIn(false);
+        return;
+      }
+
+      // 3. Cek Firestore collection adminUsers untuk username tambahan yang didaftarkan
       let foundData: any = null;
 
       // Cek langsung berdasarkan Document ID
@@ -177,11 +228,20 @@ export default function AdminDashboard() {
           return;
         }
 
-        const expectedPass = foundData.password || '31102008';
-        if (cleanPass === expectedPass || cleanPass === '31102008') {
-          const role = foundData.role || 'admin';
+        const expectedPass = foundData.password || (foundData.role === 'collaborator' ? 'kolaborasi123' : '31102008');
+        if (cleanPass === expectedPass || (foundData.role !== 'collaborator' && cleanPass === '31102008')) {
+          const role = foundData.role === 'collaborator' ? 'collaborator' : (foundData.role || 'admin');
           setActiveAdminName(cleanUser);
-          sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: cleanUser, role }));
+          setAdminRole(role);
+          if (role === 'collaborator') {
+            setActiveTab('portfolio');
+          }
+          sessionStorage.setItem('admin_auth_user', JSON.stringify({ 
+            username: cleanUser, 
+            role,
+            partnerName: foundData.partnerName,
+            partnerLogo: foundData.partnerLogo
+          }));
           sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
           setIsAuth(true);
           setWebPassword('');
@@ -209,7 +269,18 @@ export default function AdminDashboard() {
       // Fallback darurat jika ada gangguan koneksi Firestore
       if (cleanUser === 'albian' && cleanPass === '31102008') {
         setActiveAdminName('albian');
+        setAdminRole('master');
         sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: 'albian', role: 'master' }));
+        sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
+        setIsAuth(true);
+        setWebPassword('');
+        return;
+      }
+      if (cleanUser === 'kolaborator' && cleanPass === 'kolaborasi123') {
+        setActiveAdminName('kolaborator');
+        setAdminRole('collaborator');
+        setActiveTab('portfolio');
+        sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: 'kolaborator', role: 'collaborator' }));
         sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
         setIsAuth(true);
         setWebPassword('');
@@ -411,8 +482,8 @@ export default function AdminDashboard() {
           </h2>
         </div>
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-mono font-bold text-zinc-700 dark:text-zinc-300 self-start sm:self-auto">
-          <ShieldCheck size={14} className="text-emerald-500" />
-          <span>Admin: {activeAdminName}</span>
+          <ShieldCheck size={14} className={adminRole === 'collaborator' ? "text-indigo-500" : "text-emerald-500"} />
+          <span>{adminRole === 'collaborator' ? `Kolaborator: ${activeAdminName}` : `Admin: ${activeAdminName}`}</span>
         </div>
       </div>
 
@@ -455,27 +526,34 @@ export default function AdminDashboard() {
 
           <div className="flex-1 overflow-y-auto lg:overflow-visible p-3 lg:p-0 no-scrollbar">
             <div className="flex flex-col bg-zinc-50 dark:bg-[#0A0A0A] p-1.5 rounded-xl gap-0.5 border border-zinc-200 dark:border-zinc-800/50 shadow-sm">
-              {[
-                { id: 'stats', label: 'Statistik', icon: BarChart3 },
-                { id: 'messages', label: 'Pesan', icon: Mail },
-                { id: 'store', label: 'Order', icon: ShoppingCart },
-                { id: 'portfolio', label: 'Karya', icon: ImageIcon },
-                { id: 'blog', label: 'Blog', icon: FileText },
-                { id: 'experience', label: 'Pengalaman', icon: Briefcase },
-                { id: 'collaboration', label: 'Kolaborasi', icon: Handshake, collab: true },
-                { id: 'about', label: 'Tentang Saya', icon: User },
-                { id: 'cv', label: 'CV', icon: FileText },
-                { id: 'archive', label: 'Arsip', icon: Archive },
-                { id: 'promo', label: 'Widget Promo', icon: Sparkles, special: true },
-                { id: 'settings', label: 'Situs', icon: Settings },
-                { id: 'access', label: 'Akses Admin', icon: Lock }
-              ].map((tab) => {
+              {(adminRole === 'collaborator'
+                ? [
+                    { id: 'portfolio', label: 'Karya', icon: ImageIcon },
+                    { id: 'blog', label: 'Blog', icon: FileText },
+                    { id: 'experience', label: 'Pengalaman', icon: Briefcase },
+                  ]
+                : [
+                    { id: 'stats', label: 'Statistik', icon: BarChart3 },
+                    { id: 'messages', label: 'Pesan', icon: Mail },
+                    { id: 'store', label: 'Order', icon: ShoppingCart },
+                    { id: 'portfolio', label: 'Karya', icon: ImageIcon },
+                    { id: 'blog', label: 'Blog', icon: FileText },
+                    { id: 'experience', label: 'Pengalaman', icon: Briefcase },
+                    { id: 'collaboration', label: 'Kolaborasi', icon: Handshake, collab: true },
+                    { id: 'about', label: 'Tentang Saya', icon: User },
+                    { id: 'cv', label: 'CV', icon: FileText },
+                    { id: 'archive', label: 'Arsip', icon: Archive },
+                    { id: 'promo', label: 'Widget Promo', icon: Sparkles, special: true },
+                    { id: 'settings', label: 'Situs', icon: Settings },
+                    { id: 'access', label: 'Akses Admin', icon: Lock }
+                  ]
+              ).map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
                 let activeClass = 'bg-white text-black shadow-sm dark:bg-[#1A1A1A] dark:text-white dark:border-zinc-700 border-zinc-200';
                 let inactiveClass = 'bg-transparent text-zinc-600 hover:text-black hover:bg-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-300 dark:hover:bg-zinc-900/50 border-transparent';
 
-                if (tab.special) {
+                if ((tab as any).special) {
                   activeClass = 'bg-amber-500 text-white shadow-sm dark:bg-amber-500 border-amber-400';
                   inactiveClass = 'bg-transparent text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 border-transparent';
                 } else if ((tab as any).collab) {
@@ -496,7 +574,7 @@ export default function AdminDashboard() {
               })}
             </div>
             
-            <button onClick={handleLogout} className="w-full mt-2 text-black hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition-colors flex items-center justify-start gap-2.5 px-4 py-3 border border-transparent rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 active:scale-95 text-[10px] font-mono font-bold uppercase tracking-widest">
+            <button onClick={handleLogout} className="w-full mt-2 text-black hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition-colors flex items-center justify-start gap-2.5 px-4 py-3 border border-transparent rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 active:scale-95 text-[10px] font-mono font-bold uppercase tracking-widest cursor-pointer">
               <LogOut size={12} className="hidden lg:block" /> 
               <span>Keluar</span>
             </button>
@@ -505,6 +583,27 @@ export default function AdminDashboard() {
 
         {/* Content Area */}
         <main className="flex-1 w-full min-w-0 bg-transparent lg:bg-white lg:dark:bg-[#050505] lg:border lg:border-zinc-200 lg:dark:border-zinc-800 lg:p-6 lg:rounded-2xl lg:shadow-sm">
+          {adminRole === 'collaborator' && (
+            <div className="mb-5 p-4 rounded-2xl bg-indigo-50/90 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs animate-fadeIn">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-indigo-600 text-white shrink-0 shadow-sm">
+                  <Handshake size={20} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-indigo-950 dark:text-indigo-200">
+                    Mode Administrator Kolaborator: {activeAdminName}
+                  </h4>
+                  <p className="text-[11.5px] text-indigo-800/80 dark:text-indigo-300/80 mt-0.5 leading-relaxed">
+                    Anda masuk dengan akun kolaborator. Anda memiliki akses khusus untuk menambahkan, mengedit, dan mengelola <b>Karya</b>, <b>Blog</b>, dan <b>Pengalaman</b> kolaborasi.
+                  </p>
+                </div>
+              </div>
+              <span className="self-start sm:self-auto px-3 py-1 rounded-full bg-indigo-600 text-white font-mono text-[10px] font-bold uppercase tracking-wider shrink-0">
+                Akses Terbatas
+              </span>
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             <motion.div 
               key={activeTab}
@@ -515,17 +614,21 @@ export default function AdminDashboard() {
             >
               {activeTab === 'portfolio' && <PortfolioAdmin />}
               {activeTab === 'blog' && <BlogAdmin />}
-              {activeTab === 'about' && <AboutAdmin />}
-              {activeTab === 'cv' && <CvAdmin />}
               {activeTab === 'experience' && <ExperienceAdmin />}
-              {activeTab === 'collaboration' && <CollaborationAdmin />}
-              {activeTab === 'settings' && <SettingsAdmin />}
-              {activeTab === 'promo' && <PromoAdmin />}
-              {activeTab === 'store' && <StoreAdmin />}
-              {activeTab === 'messages' && <MessagesAdmin />}
-              {activeTab === 'archive' && <ArchiveAdmin />}
-              {activeTab === 'stats' && <Stats isAdmin={true} />}
-              {activeTab === 'access' && <AdminAccessAdmin />}
+              {adminRole !== 'collaborator' && (
+                <>
+                  {activeTab === 'about' && <AboutAdmin />}
+                  {activeTab === 'cv' && <CvAdmin />}
+                  {activeTab === 'collaboration' && <CollaborationAdmin />}
+                  {activeTab === 'settings' && <SettingsAdmin />}
+                  {activeTab === 'promo' && <PromoAdmin />}
+                  {activeTab === 'store' && <StoreAdmin />}
+                  {activeTab === 'messages' && <MessagesAdmin />}
+                  {activeTab === 'archive' && <ArchiveAdmin />}
+                  {activeTab === 'stats' && <Stats isAdmin={true} />}
+                  {activeTab === 'access' && <AdminAccessAdmin />}
+                </>
+              )}
             </motion.div>
           </AnimatePresence>
         </main>

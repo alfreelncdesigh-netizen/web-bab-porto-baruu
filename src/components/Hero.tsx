@@ -21,8 +21,9 @@ export default function Hero() {
     const currentLocal = getStoredSettings();
     if (currentLocal) setSettings(currentLocal);
 
+    // 1. Dengarkan pembaruan global settings dari Firestore
     const docRef = doc(db, 'settings', 'global');
-    const unsubscribe = onSnapshot(
+    const unsubscribeGlobal = onSnapshot(
       docRef,
       (docSnap) => {
         if (docSnap.exists()) {
@@ -30,9 +31,10 @@ export default function Hero() {
           if (cloudData && Object.keys(cloudData).length > 0) {
             const current = getStoredSettings();
             const cloudHero = cloudData.heroImage;
+            const userHero = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image') || '') : '';
             const heroImg = (cloudHero && typeof cloudHero === 'string' && cloudHero.trim().length > 0)
               ? cloudHero.trim()
-              : (current.heroImage || defaultSettings.heroImage);
+              : (userHero || current.heroImage || defaultSettings.heroImage);
             const merged = { ...defaultSettings, ...cleanSettings(cloudData), heroImage: heroImg };
             setSettings(merged);
             try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
@@ -44,8 +46,34 @@ export default function Hero() {
         setSettings(getStoredSettings());
       }
     );
+
+    // 2. Dengarkan pembaruan dokumen mandiri settings/hero dari Firestore agar gambar hero tidak pernah tertimpa
+    const heroDocRef = doc(db, 'settings', 'hero');
+    const unsubscribeHero = onSnapshot(
+      heroDocRef,
+      (heroSnap) => {
+        if (heroSnap.exists()) {
+          const hData = heroSnap.data();
+          if (hData?.heroImage && typeof hData.heroImage === 'string' && hData.heroImage.trim().length > 0) {
+            const h = hData.heroImage.trim();
+            setSettings(prev => ({ ...prev, heroImage: h }));
+            if (typeof window !== 'undefined') {
+              try {
+                localStorage.setItem('app_custom_hero_image', h);
+                const cur = JSON.parse(localStorage.getItem('app_settings') || '{}');
+                cur.heroImage = h;
+                localStorage.setItem('app_settings', JSON.stringify(cur));
+              } catch {}
+            }
+          }
+        }
+      },
+      () => {}
+    );
+
     return () => {
-      unsubscribe();
+      unsubscribeGlobal();
+      unsubscribeHero();
       window.removeEventListener('app_settings_updated', handleUpdate);
     };
   }, []);
@@ -53,6 +81,31 @@ export default function Hero() {
   const scrollTo = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Penanganan error pemuatan gambar hero: mengutamakan link pengguna dan cadangan tanpa pernah mereset ke gambar bawaan secara paksa
+  const handleHeroImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    const target = e.currentTarget;
+    const customHero = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image') || '') : '';
+    const backupDataUrl = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image_backup') || '') : '';
+
+    if (backupDataUrl && target.src !== backupDataUrl) {
+      target.src = backupDataUrl;
+      return;
+    }
+
+    if (customHero) {
+      const resolvedCustom = resolveImageUrl(customHero);
+      if (target.src !== resolvedCustom) {
+        target.src = resolvedCustom;
+        return;
+      }
+    }
+
+    handleImageError(e);
+  };
+
+  const userHero = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image') || '') : '';
+  const currentHeroImg = settings.heroImage || userHero || defaultSettings.heroImage;
 
   // Helper to ensure clean, correct typography (correcting misspelled phrases)
   const sanitizeTypography = (text?: string, fallback: string = '') => {
@@ -147,19 +200,12 @@ export default function Hero() {
             <div className="absolute w-[260px] h-[260px] sm:w-[300px] sm:h-[300px] rounded-full bg-blue-500/10 dark:bg-blue-600/15 blur-3xl pointer-events-none -z-10" />
 
             <img 
-              src={resolveImageUrl(settings.heroImage || "/images/editing_tools_3d_1787123977793.jpg")} 
+              src={resolveImageUrl(currentHeroImg)} 
               alt="Muhammad Albiansyah - Creative Designer"
               className="w-full h-full object-contain object-bottom select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-md"
               fetchPriority="high"
               loading="eager"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (!target.src.includes('editing_tools_3d_1787123977793.jpg')) {
-                  target.src = '/images/editing_tools_3d_1787123977793.jpg';
-                } else {
-                  handleImageError(e);
-                }
-              }}
+              onError={handleHeroImgError}
             />
           </div>
         </motion.div>
@@ -238,19 +284,12 @@ export default function Hero() {
 
               {/* Foto Profil Asli (Transparan, Jernih, Tanpa Garis Bingkai) */}
               <img 
-                src={resolveImageUrl(settings.heroImage || "/images/editing_tools_3d_1787123977793.jpg")} 
+                src={resolveImageUrl(currentHeroImg)} 
                 alt="Muhammad Albiansyah - Creative Designer"
                 className="w-full h-full object-contain object-bottom select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-md transition-transform duration-500 hover:scale-[1.01]"
                 fetchPriority="high"
                 loading="eager"
-                onError={(e) => {
-                  const target = e.currentTarget;
-                  if (!target.src.includes('editing_tools_3d_1787123977793.jpg')) {
-                    target.src = '/images/editing_tools_3d_1787123977793.jpg';
-                  } else {
-                    handleImageError(e);
-                  }
-                }}
+                onError={handleHeroImgError}
               />
             </div>
           </motion.div>

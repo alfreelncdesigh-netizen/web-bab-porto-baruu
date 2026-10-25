@@ -224,6 +224,58 @@ app.post('/api/settings', requireAdminAuth, (req: Request, res: Response): void 
   }
 });
 
+// Dedicated endpoint untuk Hero Image utama agar tersimpan permanen di disk server & file storage
+app.get('/api/hero-image', (_req: Request, res: Response): void => {
+  try {
+    if (fs.existsSync(settingsFilePath)) {
+      const data = JSON.parse(fs.readFileSync(settingsFilePath, 'utf-8'));
+      if (data && data.heroImage) {
+        res.status(200).json({ heroImage: data.heroImage });
+        return;
+      }
+    }
+  } catch (e) {
+    console.warn("Read hero-image error:", e);
+  }
+  res.status(200).json({ heroImage: '' });
+});
+
+app.post('/api/hero-image', (req: Request, res: Response): void => {
+  try {
+    const { heroImage, imageBase64 } = req.body || {};
+    let finalUrl = heroImage || '';
+
+    // Jika imageBase64 disertakan, tulis langsung ke public/uploads/hero_main_xxx.webp
+    if (imageBase64 && typeof imageBase64 === 'string' && imageBase64.includes('base64,')) {
+      try {
+        const base64Data = imageBase64.replace(/^data:[^;]+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        if (buffer.length > 0) {
+          const heroFileName = `hero_main_${Date.now()}.webp`;
+          const filePath = path.join(uploadsDir, heroFileName);
+          fs.writeFileSync(filePath, buffer);
+          finalUrl = `/uploads/${heroFileName}`;
+        }
+      } catch (writeErr) {
+        console.warn("Failed writing hero buffer:", writeErr);
+      }
+    }
+
+    if (finalUrl && fs.existsSync(settingsFilePath)) {
+      try {
+        const current = JSON.parse(fs.readFileSync(settingsFilePath, 'utf-8'));
+        current.heroImage = finalUrl;
+        current.savedAt = Date.now();
+        fs.writeFileSync(settingsFilePath, JSON.stringify(current, null, 2), 'utf-8');
+      } catch {}
+    }
+
+    res.status(200).json({ success: true, heroImage: finalUrl });
+  } catch (err: any) {
+    res.status(500).json({ error: 'Gagal menyimpan hero image' });
+  }
+});
+
 app.get('/api/projects', (_req: Request, res: Response): void => {
   try {
     if (fs.existsSync(projectsFilePath)) {

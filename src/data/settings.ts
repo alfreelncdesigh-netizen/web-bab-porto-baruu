@@ -59,12 +59,26 @@ export const defaultCvSections: CvSectionItem[] = [
   }
 ];
 
+export interface CollaboratorAccount {
+  id: string;
+  username: string;
+  password: string;
+  partnerName?: string;
+  partnerLogo?: string;
+  active: boolean;
+  createdAt?: string;
+}
+
 export interface CollaborationConfig {
   enabled: boolean;
   partnerName: string;
   partnerLogo: string;
   collaborationText?: string;
   autoTagNewItems?: boolean;
+  collaboratorUsername?: string;
+  collaboratorPassword?: string;
+  collaboratorLoginEnabled?: boolean;
+  collaboratorAccounts?: CollaboratorAccount[];
 }
 
 export interface SiteSettings {
@@ -188,5 +202,18 @@ export const defaultSettings: SiteSettings = {
     partnerLogo: "",
     collaborationText: "Kolaborasi Bersama",
     autoTagNewItems: false,
+    collaboratorUsername: "kolaborator",
+    collaboratorPassword: "kolaborasi123",
+    collaboratorLoginEnabled: true,
+    collaboratorAccounts: [
+      {
+        id: "collab-1",
+        username: "kolaborator",
+        password: "kolaborasi123",
+        partnerName: "Mitra Desain",
+        partnerLogo: "",
+        active: true,
+      }
+    ],
   },
 };

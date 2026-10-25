@@ -509,42 +509,52 @@ export default function App() {
             const settingsPromise = Promise.all([
               serverSyncPromise,
               getDoc(doc(db, 'settings', 'global')),
-              getDoc(doc(db, 'settings', 'cv')).catch(() => null)
-            ]).then(async ([, snapGlobal, snapCv]) => {
-              if (snapGlobal && (snapGlobal.exists() || (snapCv && snapCv.exists()))) {
+              getDoc(doc(db, 'settings', 'cv')).catch(() => null),
+              getDoc(doc(db, 'settings', 'hero')).catch(() => null),
+              fetch('/api/hero-image').then(r => r.ok ? r.json() : null).catch(() => null)
+            ]).then(async ([, snapGlobal, snapCv, snapHero, serverHeroData]) => {
+              if (snapGlobal && (snapGlobal.exists() || (snapCv && snapCv.exists()) || (snapHero && snapHero.exists()))) {
                 const data = snapGlobal.exists() ? snapGlobal.data() : {};
                 const cvData = snapCv && snapCv.exists() ? snapCv.data() : null;
+                const heroData = snapHero && snapHero.exists() ? snapHero.data() : null;
                 const cloudCvSections = (cvData?.cvSections && cvData.cvSections.length > 0)
                   ? cvData.cvSections
                   : data.cvSections;
                 const cloudSavedAt = data.savedAt || 0;
                 const current = getStoredSettings();
-                const localSavedAt = current.savedAt || 0;
+                const cachedUserHero = localStorage.getItem('app_custom_hero_image');
 
-                if (snapGlobal?.exists() || (snapCv && snapCv.exists())) {
-                  const cloudHero = data.heroImage;
-                  const finalHero = (cloudHero && typeof cloudHero === 'string' && cloudHero.trim().length > 0)
-                    ? cloudHero.trim()
-                    : (current.heroImage || defaultSettings.heroImage);
-                  const cleaned = cleanSettings({
-                    ...data,
-                    heroImage: finalHero,
-                    cvSections: cloudCvSections,
-                    cvRole: cvData?.cvRole || data.cvRole,
-                    cvPdfFile: cvData?.cvPdfFile || data.cvPdfFile,
-                    savedAt: cloudSavedAt || Date.now()
-                  });
-                  const merged = { ...defaultSettings, ...cleaned, heroImage: finalHero };
-                  setLocalSettings(merged);
-                  window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: merged }));
-                  const extraImgs: Promise<void>[] = [];
-                  if (merged?.heroImage) extraImgs.push(preloadImage(merged.heroImage));
-                  if (merged?.aboutImage) extraImgs.push(preloadImage(merged.aboutImage));
-                  if (merged?.heroBanners) {
-                    merged.heroBanners.forEach(b => { if (b?.image) extraImgs.push(preloadImage(b.image)); });
-                  }
-                  await Promise.all(extraImgs);
+                const rawHero = (heroData?.heroImage && typeof heroData.heroImage === 'string' && heroData.heroImage.trim().length > 0)
+                  ? heroData.heroImage.trim()
+                  : (data.heroImage && typeof data.heroImage === 'string' && data.heroImage.trim().length > 0)
+                    ? data.heroImage.trim()
+                    : (serverHeroData?.heroImage && typeof serverHeroData.heroImage === 'string' && serverHeroData.heroImage.trim().length > 0)
+                      ? serverHeroData.heroImage.trim()
+                      : (cachedUserHero || current.heroImage || defaultSettings.heroImage);
+
+                const finalHero = rawHero.trim();
+                if (finalHero && finalHero !== defaultSettings.heroImage) {
+                  localStorage.setItem('app_custom_hero_image', finalHero);
                 }
+
+                const cleaned = cleanSettings({
+                  ...data,
+                  heroImage: finalHero,
+                  cvSections: cloudCvSections,
+                  cvRole: cvData?.cvRole || data.cvRole,
+                  cvPdfFile: cvData?.cvPdfFile || data.cvPdfFile,
+                  savedAt: cloudSavedAt || Date.now()
+                });
+                const merged = { ...defaultSettings, ...cleaned, heroImage: finalHero };
+                setLocalSettings(merged);
+                window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: merged }));
+                const extraImgs: Promise<void>[] = [];
+                if (merged?.heroImage) extraImgs.push(preloadImage(merged.heroImage));
+                if (merged?.aboutImage) extraImgs.push(preloadImage(merged.aboutImage));
+                if (merged?.heroBanners) {
+                  merged.heroBanners.forEach(b => { if (b?.image) extraImgs.push(preloadImage(b.image)); });
+                }
+                await Promise.all(extraImgs);
               }
             }).catch(e => console.warn("Cloud settings sync fallback:", e));
 

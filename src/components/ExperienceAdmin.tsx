@@ -3,8 +3,9 @@ import ArchiveMoveModal from './ArchiveMoveModal';
 import ConfirmModal from './ConfirmModal';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { getStoredExperiences, saveStoredExperiences, getStoredSettings } from '../lib/contentStorage';
-import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake } from 'lucide-react';
+import { getStoredExperiences, saveStoredExperiences, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { SiteSettings } from '../data/settings';
+import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake, Upload } from 'lucide-react';
 import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 
@@ -59,7 +60,22 @@ export default function ExperienceAdmin() {
 
   const handleAddNew = () => {
     const siteSettings = getStoredSettings();
-    const isAutoCollab = Boolean(siteSettings.collaboration?.enabled && siteSettings.collaboration?.autoTagNewItems);
+    const authSession = typeof window !== 'undefined' ? sessionStorage.getItem('admin_auth_user') : null;
+    let isCollabUser = false;
+    let collabPartner = '';
+    let collabLogo = '';
+    if (authSession) {
+      try {
+        const p = JSON.parse(authSession);
+        if (p.role === 'collaborator') {
+          isCollabUser = true;
+          collabPartner = p.partnerName || '';
+          collabLogo = p.partnerLogo || '';
+        }
+      } catch {}
+    }
+
+    const isAutoCollab = isCollabUser || Boolean(siteSettings.collaboration?.enabled && siteSettings.collaboration?.autoTagNewItems);
 
     setEditingItem({
       id: Date.now().toString(),
@@ -69,8 +85,8 @@ export default function ExperienceAdmin() {
       images: [],
       isNew: true,
       isCollaboration: isAutoCollab,
-      collaborationPartner: isAutoCollab ? (siteSettings.collaboration?.partnerName || '') : '',
-      collaborationLogo: isAutoCollab ? (siteSettings.collaboration?.partnerLogo || '') : '',
+      collaborationPartner: collabPartner || (isAutoCollab ? (siteSettings.collaboration?.partnerName || '') : ''),
+      collaborationLogo: collabLogo || (isAutoCollab ? (siteSettings.collaboration?.partnerLogo || '') : ''),
       collaborationText: isAutoCollab ? (siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama') : ''
     });
     setIsEditing(true);
@@ -152,6 +168,32 @@ export default function ExperienceAdmin() {
 
     setExperiences(updated);
     saveStoredExperiences(updated);
+
+    // Jika kolaborasi aktif pada pengalaman ini, langsung terapkan ke pengaturan website agar logo langsung tampil di header & website
+    if (toFirestore.isCollaboration) {
+      try {
+        const siteSettings = getStoredSettings();
+        const partnerLogo = toFirestore.collaborationLogo || siteSettings.collaboration?.partnerLogo || '';
+        const partnerName = toFirestore.collaborationPartner || siteSettings.collaboration?.partnerName || '';
+        const collabText = toFirestore.collaborationText || siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama';
+
+        const updatedSettings: SiteSettings = {
+          ...siteSettings,
+          collaboration: {
+            ...siteSettings.collaboration,
+            enabled: true,
+            partnerName: partnerName || siteSettings.collaboration?.partnerName || '',
+            partnerLogo: partnerLogo || siteSettings.collaboration?.partnerLogo || '',
+            collaborationText: collabText,
+            autoTagNewItems: Boolean(siteSettings.collaboration?.autoTagNewItems)
+          },
+          savedAt: Date.now()
+        };
+        saveStoredSettings(updatedSettings);
+      } catch (collabErr) {
+        console.warn("Notice: Syncing experience collaboration to settings:", collabErr);
+      }
+    }
 
     try {
       await withTimeout(
@@ -369,9 +411,9 @@ export default function ExperienceAdmin() {
 
                   <div className="sm:col-span-2">
                     <label className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300 mb-1 block">
-                      Logo Mitra Kolaborasi (URL / Gambar)
+                      Logo Mitra Kolaborasi (URL / Unggah Gambar)
                     </label>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
                       {editingItem.collaborationLogo && (
                         <img
                           src={resolveImageUrl(editingItem.collaborationLogo)}
@@ -384,9 +426,32 @@ export default function ExperienceAdmin() {
                         type="text"
                         value={editingItem.collaborationLogo || ''}
                         onChange={e => setEditingItem({ ...editingItem, collaborationLogo: e.target.value })}
-                        placeholder="Masukkan URL logo atau gunakan logo global..."
-                        className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                        placeholder="Masukkan URL logo atau unggah file..."
+                        className="flex-1 min-w-[180px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
                       />
+                      <label className="cursor-pointer px-3 py-2 text-[10px] font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shrink-0 flex items-center gap-1.5 transition-colors active:scale-95 shadow-xs">
+                        <Upload size={12} />
+                        <span>Upload Logo</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                              setUploadProgressText("Mengunggah logo mitra...");
+                              const url = await compressAndUpload(file, 'collaboration', 600, 0.85);
+                              setEditingItem((prev: any) => ({ ...prev, collaborationLogo: url }));
+                              showToast("Logo kolaborasi berhasil diunggah!");
+                            } catch (err: any) {
+                              showToast("Gagal mengunggah logo mitra", "error");
+                            } finally {
+                              e.target.value = '';
+                            }
+                          }}
+                        />
+                      </label>
                       {getStoredSettings().collaboration?.partnerLogo && editingItem.collaborationLogo !== getStoredSettings().collaboration?.partnerLogo && (
                         <button
                           type="button"
@@ -399,7 +464,7 @@ export default function ExperienceAdmin() {
                               collaborationPartner: editingItem.collaborationPartner || partner
                             });
                           }}
-                          className="px-3 py-2 text-[10px] font-semibold rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-black dark:text-white shrink-0 transition-colors"
+                          className="px-3 py-2 text-[10px] font-semibold rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-black dark:text-white shrink-0 transition-colors cursor-pointer"
                         >
                           Gunakan Logo Global
                         </button>

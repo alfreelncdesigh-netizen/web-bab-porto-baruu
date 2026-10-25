@@ -94,26 +94,47 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
   if (cleaned.aboutImage && cleaned.aboutImage.includes('photo-1499951360447')) {
     cleaned.aboutImage = "";
   }
-  if (cleaned.heroImage && typeof cleaned.heroImage === 'string') {
-    if (cleaned.heroImage.includes('/src/assets/images/')) {
-      const filename = cleaned.heroImage.split('/src/assets/images/')[1];
-      cleaned.heroImage = `/images/${filename}`;
-    } else if (cleaned.heroImage.startsWith('src/assets/images/')) {
-      cleaned.heroImage = `/images/${cleaned.heroImage.replace('src/assets/images/', '')}`;
+  // Dapatkan hero image tersimpan yang pernah disetel admin agar tidak pernah hilang atau terganti sendiri
+  const userHero = typeof window !== 'undefined' 
+    ? (localStorage.getItem('app_custom_hero_image') || '') 
+    : '';
+
+  if (cleaned.heroImage === '__RESET_DEFAULT__') {
+    cleaned.heroImage = defaultSettings.heroImage;
+    if (typeof window !== 'undefined') {
+      try { 
+        localStorage.removeItem('app_custom_hero_image');
+        localStorage.removeItem('app_custom_hero_image_backup');
+      } catch {}
     }
-  } else if (cleaned.heroImage === undefined) {
+  } else if (cleaned.heroImage && typeof cleaned.heroImage === 'string' && cleaned.heroImage.trim().length > 0) {
+    let hero = cleaned.heroImage.trim();
+    if (hero.includes('/src/assets/images/')) {
+      const filename = hero.split('/src/assets/images/')[1];
+      hero = `/images/${filename}`;
+    } else if (hero.startsWith('src/assets/images/')) {
+      hero = `/images/${hero.replace('src/assets/images/', '')}`;
+    }
+    cleaned.heroImage = hero;
+    if (typeof window !== 'undefined' && hero && !hero.includes('editing_tools_3d_1787123977793.jpg')) {
+      try { localStorage.setItem('app_custom_hero_image', hero); } catch {}
+    }
+  } else if (userHero) {
+    // Pertahankan hero image pilihan admin sebelumnya, jangan pernah timpa dengan gambar bawaan
+    cleaned.heroImage = userHero;
+  } else {
     try {
       const prev = localStorage.getItem('app_settings');
       if (prev) {
         const parsed = JSON.parse(prev);
-        if (parsed.heroImage) cleaned.heroImage = parsed.heroImage;
+        if (parsed.heroImage && typeof parsed.heroImage === 'string' && parsed.heroImage.trim().length > 0) {
+          cleaned.heroImage = parsed.heroImage.trim();
+        }
       }
     } catch {}
     if (!cleaned.heroImage) {
       cleaned.heroImage = defaultSettings.heroImage;
     }
-  } else {
-    cleaned.heroImage = defaultSettings.heroImage;
   }
   if (Array.isArray(cleaned.cvSections) && cleaned.cvSections.length > 0) {
     cleaned.cvSections = cleaned.cvSections.map((s: any) => {
@@ -286,6 +307,51 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
   // 3. Simpan ke Cloud Firestore (sanitasi undefined value agar tidak ditolak Firestore SDK)
   try {
     const firestoreTasks: Promise<any>[] = [];
+
+    // Simpan dokumen khusus settings/hero ke Firestore agar link gambar hero tersimpan mandiri di Firebase
+    if ((newSettings as any).heroImage === '__RESET_DEFAULT__') {
+      firestoreTasks.push(
+        setDoc(doc(db, 'settings', 'hero'), cleanForFirestore({
+          heroImage: defaultSettings.heroImage,
+          savedAt: Date.now(),
+          updatedAt: new Date().toISOString(),
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true
+        }), { merge: true })
+      );
+      try {
+        fetch('/api/hero-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ heroImage: '' })
+        }).catch(() => {});
+      } catch {}
+    } else if (merged.heroImage && typeof merged.heroImage === 'string' && merged.heroImage.trim().length > 0) {
+      try {
+        if (typeof window !== 'undefined' && !merged.heroImage.includes('editing_tools_3d_1787123977793.jpg')) {
+          localStorage.setItem('app_custom_hero_image', merged.heroImage.trim());
+        }
+      } catch {}
+
+      firestoreTasks.push(
+        setDoc(doc(db, 'settings', 'hero'), cleanForFirestore({
+          heroImage: merged.heroImage.trim(),
+          savedAt: merged.savedAt || Date.now(),
+          updatedAt: new Date().toISOString(),
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true
+        }), { merge: true })
+      );
+
+      // Sinkronkan ke server endpoint /api/hero-image
+      try {
+        fetch('/api/hero-image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ heroImage: merged.heroImage.trim() })
+        }).catch(() => {});
+      } catch {}
+    }
 
     if (merged.cvSections || merged.cvPdfFile || merged.cvRole) {
       firestoreTasks.push(
