@@ -9,13 +9,30 @@ export default function PromoAdmin() {
   const [posters, setPosters] = useState<PromoPosterItem[]>(() => {
     const s = getStoredSettings();
     if (Array.isArray(s.promoPosters) && s.promoPosters.length > 0) {
-      // Pastikan selalu ada minimal 3 slot
+      // Pastikan selalu ada minimal 3 slot dengan ID unik
       const existing = [...s.promoPosters];
+      const usedIds = new Set<string>();
+      existing.forEach((p, idx) => {
+        if (!p.id || usedIds.has(p.id)) {
+          p.id = `poster-${idx + 1}`;
+          if (usedIds.has(p.id)) {
+            p.id = `poster-${idx + 1}-${Date.now()}`;
+          }
+        }
+        usedIds.add(p.id);
+      });
+
       while (existing.length < 3) {
-        const nextId = `poster-${existing.length + 1}`;
+        let counter = existing.length + 1;
+        let nextId = `poster-${counter}`;
+        while (usedIds.has(nextId)) {
+          counter++;
+          nextId = `poster-${counter}`;
+        }
+        usedIds.add(nextId);
         const fallback = defaultPromoPosters[existing.length] || {
           id: nextId,
-          title: `Poster Promosi ${existing.length + 1}`,
+          title: `Poster Promosi ${counter}`,
           image: defaultPromoPosters[0].image,
           ctaText: "Ambil Diskon",
           link: defaultPromoPosters[0].link,
@@ -66,7 +83,7 @@ export default function PromoAdmin() {
 
     // Cek ukuran awal file (maksimal 10MB)
     if (file.size > 10 * 1024 * 1024) {
-      alert("Ukuran file terlalu besar! Silakan pilih gambar di bawah 10MB.");
+      showNotification("Ukuran file terlalu besar! Silakan pilih gambar di bawah 10MB.", "info");
       return;
     }
 
@@ -279,7 +296,7 @@ export default function PromoAdmin() {
 
           return (
             <div
-              key={poster.id || `poster-slot-${index}`}
+              key={poster.id ? `${poster.id}-${index}` : `poster-slot-${index}`}
               className={`bg-white dark:bg-zinc-900 border rounded-3xl p-5 flex flex-col justify-between transition-all duration-200 shadow-sm ${
                 poster.active !== false
                   ? 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-700'

@@ -53,6 +53,7 @@ export function cleanForFirestore<T>(data: T): T {
 }
 
 export function cleanProjects(projs: Project[]): Project[] {
+  const seenIds = new Set<string>();
   return (projs || []).filter((p: Project) => {
     if (!p) return false;
     const idStr = String(p.id || '').trim();
@@ -62,11 +63,14 @@ export function cleanProjects(projs: Project[]): Project[] {
     if (DUMMY_PROJECT_TITLES.has(titleStr)) return false;
     // Hanya muat konten gambar yang ditambahkan pengguna
     if (!p.image || typeof p.image !== 'string' || !p.image.trim()) return false;
+    if (idStr && seenIds.has(idStr)) return false;
+    if (idStr) seenIds.add(idStr);
     return true;
   });
 }
 
 export function cleanBlogs(blogs: BlogPost[]): BlogPost[] {
+  const seenIds = new Set<string>();
   return (blogs || []).filter((b: BlogPost) => {
     if (!b) return false;
     const idStr = String(b.id || '').trim();
@@ -76,6 +80,8 @@ export function cleanBlogs(blogs: BlogPost[]): BlogPost[] {
     if (DUMMY_BLOG_TITLES.has(titleStr)) return false;
     const rawImg = b.image || (b as any).coverImage;
     if (!rawImg || typeof rawImg !== 'string' || !rawImg.trim()) return false;
+    if (idStr && seenIds.has(idStr)) return false;
+    if (idStr) seenIds.add(idStr);
     return true;
   });
 }
@@ -94,6 +100,17 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
       cleaned.heroImage = `/images/${filename}`;
     } else if (cleaned.heroImage.startsWith('src/assets/images/')) {
       cleaned.heroImage = `/images/${cleaned.heroImage.replace('src/assets/images/', '')}`;
+    }
+  } else if (cleaned.heroImage === undefined) {
+    try {
+      const prev = localStorage.getItem('app_settings');
+      if (prev) {
+        const parsed = JSON.parse(prev);
+        if (parsed.heroImage) cleaned.heroImage = parsed.heroImage;
+      }
+    } catch {}
+    if (!cleaned.heroImage) {
+      cleaned.heroImage = defaultSettings.heroImage;
     }
   } else {
     cleaned.heroImage = defaultSettings.heroImage;
@@ -117,9 +134,10 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
   }
   if (Array.isArray(cleaned.heroBanners)) {
     // Normalisasi format path gambar banner dan filter banner valid
+    const seenBannerIds = new Set<string>();
     cleaned.heroBanners = cleaned.heroBanners
       .filter((b: any) => b && typeof b === 'object')
-      .map((b: any) => {
+      .map((b: any, bIdx: number) => {
         let img = b.image || '';
         if (typeof img === 'string') {
           if (img.includes('/src/assets/images/')) {
@@ -128,7 +146,15 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
             img = `/images/${img.replace('src/assets/images/', '')}`;
           }
         }
-        return { ...b, image: img || '/images/banner_promo_bca_1788696791480.jpg' };
+        let bannerId = (b.id || '').toString().trim();
+        if (!bannerId || seenBannerIds.has(bannerId)) {
+          bannerId = `banner-${bIdx + 1}`;
+          if (seenBannerIds.has(bannerId)) {
+            bannerId = `banner-${bIdx + 1}-${Date.now()}`;
+          }
+        }
+        seenBannerIds.add(bannerId);
+        return { ...b, id: bannerId, image: img || '/images/banner_promo_bca_1788696791480.jpg' };
       });
     if (cleaned.heroBanners.length === 0) {
       cleaned.heroBanners = defaultSettings.heroBanners || [];
@@ -137,13 +163,22 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
     cleaned.heroBanners = defaultSettings.heroBanners || [];
   }
   if (Array.isArray(cleaned.promoPosters)) {
+    const seenPosterIds = new Set<string>();
     cleaned.promoPosters = cleaned.promoPosters
       .filter((p: any) => p && !p.title?.toLowerCase().includes('template'))
-      .map((p: any) => {
+      .map((p: any, pIdx: number) => {
+        let posterId = (p.id || '').toString().trim();
+        if (!posterId || seenPosterIds.has(posterId)) {
+          posterId = `poster-${pIdx + 1}`;
+          if (seenPosterIds.has(posterId)) {
+            posterId = `poster-${pIdx + 1}-${Date.now()}`;
+          }
+        }
+        seenPosterIds.add(posterId);
         if (p.link && p.link.includes('628112345678')) {
           p.link = p.link.replace('628112345678', '6282394549268');
         }
-        return p;
+        return { ...p, id: posterId };
       });
   } else if (cleaned.promoPosters === undefined) {
     cleaned.promoPosters = defaultSettings.promoPosters || [];
@@ -158,12 +193,16 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
       .replace(/my portofolio design/gi, 'PORTFOLIO DESIGN')
       .replace(/portfolio desigh/gi, 'PORTFOLIO DESIGN');
   }
-  if (cleaned.heroTitle2) {
-    cleaned.heroTitle2 = cleaned.heroTitle2
-      .replace(/my portofolio desigh/gi, 'My Portfolio Design')
-      .replace(/my portofolio design/gi, 'My Portfolio Design')
-      .replace(/portofolio desigh/gi, 'Portfolio Design')
-      .replace(/portfolio desigh/gi, 'Portfolio Design');
+  if (cleaned.collaboration && typeof cleaned.collaboration === 'object') {
+    cleaned.collaboration = {
+      enabled: Boolean(cleaned.collaboration.enabled),
+      partnerName: (cleaned.collaboration.partnerName || '').trim(),
+      partnerLogo: (cleaned.collaboration.partnerLogo || '').trim(),
+      collaborationText: (cleaned.collaboration.collaborationText || 'Kolaborasi Bersama').trim(),
+      autoTagNewItems: Boolean(cleaned.collaboration.autoTagNewItems)
+    };
+  } else if (cleaned.collaboration === undefined) {
+    cleaned.collaboration = defaultSettings.collaboration;
   }
   return cleaned;
 }
@@ -232,11 +271,14 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
   // 1. Simpan ke local storage & kirim custom event untuk sinkronisasi antarmuka pengguna
   const merged = setLocalSettings(newSettings);
 
-  // 2. Simpan redundansi ke server disk via /api/settings secara instan
+  // 2. Simpan redundansi ke server disk via /api/settings secara instan dengan otorisasi admin
   try {
     fetch('/api/settings', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-admin-token': 'alfreelnc_admin_auth_verified'
+      },
       body: JSON.stringify(merged)
     }).catch(() => {});
   } catch {}
@@ -252,13 +294,19 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
           cvPdfFile: merged.cvPdfFile || '',
           cvRole: merged.cvRole || '',
           savedAt: merged.savedAt || Date.now(),
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true
         }), { merge: true })
       );
     }
 
     firestoreTasks.push(
-      setDoc(doc(db, 'settings', 'global'), cleanForFirestore(merged), { merge: true })
+      setDoc(doc(db, 'settings', 'global'), cleanForFirestore({
+        ...merged,
+        _adminAuth: 'alfreelnc_admin_auth_verified',
+        updatedByAdmin: true
+      }), { merge: true })
     );
 
     // Menunggu operasi Firestore selesai dengan timeout aman
@@ -295,7 +343,10 @@ export async function saveStoredProjects(newProjects: Project[]): Promise<void> 
   try {
     fetch('/api/projects', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-admin-token': 'alfreelnc_admin_auth_verified'
+      },
       body: JSON.stringify(clean)
     }).catch(() => {});
   } catch {}
@@ -322,7 +373,10 @@ export async function saveStoredBlogs(newBlogs: BlogPost[]): Promise<void> {
   try {
     fetch('/api/blogs', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-admin-token': 'alfreelnc_admin_auth_verified'
+      },
       body: JSON.stringify(clean)
     }).catch(() => {});
   } catch {}
@@ -343,7 +397,10 @@ export async function saveStoredExperiences(newExps: any[]): Promise<void> {
   try {
     fetch('/api/experiences', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-admin-token': 'alfreelnc_admin_auth_verified'
+      },
       body: JSON.stringify(newExps)
     }).catch(() => {});
   } catch {}

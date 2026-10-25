@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
-import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRight, Sparkles, Search, MessageCircle, ChevronLeft, ChevronRight, Eye, Clock, Wrench, CalendarCheck, Activity, ChevronDown, Maximize2, Minimize2 } from 'lucide-react';
+import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRight, Sparkles, Search, MessageCircle, ChevronLeft, ChevronRight, Eye, Clock, Wrench, CalendarCheck, Activity, ChevronDown, Maximize2, Minimize2, Handshake } from 'lucide-react';
 import { Project } from '../data/projects';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -595,7 +595,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                         <motion.div 
                           layout
                           variants={cardItemVariants}
-                          key={project.id} 
+                          key={project.id ? `project-${project.id}-${index}` : `project-idx-${index}`} 
                           className={`group relative h-auto w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden cursor-pointer border hover:shadow-2xl transition-all ${cinematicCardClass}`} 
                           style={{ display: 'inline-block', width: '100%' }}
                           onClick={() => handleOpenArticle(project)}
@@ -621,9 +621,16 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               transition={{ duration: 0.5 }} 
                               className="transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500 ease-out w-full"
                             >
-                              <span className="inline-block px-2.5 py-1 bg-white/20 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase mb-1.5 border border-white/10 shadow-sm">
-                                {project.category}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                                <span className="inline-block px-2.5 py-1 bg-white/20 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase border border-white/10 shadow-sm">
+                                  {project.category}
+                                </span>
+                                {(project.isCollaboration || project.collaborationPartner) && (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-600/90 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase border border-indigo-400/30 text-white shadow-sm">
+                                    <Handshake size={11} /> Kolaborasi
+                                  </span>
+                                )}
+                              </div>
                               <h3 className="text-sm sm:text-base md:text-lg font-bold tracking-tight mb-0 leading-[1.2]">
                                 {project.title}
                               </h3>
@@ -926,6 +933,36 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                     </div>
                   )}
 
+                  {/* BAGIAN BAWAH DESKRIPSI KARYA: TEKS & LOGO KOLABORASI */}
+                  {(selectedProject.isCollaboration || selectedProject.collaborationPartner) && (
+                    <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-zinc-50 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 flex items-center justify-between gap-3 shadow-xs">
+                      <div className="flex items-center gap-3 min-w-0">
+                        {selectedProject.collaborationLogo ? (
+                          <div className="p-1 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-700/70 shrink-0">
+                            <img 
+                              src={resolveImageUrl(selectedProject.collaborationLogo)} 
+                              alt={selectedProject.collaborationPartner || "Mitra Kolaborasi"} 
+                              className="h-9 sm:h-10 w-auto max-w-[70px] sm:max-w-[90px] object-contain rounded-lg"
+                              onError={handleImageError}
+                            />
+                          </div>
+                        ) : (
+                          <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shrink-0">
+                            <Handshake size={20} />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="text-[9.5px] md:text-[10px] font-mono uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold block">
+                            {selectedProject.collaborationText || 'Kolaborasi Bersama'}
+                          </span>
+                          <h4 className="text-xs sm:text-[13px] font-semibold text-black dark:text-white truncate">
+                            {selectedProject.collaborationPartner ? `Kolaborasi dengan ${selectedProject.collaborationPartner}` : 'Karya Kolaborasi Mitra'}
+                          </h4>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* PROJECT METRICS SECTION: Hanya akan muncul ketika tombol metrik proyek di klik */}
                   {(() => {
                     const metrics = getProjectMetrics(selectedProject);
@@ -1087,10 +1124,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                   </div>
 
                   <div className="columns-2 gap-2 [column-fill:_balance]">
-                    {otherProjects.map((item) => {
+                    {otherProjects.map((item, oIdx) => {
                       return (
                         <div 
-                          key={item.id} 
+                          key={item.id ? `other-${item.id}-${oIdx}` : `other-idx-${oIdx}`} 
                           onClick={() => handleOpenArticle(item)}
                           className="break-inside-avoid mb-2 group cursor-pointer relative rounded-lg sm:rounded-xl overflow-hidden border border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-100 dark:bg-zinc-900 shadow-2xs hover:border-zinc-400 dark:hover:border-zinc-600 transition-all duration-200 active:scale-[0.97]"
                         >

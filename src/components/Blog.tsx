@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BlogPost } from '../types/blog';
-import { X, ArrowRight, BookOpen, Sparkles } from 'lucide-react';
+import { X, ArrowRight, BookOpen, Sparkles, Handshake } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -254,7 +254,7 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
             const displayLimit = is50Limited ? Math.max(1, Math.ceil(posts.length * 0.5)) : posts.length;
             const visiblePosts = posts.slice(0, displayLimit);
 
-            return visiblePosts.map((post) => {
+            return visiblePosts.map((post, pIndex) => {
             const rawImg = post.image || (post as any).coverImage;
             let postImg = rawImg;
             if (!postImg || typeof postImg !== 'string' || !postImg.trim()) {
@@ -269,7 +269,7 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
             return (
               <motion.article
                 variants={childGridCardItem}
-                key={post.id} 
+                key={post.id ? `blog-${post.id}-${pIndex}` : `blog-idx-${pIndex}`} 
                 className={`group cursor-pointer flex flex-col justify-between h-full p-3.5 sm:p-4.5 rounded-2xl sm:rounded-3xl border transition-all duration-300 hover:-translate-y-1 hover:shadow-xl ${getCardBgByTheme(theme)}`}
                 onClick={() => handleOpenBlogPost(post)}
               >
@@ -295,10 +295,15 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                     )}
                     
                     {/* Badge Kategori & Tanggal (font-size lebih kecil dan rapi) */}
-                    <div className="flex items-center gap-2 text-[10px] font-bold text-black dark:text-zinc-300 mb-2 tracking-wider uppercase">
+                    <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-bold text-black dark:text-zinc-300 mb-2 tracking-wider uppercase">
                       <span className="bg-black/5 dark:bg-white/10 border border-black/5 dark:border-white/10 px-2 py-0.5 rounded-full text-black dark:text-zinc-200 shadow-xs text-[10px] font-semibold">
                         {post.category}
                       </span>
+                      {(post.isCollaboration || post.collaborationPartner) && (
+                        <span className="bg-indigo-600/90 text-white border border-indigo-400/30 px-2 py-0.5 rounded-full text-[9px] font-bold shadow-xs flex items-center gap-1">
+                          <Handshake size={10} /> Kolaborasi
+                        </span>
+                      )}
                       <span className="text-zinc-400 dark:text-zinc-500">&bull;</span>
                       <span className="text-[10px] font-medium text-zinc-600 dark:text-zinc-400">
                         {new Date(post.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' })}
@@ -409,6 +414,36 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                   </div>
                 )}
 
+                {/* BAGIAN BAWAH TEKS / DESKRIPSI BLOG: TEKS & LOGO KOLABORASI */}
+                {(selectedPost.isCollaboration || selectedPost.collaborationPartner) && (
+                  <div className="my-4 p-3.5 sm:p-4 rounded-2xl bg-zinc-50 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 flex items-center justify-between gap-3 shadow-xs">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {selectedPost.collaborationLogo ? (
+                        <div className="p-1 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-700/70 shrink-0">
+                          <img 
+                            src={resolveImageUrl(selectedPost.collaborationLogo)} 
+                            alt={selectedPost.collaborationPartner || "Mitra Kolaborasi"} 
+                            className="h-9 sm:h-10 w-auto max-w-[70px] sm:max-w-[90px] object-contain rounded-lg"
+                            onError={handleImageError}
+                          />
+                        </div>
+                      ) : (
+                        <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shrink-0">
+                          <Handshake size={20} />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <span className="text-[9.5px] md:text-[10px] font-mono uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold block">
+                          {selectedPost.collaborationText || 'Kolaborasi Bersama'}
+                        </span>
+                        <h4 className="text-xs sm:text-[13px] font-semibold text-black dark:text-white truncate">
+                          {selectedPost.collaborationPartner ? `Kolaborasi dengan ${selectedPost.collaborationPartner}` : 'Artikel Kolaborasi Mitra'}
+                        </h4>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* LAMPIRAN DAFTAR ARTIKEL YANG BELUM DIBACA (2 Artikel Horizontal) */}
                 {displayBlogRecommendations.length > 0 && (
                   <div className="mt-4 pt-5 border-t border-zinc-200/70 dark:border-zinc-800/70">
@@ -430,12 +465,12 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                     </p>
 
                     <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
-                      {displayBlogRecommendations.map((item) => {
+                      {displayBlogRecommendations.map((item, rIdx) => {
                         const isUnread = !readBlogIds.has(String(item.id));
 
                         return (
                           <div 
-                            key={item.id} 
+                            key={item.id ? `rec-${item.id}-${rIdx}` : `rec-idx-${rIdx}`} 
                             onClick={() => handleOpenBlogPost(item)}
                             className={`group cursor-pointer flex flex-col justify-between p-2.5 rounded-xl border transition-all duration-200 active:scale-[0.98] ${
                               isUnread 

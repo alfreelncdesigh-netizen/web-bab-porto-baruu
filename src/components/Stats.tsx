@@ -150,7 +150,8 @@ export default function Stats({
 
     } catch (err) {
       console.warn('Gagal mengekspor statistik', err);
-      alert('Gagal mengunduh gambar. Silakan coba gunakan browser desktop atau kurangi ukuran/pixelRatio.');
+      setStatsError('Gagal mengunduh gambar. Silakan coba gunakan browser desktop.');
+      setTimeout(() => setStatsError(null), 4000);
       if (watermark) watermark.style.display = 'none';
       if (normalHeader) normalHeader.style.display = 'flex';
       statsRef.current.style.cssText = origStyle;
@@ -475,6 +476,13 @@ export default function Stats({
               Aktivitas & <span className="text-zinc-500">Statistik</span>
             </h2>
           </div>
+          
+          {statsError && (
+            <div className="w-full mt-2 p-3 bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs rounded-xl flex items-center justify-between">
+              <span>{statsError}</span>
+              <button type="button" onClick={() => setStatsError(null)} className="text-xs underline ml-2">Tutup</button>
+            </div>
+          )}
           
           {isEffectiveAdmin && (
             <button

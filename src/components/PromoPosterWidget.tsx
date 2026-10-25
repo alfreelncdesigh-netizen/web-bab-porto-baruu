@@ -341,7 +341,14 @@ export default function PromoPosterWidget({
     }
 
     // Buka WhatsApp atau tautan eksternal baru
-    window.open(targetLink, '_blank', 'noopener,noreferrer');
+    try {
+      const opened = window.open(targetLink, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        window.location.href = targetLink;
+      }
+    } catch {
+      window.location.href = targetLink;
+    }
   };
 
   // Jangan render jika belum saatnya tampil, di halaman admin, atau dinonaktifkan

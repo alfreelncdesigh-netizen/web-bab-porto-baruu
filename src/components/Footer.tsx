@@ -4,16 +4,6 @@ import { useState } from 'react';
 
 export default function Footer() {
  const currentYear = new Date().getFullYear();
- const [toastMsg, setToastMsg] = useState<string | null>(null);
-
- const handleSocialClick = (e: React.MouseEvent, platform: string, link: string) => {
-  e.preventDefault();
-  setToastMsg(`Membuka ${platform}...`);
-  setTimeout(() => {
-   setToastMsg(null);
-   window.open(link, '_blank');
-  }, 1000);
- };
 
  const scrollToSection = (e: React.MouseEvent, sectionId: string) => {
   e.preventDefault();
@@ -77,33 +67,34 @@ export default function Footer() {
      <div className="col-span-1 md:col-span-4 flex flex-col gap-4 md:items-end">
       <h4 className="text-[10px] md:text-xs font-bold uppercase tracking-widest text-black dark:text-white">Media Sosial</h4>
       <div className="flex gap-3 relative">
-       <button 
-        onClick={(e) => handleSocialClick(e, 'WhatsApp', 'https://wa.me/628112345678')}
+       <a 
+        href="https://wa.me/628112345678"
+        target="_blank"
+        rel="noopener noreferrer"
         className="w-7 h-7 md:w-12 md:h-12 rounded-full border border-zinc-200/60 dark:border-zinc-800/50 flex items-center justify-center text-black hover:bg-[#25D366] hover:text-white dark:text-zinc-400 dark:hover:bg-[#25D366] dark:hover:text-white hover:border-[#25D366] transition-all active:scale-90 duration-300 shadow-sm"
         title="WhatsApp"
+        aria-label="WhatsApp"
        >
         <MessageCircle className="w-3 h-3 md:w-[18px] md:h-[18px]" />
-       </button>
-       <button 
-        onClick={(e) => handleSocialClick(e, 'Instagram', 'https://instagram.com/alfreelnc')}
+       </a>
+       <a 
+        href="https://instagram.com/alfreelnc"
+        target="_blank"
+        rel="noopener noreferrer"
         className="w-7 h-7 md:w-12 md:h-12 rounded-full border border-zinc-200/60 dark:border-zinc-800/50 flex items-center justify-center text-black hover:bg-gradient-to-tr hover:from-yellow-400 hover:via-pink-500 hover:to-purple-500 hover:text-white hover:border-transparent dark:text-zinc-400 dark:hover:text-white transition-all active:scale-90 duration-300 shadow-sm"
         title="Instagram"
+        aria-label="Instagram"
        >
         <Instagram className="w-3 h-3 md:w-[18px] md:h-[18px]" />
-       </button>
-       <button 
-        onClick={(e) => handleSocialClick(e, 'Email', 'mailto:alfreelnc.desigh@gmail.com')}
+       </a>
+       <a 
+        href="mailto:alfreelnc.desigh@gmail.com"
         className="w-7 h-7 md:w-12 md:h-12 rounded-full border border-zinc-200/60 dark:border-zinc-800/50 flex items-center justify-center text-black hover:bg-black hover:text-white dark:text-zinc-400 dark:hover:bg-white dark:hover:text-[#0A0A0A] transition-all active:scale-90 duration-300 shadow-sm"
         title="Email / Gmail"
+        aria-label="Email"
        >
         <Mail className="w-3 h-3 md:w-[18px] md:h-[18px]" />
-       </button>
-
-       {toastMsg && (
-        <div className="absolute -top-12 right-0 md:-top-14 md:right-0 bg-black text-white dark:bg-white dark:text-black text-[9px] md:text-[10px] font-bold px-3 py-2 md:px-4 md:py-2.5 rounded-full animate-pulse shadow-lg whitespace-nowrap z-20">
-         {toastMsg}
-        </div>
-       )}
+       </a>
       </div>
      </div>
      

@@ -3,12 +3,12 @@ import ArchiveMoveModal from './ArchiveMoveModal';
 import ConfirmModal from './ConfirmModal';
 import { motion } from 'motion/react';
 import { Project, categories } from '../data/projects';
-import { Edit, Trash, EyeOff, Eye, Plus, X, Check, Upload, Loader2, Link as LinkIcon, Archive, AlertCircle } from 'lucide-react';
+import { Edit, Trash, EyeOff, Eye, Plus, X, Check, Upload, Loader2, Link as LinkIcon, Archive, AlertCircle, Handshake } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { getStoredProjects, saveStoredProjects, cleanProjects } from '../lib/contentStorage';
+import { getStoredProjects, saveStoredProjects, cleanProjects, getStoredSettings } from '../lib/contentStorage';
 import { getOptimizedImageUrl } from "../lib/cloudinary";
-import { resolveImageUrl } from '../lib/imageResolver';
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
 
 export default function PortfolioAdmin() {
@@ -86,6 +86,10 @@ export default function PortfolioAdmin() {
       totalHoursSpent: (editingProject.totalHoursSpent || '').toString().trim(),
       toolsUsed: (editingProject.toolsUsed || '').toString().trim(),
       completionDate: (editingProject.completionDate || '').toString().trim(),
+      isCollaboration: Boolean(editingProject.isCollaboration),
+      collaborationPartner: (editingProject.collaborationPartner || '').trim(),
+      collaborationLogo: (editingProject.collaborationLogo || '').trim(),
+      collaborationText: (editingProject.collaborationText || '').trim(),
     };
 
     // Update state dan local storage seketika agar langsung tampil di website
@@ -112,6 +116,12 @@ export default function PortfolioAdmin() {
           totalHoursSpent: savedProj.totalHoursSpent || '',
           toolsUsed: savedProj.toolsUsed || '',
           completionDate: savedProj.completionDate || '',
+          isCollaboration: savedProj.isCollaboration || false,
+          collaborationPartner: savedProj.collaborationPartner || '',
+          collaborationLogo: savedProj.collaborationLogo || '',
+          collaborationText: savedProj.collaborationText || '',
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true,
           updatedAt: new Date().toISOString()
         }, { merge: true }),
         25000,
@@ -186,6 +196,9 @@ export default function PortfolioAdmin() {
   };
 
   const createNew = () => {
+    const siteSettings = getStoredSettings();
+    const isAutoCollab = Boolean(siteSettings.collaboration?.enabled && siteSettings.collaboration?.autoTagNewItems);
+
     setEditingProject({
       id: Date.now().toString(),
       title: '',
@@ -198,7 +211,11 @@ export default function PortfolioAdmin() {
       draft: false,
       totalHoursSpent: '',
       toolsUsed: '',
-      completionDate: ''
+      completionDate: '',
+      isCollaboration: isAutoCollab,
+      collaborationPartner: isAutoCollab ? (siteSettings.collaboration?.partnerName || '') : '',
+      collaborationLogo: isAutoCollab ? (siteSettings.collaboration?.partnerLogo || '') : '',
+      collaborationText: isAutoCollab ? (siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama') : ''
     });
   };
 
@@ -538,6 +555,122 @@ export default function PortfolioAdmin() {
               onChange={e => setEditingProject({ ...editingProject, description: e.target.value })}
               className="w-full bg-transparent border-b border-zinc-300 dark:border-zinc-800/50 py-3 text-sm focus:border-black dark:focus:border-sky-400 outline-none transition-colors text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 resize-y leading-relaxed font-medium"
             />
+          </div>
+
+          {/* FITUR KOLABORASI KARYA */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 dark:bg-[#101012] border border-zinc-200/80 dark:border-zinc-800/80 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
+                  <Handshake size={18} />
+                </div>
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold text-black dark:text-white">
+                    Tandai Sebagai Karya Kolaborasi
+                  </h4>
+                  <p className="text-[10px] sm:text-[11px] text-zinc-500 dark:text-zinc-400">
+                    Menampilkan teks kolaborasi & logo mitra di bagian bawah deskripsi saat karya ini diklik.
+                  </p>
+                </div>
+              </div>
+
+              {/* Toggle Kolaborasi Switch */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={editingProject.isCollaboration}
+                onClick={() => {
+                  const nextState = !editingProject.isCollaboration;
+                  const siteSettings = getStoredSettings();
+                  setEditingProject({
+                    ...editingProject,
+                    isCollaboration: nextState,
+                    collaborationPartner: editingProject.collaborationPartner || (nextState ? siteSettings.collaboration?.partnerName || '' : ''),
+                    collaborationLogo: editingProject.collaborationLogo || (nextState ? siteSettings.collaboration?.partnerLogo || '' : ''),
+                    collaborationText: editingProject.collaborationText || (nextState ? siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama' : '')
+                  });
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  editingProject.isCollaboration ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    editingProject.isCollaboration ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {editingProject.isCollaboration && (
+              <div className="pt-3 border-t border-zinc-200/70 dark:border-zinc-800/70 grid grid-cols-1 sm:grid-cols-2 gap-3.5 animate-fadeIn">
+                <div>
+                  <label className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300 mb-1 block">
+                    Nama Mitra Kolaborasi
+                  </label>
+                  <input
+                    type="text"
+                    value={editingProject.collaborationPartner || ''}
+                    onChange={e => setEditingProject({ ...editingProject, collaborationPartner: e.target.value })}
+                    placeholder="Contoh: Brand Partner, Studio Kreatif"
+                    className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300 mb-1 block">
+                    Teks / Label Kolaborasi
+                  </label>
+                  <input
+                    type="text"
+                    value={editingProject.collaborationText || 'Kolaborasi Bersama'}
+                    onChange={e => setEditingProject({ ...editingProject, collaborationText: e.target.value })}
+                    placeholder="Contoh: Kolaborasi Bersama"
+                    className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="text-[10px] font-bold text-zinc-700 dark:text-zinc-300 mb-1 block">
+                    Logo Mitra Kolaborasi (URL / Gambar)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    {editingProject.collaborationLogo && (
+                      <img
+                        src={resolveImageUrl(editingProject.collaborationLogo)}
+                        alt="Logo Kolaborasi"
+                        className="h-9 w-auto max-w-[80px] object-contain rounded-lg border border-zinc-200 dark:border-zinc-700 p-1 bg-white dark:bg-zinc-900 shrink-0"
+                        onError={handleImageError}
+                      />
+                    )}
+                    <input
+                      type="text"
+                      value={editingProject.collaborationLogo || ''}
+                      onChange={e => setEditingProject({ ...editingProject, collaborationLogo: e.target.value })}
+                      placeholder="Masukkan URL logo atau pilih logo mitra default..."
+                      className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                    />
+                    {getStoredSettings().collaboration?.partnerLogo && editingProject.collaborationLogo !== getStoredSettings().collaboration?.partnerLogo && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const logo = getStoredSettings().collaboration?.partnerLogo || '';
+                          const partner = getStoredSettings().collaboration?.partnerName || '';
+                          setEditingProject({
+                            ...editingProject,
+                            collaborationLogo: logo,
+                            collaborationPartner: editingProject.collaborationPartner || partner
+                          });
+                        }}
+                        className="px-3 py-2 text-[10px] font-semibold rounded-xl bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-black dark:text-white shrink-0 transition-colors"
+                      >
+                        Gunakan Logo Global
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Tombol Simpan & Status Indikator Terintegrasi */}

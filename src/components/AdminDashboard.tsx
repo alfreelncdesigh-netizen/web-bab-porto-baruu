@@ -7,7 +7,7 @@ import {
   ShoppingCart, Briefcase, BarChart3, User, Mail, Archive, Sparkles, 
   Eye, EyeOff, ShieldCheck
 } from 'lucide-react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocs, query, collection, where } from 'firebase/firestore';
 
 import BlogAdmin from './BlogAdmin';
 import ExperienceAdmin from './ExperienceAdmin';
@@ -21,6 +21,8 @@ import Stats from './Stats';
 import ArchiveAdmin from './ArchiveAdmin';
 import PromoAdmin from './PromoAdmin';
 import AdminAccessAdmin from './AdminAccessAdmin';
+import CollaborationAdmin from './CollaborationAdmin';
+import { Handshake } from 'lucide-react';
 
 export const MASTER_ADMINS = [
   'albian',
@@ -31,7 +33,7 @@ export const MASTER_ADMINS = [
 
 export default function AdminDashboard() {
   const [isAuth, setIsAuth] = useState(false);
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'blog' | 'experience' | 'about' | 'cv' | 'stats' | 'settings' | 'store' | 'messages' | 'archive' | 'promo' | 'access'>('portfolio');
+  const [activeTab, setActiveTab] = useState<'portfolio' | 'blog' | 'experience' | 'about' | 'cv' | 'stats' | 'settings' | 'store' | 'messages' | 'archive' | 'promo' | 'access' | 'collaboration'>('portfolio');
   const [isChecking, setIsChecking] = useState(true);
   const [error, setError] = useState('');
   
@@ -118,11 +120,12 @@ export default function AdminDashboard() {
       ) {
         setActiveAdminName(cleanUser);
         sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: cleanUser, role: 'master' }));
+        sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
         setIsAuth(true);
         setWebPassword('');
         setIsLoggingIn(false);
 
-        // Pastikan record albian tersimpan di Firestore
+        // Pastikan record admin tersimpan di Firestore
         try {
           await setDoc(doc(db, 'adminUsers', 'albian'), {
             username: 'albian',
@@ -151,7 +154,6 @@ export default function AdminDashboard() {
       // Jika belum ditemukan, cari via query field 'username' atau 'email'
       if (!foundData) {
         try {
-          const { getDocs, query, collection, where } = await import('firebase/firestore');
           const qUser = query(collection(db, 'adminUsers'), where('username', '==', cleanUser));
           const snapUser = await getDocs(qUser);
           if (!snapUser.empty) {
@@ -170,7 +172,7 @@ export default function AdminDashboard() {
 
       if (foundData) {
         if (foundData.status === 'blocked') {
-          setError('Akses untuk username ini sedang diblokir/dinonaktifkan.');
+          setError('Akses untuk username ini sedang dinonaktifkan.');
           setIsLoggingIn(false);
           return;
         }
@@ -180,6 +182,7 @@ export default function AdminDashboard() {
           const role = foundData.role || 'admin';
           setActiveAdminName(cleanUser);
           sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: cleanUser, role }));
+          sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
           setIsAuth(true);
           setWebPassword('');
           setIsLoggingIn(false);
@@ -193,20 +196,21 @@ export default function AdminDashboard() {
 
           return;
         } else {
-          setError('Kata sandi salah. Silakan periksa kembali.');
+          setError('Username atau kata sandi tidak sesuai. Silakan masukkan kredensial yang valid.');
           setIsLoggingIn(false);
           return;
         }
       }
 
       // Jika akun tidak ditemukan
-      setError(`Username "${cleanUser}" belum terdaftar. Pastikan pengetikan benar atau tambahkan di menu Akses Admin.`);
+      setError('Username atau kata sandi tidak sesuai. Silakan masukkan kredensial yang valid.');
     } catch (err: any) {
       console.error("Login verification error:", err);
       // Fallback darurat jika ada gangguan koneksi Firestore
       if (cleanUser === 'albian' && cleanPass === '31102008') {
         setActiveAdminName('albian');
         sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: 'albian', role: 'master' }));
+        sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
         setIsAuth(true);
         setWebPassword('');
         return;
@@ -226,6 +230,7 @@ export default function AdminDashboard() {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, provider);
+      sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
     } catch (err: any) {
       const msg = err?.message || String(err || '');
       console.warn("Google login error:", msg);
@@ -246,6 +251,7 @@ export default function AdminDashboard() {
   const handleLogout = async () => {
     try {
       sessionStorage.removeItem('admin_auth_user');
+      sessionStorage.removeItem('admin_auth_token');
       await signOut(auth);
     } catch {}
     setIsAuth(false);
@@ -288,14 +294,11 @@ export default function AdminDashboard() {
                   type="text"
                   value={usernameInput}
                   onChange={(e) => setUsernameInput(e.target.value)}
-                  placeholder="Ketik username (contoh: albian)"
+                  placeholder="Masukkan username"
                   autoComplete="username"
                   autoFocus
                   className="w-full bg-zinc-50 dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all placeholder:text-zinc-400 font-medium"
                 />
-                <p className="text-[10px] text-zinc-400 mt-1 pl-1">
-                  Akses utama: ketik <span className="text-black dark:text-white font-mono font-bold">albian</span>
-                </p>
               </div>
 
               <div>
@@ -307,7 +310,7 @@ export default function AdminDashboard() {
                     type={showPassword ? "text" : "password"} 
                     value={webPassword}
                     onChange={(e) => setWebPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder="Masukkan kata sandi"
                     autoComplete="current-password"
                     className="w-full bg-zinc-50 dark:bg-zinc-900/70 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 pr-11 text-sm text-black dark:text-white focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all tracking-wider font-mono"
                   />
@@ -356,7 +359,7 @@ export default function AdminDashboard() {
           ) : (
             <form onSubmit={handleGoogleLogin} className="space-y-4 text-center">
               <p className="text-zinc-500 dark:text-zinc-400 text-xs mb-3 leading-relaxed">
-                Masuk menggunakan akun Google yang terdaftar sebagai Master Admin (<span className="font-semibold text-black dark:text-white">albianavl.co@gmail.com</span>).
+                Masuk menggunakan akun Google yang terdaftar sebagai administrator.
               </p>
               
               <AnimatePresence>
@@ -459,6 +462,7 @@ export default function AdminDashboard() {
                 { id: 'portfolio', label: 'Karya', icon: ImageIcon },
                 { id: 'blog', label: 'Blog', icon: FileText },
                 { id: 'experience', label: 'Pengalaman', icon: Briefcase },
+                { id: 'collaboration', label: 'Kolaborasi', icon: Handshake, collab: true },
                 { id: 'about', label: 'Tentang Saya', icon: User },
                 { id: 'cv', label: 'CV', icon: FileText },
                 { id: 'archive', label: 'Arsip', icon: Archive },
@@ -468,12 +472,16 @@ export default function AdminDashboard() {
               ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
-                const activeClass = tab.special 
-                  ? 'bg-amber-500 text-white shadow-sm dark:bg-amber-500 border-amber-400'
-                  : 'bg-white text-black shadow-sm dark:bg-[#1A1A1A] dark:text-white dark:border-zinc-700 border-zinc-200';
-                const inactiveClass = tab.special
-                  ? 'bg-transparent text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 border-transparent'
-                  : 'bg-transparent text-zinc-600 hover:text-black hover:bg-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-300 dark:hover:bg-zinc-900/50 border-transparent';
+                let activeClass = 'bg-white text-black shadow-sm dark:bg-[#1A1A1A] dark:text-white dark:border-zinc-700 border-zinc-200';
+                let inactiveClass = 'bg-transparent text-zinc-600 hover:text-black hover:bg-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-300 dark:hover:bg-zinc-900/50 border-transparent';
+
+                if (tab.special) {
+                  activeClass = 'bg-amber-500 text-white shadow-sm dark:bg-amber-500 border-amber-400';
+                  inactiveClass = 'bg-transparent text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 border-transparent';
+                } else if ((tab as any).collab) {
+                  activeClass = 'bg-indigo-600 text-white shadow-sm dark:bg-indigo-600 border-indigo-500';
+                  inactiveClass = 'bg-transparent text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 border-transparent';
+                }
                 
                 return (
                   <button 
@@ -481,7 +489,7 @@ export default function AdminDashboard() {
                     onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }} 
                     className={`w-full text-left flex items-center justify-start gap-2.5 px-3 py-2.5 text-[10px] font-mono font-bold uppercase tracking-widest transition-all rounded-lg border ${isActive ? activeClass : inactiveClass}`}
                   >
-                    <Icon size={12} className={`hidden lg:block ${tab.special && !isActive ? "fill-current" : ""}`} /> 
+                    <Icon size={12} className={`hidden lg:block ${((tab as any).special || (tab as any).collab) && !isActive ? "fill-current" : ""}`} /> 
                     <span className="w-full text-left">{tab.label}</span>
                   </button>
                 );
@@ -510,6 +518,7 @@ export default function AdminDashboard() {
               {activeTab === 'about' && <AboutAdmin />}
               {activeTab === 'cv' && <CvAdmin />}
               {activeTab === 'experience' && <ExperienceAdmin />}
+              {activeTab === 'collaboration' && <CollaborationAdmin />}
               {activeTab === 'settings' && <SettingsAdmin />}
               {activeTab === 'promo' && <PromoAdmin />}
               {activeTab === 'store' && <StoreAdmin />}

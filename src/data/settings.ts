@@ -59,6 +59,14 @@ export const defaultCvSections: CvSectionItem[] = [
   }
 ];
 
+export interface CollaborationConfig {
+  enabled: boolean;
+  partnerName: string;
+  partnerLogo: string;
+  collaborationText?: string;
+  autoTagNewItems?: boolean;
+}
+
 export interface SiteSettings {
   savedAt?: number;
   cvPdfFile?: string;
@@ -86,6 +94,7 @@ export interface SiteSettings {
   promoWidgetLink?: string;
   promoWidgetCtaText?: string;
   promoPosters?: PromoPosterItem[];
+  collaboration?: CollaborationConfig;
 }
 
 export const defaultPromoPosters: PromoPosterItem[] = [
@@ -173,4 +182,11 @@ export const defaultSettings: SiteSettings = {
   promoWidgetLink: "https://wa.me/6282394549268?text=Halo%20saya%20tertarik%20dengan%20promo%20diskon%20desain%20grafis",
   promoWidgetCtaText: "Ambil Diskon",
   promoPosters: defaultPromoPosters,
+  collaboration: {
+    enabled: false,
+    partnerName: "",
+    partnerLogo: "",
+    collaborationText: "Kolaborasi Bersama",
+    autoTagNewItems: false,
+  },
 };

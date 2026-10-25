@@ -76,13 +76,17 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Bypass Vite dev server internals & HMR endpoints
+  // Bypass Vite dev server internals, source files, & HMR endpoints
   if (
     url.pathname.startsWith('/@vite/') ||
     url.pathname.startsWith('/@fs/') ||
-    url.pathname.includes('vite.svg') ||
+    url.pathname.startsWith('/src/') ||
+    url.pathname.startsWith('/node_modules/') ||
+    url.pathname.includes('vite') ||
     url.pathname.includes('__vite_ping') ||
-    url.pathname.startsWith('/api/')
+    url.pathname.startsWith('/api/') ||
+    url.searchParams.has('t') ||
+    url.searchParams.has('v')
   ) {
     return;
   }

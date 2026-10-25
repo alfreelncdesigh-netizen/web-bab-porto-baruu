@@ -165,7 +165,14 @@ export default function ShareProjectModal({
 
     const targetUrl = platform.getShareUrl(shareUrl, project.title, projectImageUrl);
     if (targetUrl) {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer,width=640,height=580');
+      try {
+        const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer,width=640,height=580');
+        if (!opened) {
+          window.location.href = targetUrl;
+        }
+      } catch {
+        window.location.href = targetUrl;
+      }
     }
   };
 

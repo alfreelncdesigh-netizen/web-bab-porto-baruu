@@ -3,6 +3,9 @@ import { Menu, X, Sun, Moon, Palette } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { motion, AnimatePresence } from 'motion/react';
 import BrandLogo from './BrandLogo';
+import { SiteSettings } from '../data/settings';
+import { getStoredSettings } from '../lib/contentStorage';
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 
 interface HeaderProps {
  setView: (view: string) => void;
@@ -10,9 +13,19 @@ interface HeaderProps {
 }
 
 export default function Header({ setView, currentView }: HeaderProps) {
+ const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
  const [isScrolled, setIsScrolled] = useState(false);
  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
  const [isThemeDropdownOpen, setIsThemeDropdownOpen] = useState(false);
+
+ useEffect(() => {
+   const handleSettingsUpdate = (e: any) => {
+     if (e.detail) setSettings(e.detail);
+   };
+   window.addEventListener('app_settings_updated', handleSettingsUpdate);
+   return () => window.removeEventListener('app_settings_updated', handleSettingsUpdate);
+ }, []);
+
 
  const [activeSection, setActiveSection] = useState('home');
  const { theme, isDark, toggleTheme, setTheme } = useTheme();
@@ -155,14 +168,35 @@ export default function Header({ setView, currentView }: HeaderProps) {
        : 'bg-white/80 dark:bg-[#0A0A0A]/80 backdrop-blur-md border border-zinc-200/30 dark:border-zinc-800/30 shadow-sm'
      }`}
     >
-     {/* Logo ALFREELNC: Proporsional, Lebih Besar dan Jelas */}
-     <button 
-      onClick={() => { setView('home'); }} 
-      className="group relative flex items-center justify-center hover:opacity-85 active:scale-95 transition-all select-none focus:outline-none shrink-0"
-      aria-label="ALFREELNC Beranda"
-     >
-      <BrandLogo className="h-6 sm:h-7 md:h-8" />
-     </button>
+     {/* Logo ALFREELNC & Logo Kolaborasi (jika aktif) */}
+     <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+      <button 
+       onClick={() => { setView('home'); }} 
+       className="group relative flex items-center justify-center hover:opacity-85 active:scale-95 transition-all select-none focus:outline-none shrink-0"
+       aria-label="ALFREELNC Beranda"
+      >
+       <BrandLogo className="h-6 sm:h-7 md:h-8" />
+      </button>
+
+      {settings.collaboration?.enabled && settings.collaboration?.partnerLogo && (
+       <div className="flex items-center gap-1.5 sm:gap-2 animate-fadeIn">
+        <span className="text-zinc-400 dark:text-zinc-600 font-light text-xs sm:text-sm select-none">
+         ×
+        </span>
+        <div 
+         className="flex items-center" 
+         title={settings.collaboration.partnerName ? `Kolaborasi dengan ${settings.collaboration.partnerName}` : 'Mitra Kolaborasi'}
+        >
+         <img 
+          src={resolveImageUrl(settings.collaboration.partnerLogo)} 
+          alt={settings.collaboration.partnerName || "Logo Mitra Kolaborasi"} 
+          className="h-5 sm:h-6 md:h-7 w-auto max-w-[65px] sm:max-w-[95px] md:max-w-[120px] object-contain select-none"
+          onError={handleImageError}
+         />
+        </div>
+       </div>
+      )}
+     </div>
 
      {/* Desktop Nav */}
      <nav className="hidden md:flex gap-6 lg:gap-7 text-[13.5px] lg:text-[14px] items-center">

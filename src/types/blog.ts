@@ -9,4 +9,9 @@ export interface BlogPost {
   excerpt?: string;
   readTime?: string;
   tags?: string[];
+  isCollaboration?: boolean;
+  collaborationPartner?: string;
+  collaborationLogo?: string;
+  collaborationText?: string;
 }
+

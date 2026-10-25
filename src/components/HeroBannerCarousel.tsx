@@ -103,7 +103,14 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
         element.scrollIntoView({ behavior: 'smooth' });
       }
     } else {
-      window.open(banner.link, '_blank', 'noopener,noreferrer');
+      try {
+        const opened = window.open(banner.link, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+          window.location.href = banner.link;
+        }
+      } catch {
+        window.location.href = banner.link;
+      }
     }
   };
 
@@ -188,7 +195,7 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
 
                 return (
                   <div
-                    key={banner.id || `banner-${index}`}
+                    key={banner.id ? `banner-${banner.id}-${index}` : `banner-${index}`}
                     style={{ width: `${slideWidth}px`, marginRight: `${gap}px` }}
                     onClick={() => handleBannerClick(banner, index)}
                     className={`shrink-0 transition-all duration-500 ease-out flex flex-col ${

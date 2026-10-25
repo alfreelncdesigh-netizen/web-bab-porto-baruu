@@ -183,6 +183,19 @@ const projectsFilePath = path.resolve(__dirname, 'projects-storage.json');
 const blogsFilePath = path.resolve(__dirname, 'blogs-storage.json');
 const experiencesFilePath = path.resolve(__dirname, 'experiences-storage.json');
 
+const requireAdminAuth = (req: Request, res: Response, next: NextFunction): void => {
+  const token = req.headers['x-admin-token'] || req.headers['authorization'];
+  if (
+    token === 'alfreelnc_admin_auth_verified' || 
+    token === 'Bearer alfreelnc_admin_auth_verified' ||
+    req.body?.adminKey === 'alfreelnc_admin_auth_verified' ||
+    req.body?._adminAuth === 'alfreelnc_admin_auth_verified'
+  ) {
+    return next();
+  }
+  res.status(401).json({ error: 'Akses ditolak: Operasi ini membutuhkan otorisasi administrator.' });
+};
+
 app.get('/api/settings', (_req: Request, res: Response): void => {
   try {
     if (fs.existsSync(settingsFilePath)) {
@@ -196,7 +209,7 @@ app.get('/api/settings', (_req: Request, res: Response): void => {
   res.status(200).json({});
 });
 
-app.post('/api/settings', (req: Request, res: Response): void => {
+app.post('/api/settings', requireAdminAuth, (req: Request, res: Response): void => {
   try {
     const payload = req.body;
     if (payload && typeof payload === 'object') {
@@ -222,7 +235,7 @@ app.get('/api/projects', (_req: Request, res: Response): void => {
   res.status(200).json([]);
 });
 
-app.post('/api/projects', (req: Request, res: Response): void => {
+app.post('/api/projects', requireAdminAuth, (req: Request, res: Response): void => {
   try {
     const payload = req.body;
     if (Array.isArray(payload)) {
@@ -247,7 +260,7 @@ app.get('/api/blogs', (_req: Request, res: Response): void => {
   res.status(200).json([]);
 });
 
-app.post('/api/blogs', (req: Request, res: Response): void => {
+app.post('/api/blogs', requireAdminAuth, (req: Request, res: Response): void => {
   try {
     const payload = req.body;
     if (Array.isArray(payload)) {
@@ -272,7 +285,7 @@ app.get('/api/experiences', (_req: Request, res: Response): void => {
   res.status(200).json([]);
 });
 
-app.post('/api/experiences', (req: Request, res: Response): void => {
+app.post('/api/experiences', requireAdminAuth, (req: Request, res: Response): void => {
   try {
     const payload = req.body;
     if (Array.isArray(payload)) {

@@ -69,7 +69,53 @@ export async function uploadImageToStorage(
       authHeaders['Authorization'] = `Bearer ${freshToken}`;
     }
 
-    // 2. Jalur Utama Cepat: Endpoint Server /api/upload dengan FormData (~30-100 ms)
+    // 1. Prioritas Utama: Firebase Storage (Menghasilkan Link Cloud HTTPS Permanen yang Tersimpan di Firebase)
+    try {
+      const storageRef = ref(storage, `${folder}/${cleanName}`);
+      const metadata = {
+        contentType: fileOrBlob.type || (isSvg ? 'image/svg+xml' : isPdf ? 'application/pdf' : 'image/webp'),
+        cacheControl: 'public, max-age=31536000',
+      };
+
+      const uploadTask = uploadBytes(storageRef, fileOrBlob, metadata);
+      const snapshot = await withTimeout(uploadTask, 10000, "Firebase Storage timeout");
+      const downloadUrl = await getDownloadURL(snapshot.ref);
+      if (downloadUrl && downloadUrl.startsWith('http')) {
+        return downloadUrl;
+      }
+    } catch (firebaseErr: any) {
+      console.warn("Firebase Storage upload notice (mencoba jalur alternatif):", firebaseErr?.message || firebaseErr);
+    }
+
+    // 2. Cadangan Cloud Kedua: Cloudinary (jika dikonfigurasi)
+    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'ml_default';
+
+    if (cloudName && cloudName !== 'your_cloud_name') {
+      try {
+        const formData = new FormData();
+        formData.append('file', fileOrBlob, cleanName);
+        formData.append('upload_preset', uploadPreset);
+        formData.append('folder', folder);
+
+        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+          method: 'POST',
+          body: formData,
+          signal: abortController.signal,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.secure_url) {
+            return data.secure_url;
+          }
+        }
+      } catch (cloudinaryErr: any) {
+        console.warn("Cloudinary upload fallback:", cloudinaryErr?.message || cloudinaryErr);
+      }
+    }
+
+    // 3. Cadangan Server API /api/upload dengan FormData
     try {
       const formData = new FormData();
       formData.append('file', fileOrBlob, cleanName);
@@ -84,15 +130,14 @@ export async function uploadImageToStorage(
       if (serverRes.ok) {
         const resData = await serverRes.json();
         if (resData.url) {
-          // Kembalikan relative clean URL (e.g. /uploads/safeName.webp) agar adaptif di semua domain/preview
           return resData.url;
         }
       }
     } catch (apiErr: any) {
-      console.warn("Local multipart upload endpoint skipped/fallback:", apiErr?.message || apiErr);
+      console.warn("Local multipart upload endpoint fallback:", apiErr?.message || apiErr);
     }
 
-    // 3. Cadangan Cepat Server /api/upload dengan JSON Base64 (100% andal tanpa isu streaming/boundary)
+    // 4. Cadangan Server API /api/upload dengan JSON Base64
     try {
       let base64 = fallbackBase64;
       if (!base64 && typeof window !== 'undefined') {
@@ -118,56 +163,10 @@ export async function uploadImageToStorage(
         }
       }
     } catch (jsonErr) {
-      console.warn("Local JSON upload fallback skipped:", jsonErr);
+      console.warn("Local JSON upload fallback:", jsonErr);
     }
 
-    // 4. Cadangan Cloud: Firebase Storage (dengan timeout ketat 3 detik agar tidak stuck)
-    try {
-      const storageRef = ref(storage, `${folder}/${cleanName}`);
-      const metadata = {
-        contentType: fileOrBlob.type || 'image/webp',
-        cacheControl: 'public, max-age=31536000',
-      };
-
-      const uploadTask = uploadBytes(storageRef, fileOrBlob, metadata);
-      const snapshot = await withTimeout(uploadTask, 3000, "Firebase Storage timeout");
-      const downloadUrl = await getDownloadURL(snapshot.ref);
-      if (downloadUrl && downloadUrl.startsWith('http')) {
-        return downloadUrl;
-      }
-    } catch (firebaseErr: any) {
-      console.warn("Firebase Storage upload fallback:", firebaseErr?.message || firebaseErr);
-    }
-
-    // 5. Cadangan Cloudinary (jika configured)
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'ml_default';
-
-    if (cloudName && cloudName !== 'your_cloud_name') {
-      try {
-        const formData = new FormData();
-        formData.append('file', fileOrBlob, cleanName);
-        formData.append('upload_preset', uploadPreset);
-        formData.append('folder', folder);
-
-        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-          method: 'POST',
-          body: formData,
-          signal: abortController.signal,
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.secure_url) {
-            return data.secure_url;
-          }
-        }
-      } catch (cloudinaryErr: any) {
-        console.warn("Cloudinary upload failed:", cloudinaryErr?.message || cloudinaryErr);
-      }
-    }
-
-    // 6. Fallback instan aman: gunakan dataUrl yang sudah dikompresi
+    // 5. Fallback instan aman: gunakan dataUrl yang sudah dikompresi
     if (fallbackBase64) {
       return fallbackBase64;
     }

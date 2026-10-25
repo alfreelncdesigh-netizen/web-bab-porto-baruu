@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { getStoredExperiences, saveStoredExperiences } from '../lib/contentStorage';
-import { Briefcase, ArrowRight, X, Camera } from 'lucide-react';
+import { Briefcase, ArrowRight, X, Camera, Handshake } from 'lucide-react';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { 
   sectionStaggerContainer, 
@@ -97,7 +97,7 @@ export default function Experience() {
             const isEven = idx % 2 === 0;
             return (
               <motion.div 
-                key={exp.id}
+                key={exp.id ? `exp-${exp.id}-${idx}` : `exp-idx-${idx}`}
                 variants={childGridCardItem}
                 className="w-full bg-zinc-50/70 dark:bg-[#111111]/60 border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl md:rounded-3xl p-3 sm:p-5 md:p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-all cursor-pointer md:cursor-default"
                 onClick={() => {
@@ -114,17 +114,54 @@ export default function Experience() {
                     </h3>
                     
                     {exp.subtheme && (
-                      <p className="text-[11px] sm:text-[13px] font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 sm:mb-2 md:mb-3 flex items-center gap-1.5">
-                        <Briefcase className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                        <span>{exp.subtheme}</span>
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2 mb-1.5 sm:mb-2 md:mb-3">
+                        <p className="text-[11px] sm:text-[13px] font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+                          <Briefcase className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                          <span>{exp.subtheme}</span>
+                        </p>
+                        {(exp.isCollaboration || exp.collaborationPartner) && (
+                          <span className="bg-indigo-600/90 text-white border border-indigo-400/30 px-2 py-0.5 rounded-full text-[9px] font-bold shadow-xs flex items-center gap-1">
+                            <Handshake size={10} /> Kolaborasi
+                          </span>
+                        )}
+                      </div>
                     )}
 
                     {/* Deskripsi: Disembunyikan di Mobile (Hanya muncul saat diklik membuka detail modal), Tampil di Desktop */}
                     {exp.description && (
-                      <p className="hidden md:block text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed md:leading-[1.75] mb-4">
+                      <p className="hidden md:block text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed md:leading-[1.75] mb-3">
                         {exp.description}
                       </p>
+                    )}
+
+                    {/* BAGIAN BAWAH DESKRIPSI PENGALAMAN: TEKS & LOGO KOLABORASI */}
+                    {(exp.isCollaboration || exp.collaborationPartner) && (
+                      <div className="hidden md:flex mb-4 p-3 rounded-2xl bg-zinc-100/80 dark:bg-[#18181b] border border-zinc-200/80 dark:border-zinc-800/80 items-center justify-between gap-3 shadow-xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {exp.collaborationLogo ? (
+                            <div className="p-1 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-700/70 shrink-0">
+                              <img 
+                                src={resolveImageUrl(exp.collaborationLogo)} 
+                                alt={exp.collaborationPartner || "Mitra Kolaborasi"} 
+                                className="h-8 sm:h-9 w-auto max-w-[65px] sm:max-w-[80px] object-contain rounded-lg"
+                                onError={handleImageError}
+                              />
+                            </div>
+                          ) : (
+                            <div className="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shrink-0">
+                              <Handshake size={16} />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <span className="text-[9px] font-mono uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold block">
+                              {exp.collaborationText || 'Kolaborasi Bersama'}
+                            </span>
+                            <h4 className="text-xs font-semibold text-black dark:text-white truncate">
+                              {exp.collaborationPartner ? `Kolaborasi dengan ${exp.collaborationPartner}` : 'Pengalaman Kolaborasi Mitra'}
+                            </h4>
+                          </div>
+                        </div>
+                      </div>
                     )}
 
                     {/* Tombol Lihat Dokumentasi di Desktop */}
@@ -264,6 +301,36 @@ export default function Experience() {
                 <p className="text-xs sm:text-sm md:text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed font-normal whitespace-pre-wrap">
                   {selectedImg.exp.description}
                 </p>
+              </div>
+            )}
+
+            {/* BAGIAN BAWAH DESKRIPSI PENGALAMAN: TEKS & LOGO KOLABORASI */}
+            {(selectedImg.exp?.isCollaboration || selectedImg.exp?.collaborationPartner) && (
+              <div className="mb-6 p-3.5 sm:p-4 rounded-2xl bg-zinc-50 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 flex items-center justify-between gap-3 shadow-xs">
+                <div className="flex items-center gap-3 min-w-0">
+                  {selectedImg.exp.collaborationLogo ? (
+                    <div className="p-1 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-700/70 shrink-0">
+                      <img 
+                        src={resolveImageUrl(selectedImg.exp.collaborationLogo)} 
+                        alt={selectedImg.exp.collaborationPartner || "Mitra Kolaborasi"} 
+                        className="h-9 sm:h-10 w-auto max-w-[70px] sm:max-w-[90px] object-contain rounded-lg"
+                        onError={handleImageError}
+                      />
+                    </div>
+                  ) : (
+                    <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shrink-0">
+                      <Handshake size={20} />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <span className="text-[9.5px] md:text-[10px] font-mono uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold block">
+                      {selectedImg.exp.collaborationText || 'Kolaborasi Bersama'}
+                    </span>
+                    <h4 className="text-xs sm:text-[13px] font-semibold text-black dark:text-white truncate">
+                      {selectedImg.exp.collaborationPartner ? `Kolaborasi dengan ${selectedImg.exp.collaborationPartner}` : 'Pengalaman Kolaborasi Mitra'}
+                    </h4>
+                  </div>
+                </div>
               </div>
             )}
 

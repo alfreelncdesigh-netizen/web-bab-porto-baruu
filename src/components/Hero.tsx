@@ -28,7 +28,12 @@ export default function Hero() {
         if (docSnap.exists()) {
           const cloudData = docSnap.data() as Partial<SiteSettings>;
           if (cloudData && Object.keys(cloudData).length > 0) {
-            const merged = { ...defaultSettings, ...cleanSettings(cloudData) };
+            const current = getStoredSettings();
+            const cloudHero = cloudData.heroImage;
+            const heroImg = (cloudHero && typeof cloudHero === 'string' && cloudHero.trim().length > 0)
+              ? cloudHero.trim()
+              : (current.heroImage || defaultSettings.heroImage);
+            const merged = { ...defaultSettings, ...cleanSettings(cloudData), heroImage: heroImg };
             setSettings(merged);
             try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
           }

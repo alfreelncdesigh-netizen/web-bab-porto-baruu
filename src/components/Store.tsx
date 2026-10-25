@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
-import { doc, getDoc, collection, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { User, Phone, Instagram, LayoutTemplate, PenTool, Layers, Maximize, Hash, Calendar, DollarSign, ArrowRight, ArrowLeft, Send, CheckCircle2, FileText, UploadCloud, Info, Wallet, FileEdit, X, ChevronDown, CreditCard, ShieldCheck, Sparkles, ExternalLink, Tag, ShoppingBag, Download } from 'lucide-react';
 import { FastInput, FastTextarea } from './FastInput';
 import { ServiceSelectModal, servicesList } from './ServiceSelectModal';
@@ -24,16 +24,29 @@ export default function Store({ isOrderView = false }: StoreProps) {
     return phone || '628112345678';
   };
 
+  const deduplicatePosters = (list: PromoPosterItem[]): PromoPosterItem[] => {
+    const seen = new Set<string>();
+    return (list || []).map((p, idx) => {
+      let id = (p.id || `poster-${idx + 1}`).toString().trim();
+      if (seen.has(id)) {
+        id = `${id}-${idx + 1}`;
+      }
+      seen.add(id);
+      return { ...p, id };
+    });
+  };
+
   const [promoPosters, setPromoPosters] = useState<PromoPosterItem[]>(() => {
     const s = getStoredSettings();
-    return s.promoPosters && s.promoPosters.length > 0 ? s.promoPosters : defaultPromoPosters;
+    const raw = s.promoPosters && s.promoPosters.length > 0 ? s.promoPosters : defaultPromoPosters;
+    return deduplicatePosters(raw);
   });
 
   // Sinkronisasi realtime jika poster diubah dari admin dashboard
   useEffect(() => {
     const handleSettingsUpdate = (e: any) => {
       if (e.detail?.promoPosters) {
-        setPromoPosters(e.detail.promoPosters);
+        setPromoPosters(deduplicatePosters(e.detail.promoPosters));
       }
     };
     window.addEventListener('app_settings_updated', handleSettingsUpdate);
@@ -81,6 +94,12 @@ export default function Store({ isOrderView = false }: StoreProps) {
   const [showCancelPopup, setShowCancelPopup] = useState(false);
   const [showNavPopup, setShowNavPopup] = useState(false);
   const [pendingNavView, setPendingNavView] = useState<string | null>(null);
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 4000);
+  };
 
   useEffect(() => {
     const handleNavRequest = (e: any) => {
@@ -189,7 +208,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
       const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
       
       if (!cloudName || !uploadPreset || cloudName === 'your_cloud_name') {
-        alert("Cloudinary belum dikonfigurasi. Silakan kirim gambar referensi langsung via WhatsApp nanti.");
+        showToast("Penyimpanan cloud belum terkonfigurasi. Anda dapat mengirim gambar referensi via WhatsApp.");
         setIsUploading(false);
         return;
       }
@@ -209,7 +228,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
       }
     } catch (error) {
       console.warn("Upload error:", error);
-      alert("Gagal mengunggah gambar. Anda dapat mengirimnya langsung via WhatsApp.");
+      showToast("Gagal mengunggah file. Anda dapat mengirimnya langsung via WhatsApp.");
     } finally {
       setIsUploading(false);
     }
@@ -336,7 +355,6 @@ export default function Store({ isOrderView = false }: StoreProps) {
     } catch (e) {}
 
     try {
-      const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
       await addDoc(collection(db, 'orders'), {
         nama: formData.nama,
         whatsapp: formData.whatsapp,
@@ -388,7 +406,15 @@ ${formData.catatan ? formData.catatan : '-'}
 Terima kasih.`;
 
     const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/${whatsappNumber}?text=${encodedMessage}`, '_blank');
+    const waUrl = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+    try {
+      const opened = window.open(waUrl, '_blank');
+      if (!opened) {
+        window.location.href = waUrl;
+      }
+    } catch {
+      window.location.href = waUrl;
+    }
   };
 
   // Validations
@@ -407,7 +433,20 @@ Terima kasih.`;
   const inputClassDesktop = "w-full pl-11 lg:pl-12 pr-4 py-3.5 bg-white/70 dark:bg-black/40 backdrop-blur-xs hover:bg-white/90 dark:hover:bg-black/60 focus:bg-white dark:focus:bg-black/80 border border-zinc-200/80 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-black dark:focus:ring-white outline-none transition-all dark:text-white text-sm font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500";
 
   return (
-    <section id="store" className="py-5 md:py-10 bg-white dark:bg-[#0A0A0A] min-h-screen">
+    <section id="store" className="py-5 md:py-10 bg-white dark:bg-[#0A0A0A] min-h-screen relative">
+      <AnimatePresence>
+        {toastMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-6 left-1/2 -translate-x-1/2 z-[99999] px-5 py-3 rounded-2xl bg-zinc-900/95 text-white dark:bg-white/95 dark:text-black shadow-2xl backdrop-blur-md text-xs font-semibold max-w-[90vw] text-center pointer-events-none"
+          >
+            {toastMsg}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="w-full mx-auto px-3 sm:px-6 md:px-8 lg:px-12 xl:px-16">
         
         {/* Header */}
@@ -1444,7 +1483,7 @@ Terima kasih.`;
                 const isStoreLink = poster.link === '#store' || poster.link === 'store' || !poster.link;
                 return (
                   <div
-                    key={poster.id || index}
+                    key={poster.id ? `${poster.id}-${index}` : `promo-poster-${index}`}
                     className="group bg-white dark:bg-[#111111] border border-zinc-200 dark:border-zinc-800/90 rounded-2xl md:rounded-[1.75rem] p-3.5 md:p-4 flex flex-col justify-between shadow-sm hover:shadow-xl hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-300"
                   >
                     <div>
@@ -1659,7 +1698,7 @@ Terima kasih.`;
                     if ((window.innerWidth >= 768 && isDesktopStep3Valid) || (window.innerWidth < 768 && true)) {
                       handleSubmit({ preventDefault: () => {} } as React.FormEvent); 
                     } else {
-                      alert('Mohon lengkapi formulir terlebih dahulu sebelum lanjut pembelian.');
+                      showToast('Mohon lengkapi formulir terlebih dahulu sebelum lanjut pembelian.');
                     }
                   }} 
                   className="w-full bg-[#25D366] text-black py-3 md:py-3.5 rounded-xl text-xs md:text-sm font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-transform shadow-md shadow-[#25D366]/20 flex items-center justify-center gap-2"

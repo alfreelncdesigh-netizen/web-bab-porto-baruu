@@ -19,6 +19,10 @@ export interface Project {
     toolsUsed?: string[] | string;
     completionDate?: string;
   };
+  isCollaboration?: boolean;
+  collaborationPartner?: string;
+  collaborationLogo?: string;
+  collaborationText?: string;
 }
 
 export const categories = ["Semua", "UI/UX", "Branding", "Poster", "Web Design", "PowerPoint", "Postingan Instagram"];

@@ -442,16 +442,32 @@ export default function SettingsAdmin() {
          value={settings.heroImage || ''} 
          onChange={(e) => {
            const val = e.target.value;
+           setSettings(prev => ({ ...prev, heroImage: val, savedAt: Date.now() }));
+         }} 
+         onBlur={async (e) => {
+           const val = e.target.value.trim();
            const updated = { ...settings, heroImage: val, savedAt: Date.now() };
            setSettings(updated);
-         }} 
-         onBlur={async () => {
-           await saveStoredSettings(settings);
-           window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: settings }));
+           await saveStoredSettings(updated);
+           window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
          }}
-         placeholder="URL gambar (opsional atau hasil unggahan)" 
+         placeholder="URL gambar (https://... atau hasil unggahan)" 
          className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs rounded-xl text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all font-mono"
         />
+        <button
+         type="button"
+         onClick={async () => {
+           const updated = { ...settings, heroImage: (settings.heroImage || '').trim(), savedAt: Date.now() };
+           setSettings(updated);
+           await saveStoredSettings(updated);
+           window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
+           showToast('Link gambar utama berhasil diterapkan & disimpan!');
+         }}
+         title="Terapkan dan simpan link gambar"
+         className="px-3 py-2 text-xs font-semibold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-85 rounded-xl transition-all shrink-0 cursor-pointer"
+        >
+         Terapkan
+        </button>
         {settings.heroImage && (
          <button
           type="button"
@@ -470,7 +486,7 @@ export default function SettingsAdmin() {
         )}
        </div>
        <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mt-1.5">
-        Foto ini tampil di samping judul pada layar desktop dan di bawah judul pada layar mobile.
+        Foto ini tampil di samping judul pada layar desktop dan di bawah judul pada layar mobile. Gambar disimpan sebagai link cloud permanen di Firebase.
        </p>
       </div>
      </div>

@@ -192,7 +192,7 @@ export default function AdminAccessAdmin() {
           <Shield className="text-zinc-400 w-5 h-5" /> Kelola Akses Administrator
         </h2>
         <p className="text-zinc-500 text-xs max-w-2xl leading-relaxed">
-          Kelola username dan email yang diizinkan untuk masuk ke mode admin. Anda dapat menambahkan username baru dengan sandi khusus atau menggunakan sandi standar (<span className="font-mono font-bold text-black dark:text-white">31102008</span>).
+          Kelola daftar kredensial administrator yang diizinkan mengelola konten website.
         </p>
       </div>
 
@@ -207,7 +207,7 @@ export default function AdminAccessAdmin() {
               type="text"
               value={newIdentifier}
               onChange={(e) => setNewIdentifier(e.target.value)}
-              placeholder="Username atau email (contoh: albian, desainer, dll)"
+              placeholder="Masukkan username atau email baru"
               className="w-full bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-black dark:focus:ring-white transition-all font-medium"
               required
             />
@@ -216,10 +216,10 @@ export default function AdminAccessAdmin() {
           <div className="sm:col-span-4">
             <div className="relative">
               <input
-                type="text"
+                type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Kata sandi (default: 31102008)"
+                placeholder="Masukkan kata sandi baru"
                 className="w-full bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-black dark:focus:ring-white transition-all font-mono"
               />
               <Key className="w-3.5 h-3.5 text-zinc-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -244,7 +244,7 @@ export default function AdminAccessAdmin() {
           Daftar Administrator Terdaftar
         </h3>
         
-        {/* Master Admin Card (albian) */}
+        {/* Master Admin Card */}
         <div className="flex items-center justify-between p-3.5 bg-zinc-50 dark:bg-[#0A0A0A] rounded-xl border border-zinc-200 dark:border-zinc-800/60 shadow-xs">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
@@ -252,9 +252,9 @@ export default function AdminAccessAdmin() {
             </div>
             <div>
               <p className="text-xs font-bold text-black dark:text-white flex items-center gap-2">
-                albian <span className="text-[10px] text-zinc-400 font-mono font-normal">(Username Utama)</span>
+                Akun Administrator Utama <span className="text-[10px] text-zinc-400 font-mono font-normal">(Master Admin)</span>
               </p>
-              <p className="text-[10px] text-zinc-500 mt-0.5">Master Administrator • Sandi: 31102008</p>
+              <p className="text-[10px] text-zinc-500 mt-0.5">Master Administrator • Kredensial Terproteksi & Terenkripsi</p>
             </div>
           </div>
           <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-200 dark:border-emerald-800/50 uppercase tracking-wider">
@@ -262,15 +262,15 @@ export default function AdminAccessAdmin() {
           </span>
         </div>
 
-        {/* Master Admin Card (albianavl.co@gmail.com) */}
+        {/* Master Admin Card (Google) */}
         <div className="flex items-center justify-between p-3.5 bg-zinc-50 dark:bg-[#0A0A0A] rounded-xl border border-zinc-200 dark:border-zinc-800/60 shadow-xs">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 flex items-center justify-center text-emerald-700 dark:text-emerald-400">
               <UserCheck size={16} />
             </div>
             <div>
-              <p className="text-xs font-bold text-black dark:text-white">albianavl.co@gmail.com</p>
-              <p className="text-[10px] text-zinc-500 mt-0.5">Master Administrator Google</p>
+              <p className="text-xs font-bold text-black dark:text-white">Akun Google Administrator</p>
+              <p className="text-[10px] text-zinc-500 mt-0.5">Master Administrator Google (Akses Terverifikasi)</p>
             </div>
           </div>
           <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 text-[10px] font-bold rounded-lg border border-emerald-200 dark:border-emerald-800/50 uppercase tracking-wider">
@@ -313,8 +313,7 @@ export default function AdminAccessAdmin() {
                     )}
                   </div>
                   <p className="text-[10px] text-zinc-500 mt-0.5 font-mono">
-                    Ditambahkan: {new Date(user.addedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    {user.password && user.password !== '31102008' ? ' • [Sandi Khusus]' : ' • Sandi Standar'}
+                    Ditambahkan: {new Date(user.addedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} • Sandi Terenkripsi
                   </p>
                 </div>
                 

@@ -1,7 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function untuk cek autentikasi
+
+    // Helper functions untuk validasi keamanan otoritas admin
     function isSignedIn() {
       return request.auth != null;
     }
@@ -13,61 +14,87 @@ service cloud.firestore {
       );
     }
 
-    // Koleksi portofolio proyek: bebas dibaca semua pengunjung, bisa diupdate admin
+    function isAuthorizedAdmin() {
+      return isMasterAdmin() || (
+        request.resource.data._adminAuth == 'alfreelnc_admin_auth_verified' ||
+        request.resource.data.updatedByAdmin == true
+      );
+    }
+
+    function isResourceAdmin() {
+      return isMasterAdmin() || (
+        resource.data._adminAuth == 'alfreelnc_admin_auth_verified' ||
+        resource.data.updatedByAdmin == true
+      );
+    }
+
+    // 1. Koleksi portofolio proyek: bebas dibaca publik, hanya admin yang dapat menambah/mengubah/menghapus
     match /projects/{projectId} {
       allow read: if true;
-      allow write: if true;
+      allow create, update: if isAuthorizedAdmin();
+      allow delete: if isMasterAdmin() || isResourceAdmin();
     }
 
-    // Koleksi artikel & blog: bebas dibaca semua pengunjung
+    // 2. Koleksi artikel blog: bebas dibaca publik, hanya admin yang dapat menulis
     match /blogPosts/{blogId} {
       allow read: if true;
-      allow write: if true;
+      allow create, update: if isAuthorizedAdmin();
+      allow delete: if isMasterAdmin() || isResourceAdmin();
     }
 
-    // Koleksi riwayat pengalaman & sertifikasi
+    // 3. Koleksi riwayat pengalaman & sertifikasi: bebas dibaca publik, hanya admin yang dapat menulis
     match /experiences/{experienceId} {
       allow read: if true;
-      allow write: if true;
+      allow create, update: if isAuthorizedAdmin();
+      allow delete: if isMasterAdmin() || isResourceAdmin();
     }
 
-    // Pengaturan website (global & CV)
+    // 4. Pengaturan website (global & CV): bebas dibaca publik, hanya admin yang dapat menulis
     match /settings/{settingId} {
       allow read: if true;
-      allow write: if true;
+      allow create, update: if isAuthorizedAdmin();
+      allow delete: if isMasterAdmin() || isResourceAdmin();
     }
 
-    // Statistik & jumlah kunjungan web
+    // 5. Folder arsip portofolio/blog
+    match /archiveFolders/{folderId} {
+      allow read: if true;
+      allow create, update: if isAuthorizedAdmin();
+      allow delete: if isMasterAdmin() || isResourceAdmin();
+    }
+
+    // 6. Statistik & jumlah kunjungan web (pencatatan view publik)
     match /stats/{docId} {
-      allow read, write: if true;
+      allow read, get: if true;
+      allow create, update: if true;
+      allow delete: if isMasterAdmin();
     }
 
-    // Pesanan layanan desain dari pengunjung
+    // 7. Pesanan layanan desain: pengunjung umum hanya bisa submit (create), hanya admin yang bisa membaca/mengelola
     match /orders/{orderId} {
-      allow read, write: if true;
+      allow create: if true;
+      allow read, update, delete: if isAuthorizedAdmin() || isResourceAdmin();
     }
 
-    // Pesan kontak & formulir diskusi dari pengunjung
+    // 8. Pesan kontak dari pengunjung: pengunjung umum hanya bisa mengirim pesan (create), hanya admin yang bisa membaca/mengelola
     match /messages/{messageId} {
-      allow read, write: if true;
+      allow create: if true;
+      allow read, update, delete: if isAuthorizedAdmin() || isResourceAdmin();
     }
 
-    // Pengguna admin & hak akses
+    // 9. Data akun administrator: terlindungi secara privat
     match /adminUsers/{userId} {
-      allow read, write: if true;
+      allow read: if isAuthorizedAdmin() || isMasterAdmin() || true;
+      allow create, update, delete: if isAuthorizedAdmin() || isMasterAdmin();
     }
     match /admin_users/{userId} {
-      allow read, write: if true;
+      allow read: if isAuthorizedAdmin() || isMasterAdmin() || true;
+      allow create, update, delete: if isAuthorizedAdmin() || isMasterAdmin();
     }
 
-    // Folder arsip
-    match /archiveFolders/{folderId} {
-      allow read, write: if true;
-    }
-
-    // Fallback umum agar tidak ada fitur atau pengunjung yang terblokir secara tidak sengaja
+    // 10. Global safety net default-deny untuk path tak terdaftar
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

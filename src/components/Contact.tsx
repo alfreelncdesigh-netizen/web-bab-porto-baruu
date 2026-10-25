@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, MapPin, Phone, Check, ArrowRight, MessageSquare, MessageCircle, Send, CheckCircle2, X, Clock } from 'lucide-react';
+import { Mail, MapPin, Phone, Check, ArrowRight, MessageSquare, MessageCircle, Send, CheckCircle2, X, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot, collection, addDoc, query, orderBy } from 'firebase/firestore';
@@ -20,6 +20,7 @@ export default function Contact() {
  const [isSuccess, setIsSuccess] = useState(false);
  const [messages, setMessages] = useState<any[]>([]);
  const [loadingMessages, setLoadingMessages] = useState(true);
+ const [showAllComments, setShowAllComments] = useState(false);
  const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
  const [toast, setToast] = useState<{ show: boolean; type: 'success' | 'error'; title: string; text: string } | null>(null);
  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -328,36 +329,60 @@ export default function Contact() {
           </p>
         </div>
       ) : (
-        <div className="mt-6 space-y-3.5 max-h-[520px] overflow-y-auto pr-1 sm:pr-2 custom-scrollbar">
-          {messages.map((msg, index) => {
-            const initial = (msg.name && msg.name.trim().length > 0) ? msg.name.trim().charAt(0).toUpperCase() : 'U';
-            return (
-              <div 
-                key={msg.id || index}
-                className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#0A0A0A] border border-zinc-200/80 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-xs"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center font-bold text-xs sm:text-sm shadow-xs shrink-0 select-none mt-0.5">
-                    {initial}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h4 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white truncate">
-                        {msg.name || 'Pengunjung Anonim'}
-                      </h4>
-                      <div className="inline-flex items-center gap-1 text-zinc-400 dark:text-zinc-500 text-[10px] sm:text-[11px] font-medium shrink-0">
-                        <Clock className="w-3 h-3 text-zinc-400 shrink-0" />
-                        <span>{formatCommentDate(msg.dateAdded)}</span>
-                      </div>
+        <div className="mt-6 space-y-3.5">
+          <div className="space-y-3.5 pr-1 sm:pr-2 custom-scrollbar">
+            {(showAllComments ? messages : messages.slice(0, 3)).map((msg, index) => {
+              const initial = (msg.name && msg.name.trim().length > 0) ? msg.name.trim().charAt(0).toUpperCase() : 'U';
+              return (
+                <div 
+                  key={msg.id ? `comment-${msg.id}-${index}` : `comment-idx-${index}`}
+                  className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#0A0A0A] border border-zinc-200/80 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-xs"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center font-bold text-xs sm:text-sm shadow-xs shrink-0 select-none mt-0.5">
+                      {initial}
                     </div>
-                    <p className="text-xs sm:text-[13px] text-zinc-700 dark:text-zinc-300 leading-relaxed mt-0.5 whitespace-pre-wrap break-words">
-                      {msg.message}
-                    </p>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white truncate">
+                          {msg.name || 'Pengunjung Anonim'}
+                        </h4>
+                        <div className="inline-flex items-center gap-1 text-zinc-400 dark:text-zinc-500 text-[10px] sm:text-[11px] font-medium shrink-0">
+                          <Clock className="w-3 h-3 text-zinc-400 shrink-0" />
+                          <span>{formatCommentDate(msg.dateAdded)}</span>
+                        </div>
+                      </div>
+                      <p className="text-xs sm:text-[13px] text-zinc-700 dark:text-zinc-300 leading-relaxed mt-0.5 whitespace-pre-wrap break-words">
+                        {msg.message}
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+
+          {messages.length > 3 && (
+            <div className="pt-2 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setShowAllComments(prev => !prev)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white dark:bg-[#0A0A0A] border border-zinc-300 dark:border-zinc-800 hover:border-black dark:hover:border-white text-xs font-bold text-zinc-800 dark:text-zinc-200 transition-all shadow-xs active:scale-95 cursor-pointer"
+              >
+                {showAllComments ? (
+                  <>
+                    <ChevronUp className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>Tampilkan Lebih Sedikit (3 Terbaru)</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>Lihat Komentar Lainnya (+{messages.length - 3} komentar)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </motion.div>

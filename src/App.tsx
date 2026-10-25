@@ -522,14 +522,19 @@ export default function App() {
                 const localSavedAt = current.savedAt || 0;
 
                 if (snapGlobal?.exists() || (snapCv && snapCv.exists())) {
+                  const cloudHero = data.heroImage;
+                  const finalHero = (cloudHero && typeof cloudHero === 'string' && cloudHero.trim().length > 0)
+                    ? cloudHero.trim()
+                    : (current.heroImage || defaultSettings.heroImage);
                   const cleaned = cleanSettings({
                     ...data,
+                    heroImage: finalHero,
                     cvSections: cloudCvSections,
                     cvRole: cvData?.cvRole || data.cvRole,
                     cvPdfFile: cvData?.cvPdfFile || data.cvPdfFile,
                     savedAt: cloudSavedAt || Date.now()
                   });
-                  const merged = { ...defaultSettings, ...cleaned };
+                  const merged = { ...defaultSettings, ...cleaned, heroImage: finalHero };
                   setLocalSettings(merged);
                   window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: merged }));
                   const extraImgs: Promise<void>[] = [];
