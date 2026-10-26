@@ -709,7 +709,7 @@ export default function App() {
 
                   {/* Pembatas & Indikator Sentinel 50% Konten (Sebelum scroll / beralih menu) */}
                   {!isSecondHalfLoaded && (
-                    <div ref={sentinelRef} className="w-full py-10 px-4 flex flex-col items-center justify-center text-center">
+                    <div ref={sentinelRef} className="w-full py-4 sm:py-6 px-4 flex flex-col items-center justify-center text-center">
                       <button
                         type="button"
                         onClick={() => setIsSecondHalfLoaded(true)}
@@ -738,7 +738,7 @@ export default function App() {
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-                        className="-mt-2 sm:-mt-4"
+                        className="-mt-5 sm:-mt-8 md:-mt-10 lg:-mt-12"
                       >
                         <SectionDivider />
                         <Blog isSecondHalfLoaded={true} />

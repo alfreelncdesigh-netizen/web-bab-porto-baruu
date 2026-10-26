@@ -142,7 +142,7 @@ export default function Hero() {
             3. Foto desainer dengan elemen lingkaran & garis biru abstrak
                diposisikan di BAWAH teks & tombol, BUKAN di belakangnya.
           ======================================================== */}
-      <div className="block md:hidden w-full bg-white dark:bg-[#0a0a0a] pt-16 sm:pt-20 pb-0 transition-colors">
+      <div className="block md:hidden w-full bg-white dark:bg-[#0a0a0a] pt-20 sm:pt-24 pb-0 transition-colors">
         {/* Area Teks & Tombol CTA: Latar belakang bersih, solid, high-contrast */}
         <motion.div 
           initial={{ opacity: 0, y: 14 }}
@@ -150,22 +150,22 @@ export default function Hero() {
           transition={{ duration: 0.5, ease: "easeOut" }}
           className="w-full px-6 sm:px-8 flex flex-col items-start text-left bg-white dark:bg-[#0a0a0a]"
         >
-          {/* Subtitle ("Creative Designer • UI/UX") */}
-          <div className="flex items-center gap-2 mb-2 select-none">
+          {/* Subtitle ("Creative Designer • UI/UX") - diturunkan sedikit sesuai permintaan */}
+          <div className="flex items-center gap-2 mt-2 sm:mt-3 mb-2 select-none">
             <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
             <p className="text-[11px] sm:text-xs font-bold tracking-[0.18em] uppercase text-zinc-600 dark:text-zinc-400">
               Creative Designer • UI/UX
             </p>
           </div>
 
-          {/* Headline Mobile: Ukuran diperbesar dan tegas untuk tampilan mobile */}
+          {/* Headline Mobile: Ukuran diperbesar, diturunkan sedikit dengan proporsi rapi */}
           <h1 
             style={{
               fontFamily: "'Many Years Ago', 'Plus Jakarta Sans', 'Outfit', sans-serif",
               letterSpacing: '-0.025em',
               lineHeight: 1.04,
             }}
-            className="font-black text-[42px] sm:text-[48px] text-zinc-950 dark:text-white mb-1 select-none w-full"
+            className="font-black text-[42px] sm:text-[48px] text-zinc-950 dark:text-white mt-2 sm:mt-2.5 mb-1 select-none w-full"
           >
             <span className="block text-zinc-950 dark:text-white font-black">{title1Text}</span>
             <span className="block text-zinc-950 dark:text-white font-black mt-1">{title2Text}</span>

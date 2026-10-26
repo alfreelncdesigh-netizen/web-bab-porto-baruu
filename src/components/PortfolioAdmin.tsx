@@ -127,6 +127,11 @@ export default function PortfolioAdmin() {
       }
     }
 
+    // Tutup modal dan tampilkan notifikasi berhasil seketika (optimistic save)
+    showToast("Karya berhasil disimpan & langsung tampil di web!");
+    setEditingProject(null);
+    setSaving(false);
+
     try {
       const projectRef = doc(db, 'projects', docId);
       await withTimeout(
@@ -151,18 +156,11 @@ export default function PortfolioAdmin() {
           updatedByAdmin: true,
           updatedAt: new Date().toISOString()
         }, { merge: true }),
-        25000,
-        "Waktu simpan database habis. Perubahan tetap tersimpan di lokal."
+        4000,
+        "Database cloud disinkronkan di latar belakang."
       );
-
-      showToast("Karya berhasil disimpan & langsung tampil di web!");
-      setEditingProject(null);
     } catch (err: any) {
-      console.warn("Save Project Cloud Notice:", err);
-      showToast("Karya berhasil disimpan di penyimpanan lokal & web!", "success");
-      setEditingProject(null);
-    } finally {
-      setSaving(false);
+      console.warn("Save Project Cloud background sync notice:", err);
     }
   };
 

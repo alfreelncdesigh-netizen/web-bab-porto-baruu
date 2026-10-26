@@ -195,23 +195,20 @@ export default function ExperienceAdmin() {
       }
     }
 
+    // Tutup editor dan tampilkan notifikasi berhasil seketika (optimistic save)
+    showToast("Pengalaman berhasil disimpan & tampil di website!");
+    setIsEditing(false);
+    setEditingItem(null);
+    setSaving(false);
+
     try {
       await withTimeout(
         setDoc(doc(db, 'experiences', docId), toFirestore, { merge: true }),
-        25000,
-        "Waktu simpan database habis. Perubahan tetap tersimpan di lokal."
+        4000,
+        "Database cloud disinkronkan di latar belakang."
       );
-
-      showToast("Pengalaman berhasil disimpan & tampil di website!");
-      setIsEditing(false);
-      setEditingItem(null);
     } catch (err: any) {
-      console.warn("Firestore save experience notice:", err);
-      showToast("Pengalaman tersimpan di penyimpanan lokal & web!", "success");
-      setIsEditing(false);
-      setEditingItem(null);
-    } finally {
-      setSaving(false);
+      console.warn("Firestore save experience background notice:", err);
     }
   };
 

@@ -113,7 +113,7 @@ export default function About() {
    whileInView="visible"
    viewport={{ once: true, amount: 0 }}
    variants={sectionStaggerContainer}
-   className="pt-1 sm:pt-2 md:py-10 -mt-1 sm:-mt-2 md:mt-0 pb-6 md:pb-10 bg-[var(--bg-main,#ffffff)] dark:bg-[#0a0a0a] scroll-mt-24 md:scroll-mt-32"
+   className="pt-5 sm:pt-7 md:py-10 mt-2 sm:mt-4 md:mt-0 pb-6 md:pb-10 bg-[var(--bg-main,#ffffff)] dark:bg-[#0a0a0a] scroll-mt-24 md:scroll-mt-32"
   >
    <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18">
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 xl:gap-16 items-center">
@@ -210,7 +210,7 @@ export default function About() {
 
      <motion.div 
       variants={slideInRightItem}
-      className="order-1 lg:order-2 lg:col-span-5 relative aspect-[1080/1350] rounded-3xl sm:rounded-[2rem] overflow-hidden bg-zinc-200 dark:bg-[#1A1A1A] border border-zinc-100 dark:border-zinc-800 shadow-xl w-full max-w-md mx-auto lg:max-w-none"
+      className="order-1 lg:order-2 lg:col-span-5 relative aspect-[1080/1350] rounded-3xl sm:rounded-[2rem] overflow-hidden bg-zinc-200 dark:bg-[#1A1A1A] border border-zinc-100 dark:border-zinc-800 shadow-xl w-full max-w-md mx-auto lg:max-w-none mt-2 sm:mt-3 lg:mt-0"
      >
       <ImageWithSkeleton 
         src={settings.aboutImage && !settings.aboutImage.includes('photo-1499951360447') ? settings.aboutImage : "/images/minimalist_3d_illustration_1787122966121.jpg"} 

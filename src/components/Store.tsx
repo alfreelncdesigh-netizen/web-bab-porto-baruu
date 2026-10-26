@@ -433,7 +433,7 @@ Terima kasih.`;
   const inputClassDesktop = "w-full pl-11 lg:pl-12 pr-4 py-3.5 bg-white/70 dark:bg-black/40 backdrop-blur-xs hover:bg-white/90 dark:hover:bg-black/60 focus:bg-white dark:focus:bg-black/80 border border-zinc-200/80 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-black dark:focus:ring-white outline-none transition-all dark:text-white text-sm font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500";
 
   return (
-    <section id="store" className="py-5 md:py-10 bg-white dark:bg-[#0A0A0A] min-h-screen relative">
+    <section id="store" className={`pt-5 md:pt-8 ${isOrderView ? 'pb-16 min-h-screen' : 'pb-2 md:pb-3 min-h-0'} bg-white dark:bg-[#0A0A0A] relative`}>
       <AnimatePresence>
         {toastMsg && (
           <motion.div
@@ -1737,7 +1737,7 @@ Terima kasih.`;
       />
       
       {/* Direct Order WhatsApp Banner */}
-      <div className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 mt-12 md:mt-24">
+      <div className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 mt-6 sm:mt-8 md:mt-10 mb-1 sm:mb-2 md:mb-3">
         <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800/50 rounded-2xl md:rounded-[2.5rem] p-6 md:p-12 lg:p-20 flex flex-col lg:flex-row items-center justify-between gap-6 md:gap-12 lg:gap-16 text-center lg:text-left relative overflow-hidden">
           <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-green-500/20 dark:bg-green-500/10 blur-[50px] rounded-full pointer-events-none"></div>
           <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-40 h-40 bg-emerald-500/20 dark:bg-emerald-500/10 blur-[50px] rounded-full pointer-events-none"></div>
