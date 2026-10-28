@@ -286,8 +286,8 @@ export default function App() {
   useEffect(() => {
     const metaMap: Record<string, { title: string; description: string; image: string; hash: string }> = {
       home: {
-        title: 'Portofolio Desain Minimalis',
-        description: 'Website portofolio desain minimalis dan responsif dengan fitur galeri proyek interaktif serta integrasi formulir kontak.',
+        title: 'Alfreelnc Design Portofolio',
+        description: 'Kumpulan karya desain grafis, branding, dan informasi pemesanan jasa, kunjungi untuk info lebih lanjut .',
         image: '/images/promo_poster_1789471291192.jpg',
         hash: '',
       },
@@ -467,12 +467,14 @@ export default function App() {
         }
 
         const currentProjects = getStoredProjects();
-        currentProjects.forEach(p => {
+        // Hanya preload maksimal 2 proyek teratas yang langsung terlihat di layar
+        currentProjects.slice(0, 2).forEach(p => {
           if (p.image) imagePromises.push(preloadImage(p.image));
         });
 
         const currentBlogs = getStoredBlogs();
-        currentBlogs.forEach(b => {
+        // Hanya preload maksimal 2 blog teratas
+        currentBlogs.slice(0, 2).forEach(b => {
           const img = b.image || (b as any).coverImage;
           if (img) imagePromises.push(preloadImage(img));
         });

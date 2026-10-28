@@ -47,29 +47,11 @@ export default function ImageWithSkeleton({
       return;
     }
 
-    // 2. Preloader fallback for background decoding
+    // 2. Safety timeout: never leave an image permanently stuck at opacity-0
     let active = true;
-    if (resolvedSrc && resolvedSrc !== FALLBACK_IMAGE) {
-      const tester = new Image();
-      tester.onload = () => {
-        if (active) setIsLoaded(true);
-      };
-      tester.onerror = () => {
-        if (active) {
-          setHasError(true);
-          setIsLoaded(true);
-        }
-      };
-      tester.src = resolvedSrc;
-      if (tester.complete && tester.naturalWidth > 0) {
-        setIsLoaded(true);
-      }
-    }
-
-    // 3. Safety timeout: never leave an image permanently stuck at opacity-0
     const safetyTimer = setTimeout(() => {
       if (active) setIsLoaded(true);
-    }, 1200);
+    }, 1500);
 
     return () => {
       active = false;

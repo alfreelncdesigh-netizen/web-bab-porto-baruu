@@ -12,6 +12,7 @@ import { getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { compressImageToWebP } from '../lib/imageCompressor';
 import { uploadImageToStorage } from '../lib/storageUploader';
 import ConfirmModal from './ConfirmModal';
+import { FastInput, FastTextarea } from './FastInput';
 
 export default function CvAdmin() {
   const [settings, setSettings] = useState<any>(() => {
@@ -498,51 +499,57 @@ export default function CvAdmin() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="block text-xs font-bold text-black dark:text-white mb-2 uppercase tracking-wider">Nama Lengkap</label>
-            <input 
-              type="text" 
+            <FastTextarea 
+              rows={1}
+              minHeight={46}
               value={settings.fullName || ''} 
-              onChange={(e) => setSettings({...settings, fullName: e.target.value})} 
-              className="w-full bg-zinc-100 dark:bg-zinc-900 border-none rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white transition-all outline-none" 
+              onChange={(e) => setSettings((prev: any) => ({ ...prev, fullName: e.target.value }))} 
+              placeholder="Nama Lengkap Anda"
+              className="w-full bg-zinc-100 dark:bg-zinc-900 border border-transparent focus:border-black dark:focus:border-white rounded-xl px-4 py-3 text-[16px] md:text-sm text-black dark:text-white focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all outline-none leading-relaxed block" 
               required 
             />
           </div>
           <div>
             <label className="block text-xs font-bold text-black dark:text-white mb-2 uppercase tracking-wider">Catatan Kecil (Profesi)</label>
-            <input 
-              type="text" 
+            <FastTextarea 
+              rows={1}
+              minHeight={46}
               value={settings.cvRole || ''} 
-              onChange={(e) => setSettings({...settings, cvRole: e.target.value})} 
-              className="w-full bg-zinc-100 dark:bg-zinc-900 border-none rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white transition-all outline-none" 
+              onChange={(e) => setSettings((prev: any) => ({ ...prev, cvRole: e.target.value }))} 
+              placeholder="Cth: UI/UX Designer & Graphic Illustrator"
+              className="w-full bg-zinc-100 dark:bg-zinc-900 border border-transparent focus:border-black dark:focus:border-white rounded-xl px-4 py-3 text-[16px] md:text-sm text-black dark:text-white focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all outline-none leading-relaxed block" 
               required 
             />
           </div>
           <div>
             <label className="block text-xs font-bold text-black dark:text-white mb-2 uppercase tracking-wider">Email</label>
-            <input 
+            <FastInput 
               type="email" 
               value={settings.contactEmail || ''} 
-              onChange={(e) => setSettings({...settings, contactEmail: e.target.value})} 
-              className="w-full bg-zinc-100 dark:bg-zinc-900 border-none rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white transition-all outline-none" 
+              onChange={(e) => setSettings((prev: any) => ({ ...prev, contactEmail: e.target.value }))} 
+              placeholder="email@domain.com"
+              className="w-full bg-zinc-100 dark:bg-zinc-900 border border-transparent focus:border-black dark:focus:border-white rounded-xl px-4 py-3 text-[16px] md:text-sm text-black dark:text-white focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all outline-none min-h-[46px] block" 
               required 
             />
           </div>
           <div>
             <label className="block text-xs font-bold text-black dark:text-white mb-2 uppercase tracking-wider">Nomor HP / WhatsApp</label>
-            <input 
+            <FastInput 
               type="text" 
               value={settings.contactPhone || ''} 
-              onChange={(e) => setSettings({...settings, contactPhone: e.target.value})} 
-              className="w-full bg-zinc-100 dark:bg-zinc-900 border-none rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white transition-all outline-none" 
+              onChange={(e) => setSettings((prev: any) => ({ ...prev, contactPhone: e.target.value }))} 
+              placeholder="+62 8..."
+              className="w-full bg-zinc-100 dark:bg-zinc-900 border border-transparent focus:border-black dark:focus:border-white rounded-xl px-4 py-3 text-[16px] md:text-sm text-black dark:text-white focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all outline-none min-h-[46px] block" 
               required 
             />
           </div>
           <div className="md:col-span-2 lg:col-span-4">
             <label className="block text-xs font-bold text-black dark:text-white mb-2 uppercase tracking-wider">Link Web Portofolio</label>
-            <input 
+            <FastInput 
               type="url" 
               value={settings.portfolioLink || ''} 
-              onChange={(e) => setSettings({...settings, portfolioLink: e.target.value})} 
-              className="w-full bg-zinc-100 dark:bg-zinc-900 border-none rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white transition-all outline-none" 
+              onChange={(e) => setSettings((prev: any) => ({ ...prev, portfolioLink: e.target.value }))} 
+              className="w-full bg-zinc-100 dark:bg-zinc-900 border border-transparent focus:border-black dark:focus:border-white rounded-xl px-4 py-3 text-[16px] md:text-sm text-black dark:text-white focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 transition-all outline-none min-h-[46px] block" 
               placeholder="https://" 
             />
           </div>
@@ -851,21 +858,24 @@ export default function CvAdmin() {
                     </div>
                   </div>
 
-                  <input 
-                    type="text" 
-                    value={section.title} 
+                  <FastTextarea 
+                    rows={1}
+                    minHeight={44}
+                    value={section.title || ''} 
                     onChange={(e) => updateSection(index, 'title', e.target.value)} 
                     placeholder="Judul Subtema (Cth: Professional Summary / Pengalaman Kerja)" 
-                    className="w-full bg-white dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3.5 py-2.5 text-sm font-bold text-black dark:text-white mb-3 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white" 
+                    className="w-full bg-white dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3.5 py-2.5 text-[16px] md:text-sm font-bold text-black dark:text-white mb-3 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white leading-relaxed block" 
                     required 
                   />
 
-                  <textarea 
-                    value={section.content} 
+                  <FastTextarea 
+                    rows={3}
+                    minHeight={110}
+                    value={section.content || ''} 
                     onChange={(e) => updateSection(index, 'content', e.target.value)} 
                     onKeyDown={(e) => handleKeyDown(e, index)}  
                     placeholder="Isi paragraf..." 
-                    className="w-full bg-white dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 rounded-xl p-3.5 text-xs text-black dark:text-white/90 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white resize-none h-28" 
+                    className="w-full bg-white dark:bg-zinc-800/70 border border-zinc-200 dark:border-zinc-700 rounded-xl p-3.5 text-[16px] md:text-xs text-black dark:text-white/90 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white leading-relaxed block" 
                     required  
                   />
                   

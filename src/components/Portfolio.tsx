@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRight, Sparkles, Search, MessageCircle, ChevronLeft, ChevronRight, Eye, Clock, Wrench, CalendarCheck, Activity, ChevronDown, Maximize2, Minimize2, Handshake } from 'lucide-react';
 import { Project } from '../data/projects';
@@ -110,11 +110,40 @@ function getProjectMetrics(project: Project) {
 }
 
 /**
- * PortfolioLazyImage:
- * Mengimplementasikan 'lazy loading' bertenaga Intersection Observer secara presisi.
- * Menunda penarikan sumber gambar (network fetch) sampai elemen kartu mendekati atau memasuki
- * viewport pengguna (rootMargin 200px), menghemat bandwidth dan mempercepat waktu muat awal.
+ * Pooled Singleton IntersectionObserver untuk PortfolioLazyImage:
+ * Menggunakan satu instance observer bersama (shared observer) dengan WeakMap callback,
+ * bukan membuat instance observer baru per kartu.
+ * Margin diatur agresif (100px) sehingga gambar hanya diminta sesaat sebelum mencapai layar.
  */
+type PortfolioObserverCallback = (isIntersecting: boolean) => void;
+const sharedPortfolioObserverCallbacks = new WeakMap<Element, PortfolioObserverCallback>();
+let sharedPortfolioObserverInstance: IntersectionObserver | null = null;
+
+function getSharedPortfolioObserver(): IntersectionObserver | null {
+  if (typeof window === 'undefined' || !('IntersectionObserver' in window)) return null;
+  if (!sharedPortfolioObserverInstance) {
+    sharedPortfolioObserverInstance = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const cb = sharedPortfolioObserverCallbacks.get(entry.target);
+            if (cb) {
+              cb(true);
+              sharedPortfolioObserverCallbacks.delete(entry.target);
+            }
+            sharedPortfolioObserverInstance?.unobserve(entry.target);
+          }
+        }
+      },
+      {
+        rootMargin: '100px 0px 100px 0px', // Lazy loading agresif: hanya minta gambar saat berjarak 100px dari layar
+        threshold: 0.01,
+      }
+    );
+  }
+  return sharedPortfolioObserverInstance;
+}
+
 interface PortfolioLazyImageProps {
   src?: string | null;
   alt: string;
@@ -145,35 +174,26 @@ function PortfolioLazyImage({
     // Jika priority (kartu pertama) atau sudah terlihat di layar, observer tidak diperlukan
     if (priority || isInView) return;
 
-    if (typeof window === 'undefined' || !('IntersectionObserver' in window)) {
+    const currentEl = containerRef.current;
+    if (!currentEl) return;
+
+    const observer = getSharedPortfolioObserver();
+    if (!observer) {
       setIsInView(true);
       return;
     }
 
-    const currentEl = containerRef.current;
-    if (!currentEl) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setIsInView(true);
-            observer.unobserve(entry.target);
-            observer.disconnect();
-            break;
-          }
-        }
-      },
-      {
-        rootMargin: '200px 0px 200px 0px', // Prefetch saat berjarak 200px dari layar agar transisi mulus
-        threshold: 0.01,
+    sharedPortfolioObserverCallbacks.set(currentEl, (isIntersecting) => {
+      if (isIntersecting) {
+        setIsInView(true);
       }
-    );
+    });
 
     observer.observe(currentEl);
 
     return () => {
-      observer.disconnect();
+      sharedPortfolioObserverCallbacks.delete(currentEl);
+      observer.unobserve(currentEl);
     };
   }, [priority, isInView]);
 
@@ -213,11 +233,32 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [showProjectMetrics, setShowProjectMetrics] = useState(false);
   const [imageFitMode, setImageFitMode] = useState<'cover' | 'contain'>('contain');
+  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null);
+
+  useEffect(() => {
+    setImageAspectRatio(null);
+  }, [selectedProject, activeImageIndex]);
   const [copied, setCopied] = useState(false);
   const [showSharePopup, setShowSharePopup] = useState(false);
   const [sharingProject, setSharingProject] = useState<Project | null>(null);
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Mode Layout Kisi Portofolio: 'grid-2' (dua gambar kanan & kiri) atau 'single' (satu gambar ke bawah)
+  const [layoutMode, setLayoutMode] = useState<'grid-2' | 'single'>(() => {
+    try {
+      const saved = localStorage.getItem('portfolio_layout_mode');
+      if (saved === 'grid-2' || saved === 'single') return saved;
+    } catch {}
+    return 'grid-2';
+  });
+
+  const handleSetLayoutMode = (mode: 'grid-2' | 'single') => {
+    setLayoutMode(mode);
+    try {
+      localStorage.setItem('portfolio_layout_mode', mode);
+    } catch {}
+  };
 
   // Refs untuk navigasi dan auto-scroll ke paling atas
   const modalRootRef = useRef<HTMLDivElement>(null);
@@ -264,8 +305,11 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   useEffect(() => {
     let isMounted = true;
 
+    // Hanya lakukan pra-muat (preload) maksimal untuk 2 gambar teratas yang langsung terlihat di viewport
+    // Seluruh gambar lainnya akan dimuat secara agresif hanya saat mendekati layar oleh IntersectionObserver
     const preloadImages = (items: Project[]) => {
-      const promises = items.map((p) => {
+      const topItems = items.slice(0, 2);
+      const promises = topItems.map((p) => {
         if (!p.image) return Promise.resolve();
         const url = resolveImageUrl(p.image);
         return new Promise<void>((resolve) => {
@@ -274,26 +318,24 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           if (img.complete && img.naturalWidth > 0) return resolve();
           img.onload = () => resolve();
           img.onerror = () => resolve();
-          setTimeout(resolve, 2000);
+          setTimeout(resolve, 1500);
         });
       });
       return Promise.all(promises);
     };
 
-    // Preload initial cached projects immediately
+    // Muat data awal dari cache penyimpanan lokal segera tanpa memblokir UI
     const initialProjects = getStoredProjects();
     if (initialProjects.length > 0) {
-      preloadImages(initialProjects).then(() => {
-        if (isMounted) setLoading(false);
-      });
+      if (isMounted) setLoading(false);
+      preloadImages(initialProjects);
     }
 
     const handleUpdate = (e: any) => {
       if (e.detail) {
         setProjects(e.detail);
-        preloadImages(e.detail).then(() => {
-          if (isMounted) setLoading(false);
-        });
+        if (isMounted) setLoading(false);
+        preloadImages(e.detail);
       }
     };
     window.addEventListener('user_projects_updated', handleUpdate);
@@ -314,24 +356,22 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
         const cleaned = cleanProjects(projData);
         setProjects(cleaned);
         saveStoredProjects(cleaned);
-        preloadImages(cleaned).then(() => {
-          if (isMounted) setLoading(false);
-        });
+        if (isMounted) setLoading(false);
+        preloadImages(cleaned);
       },
       (error) => {
         console.warn("Firestore Portfolio Error (using stored projects):", error);
         const stored = getStoredProjects();
         setProjects(stored);
-        preloadImages(stored).then(() => {
-          if (isMounted) setLoading(false);
-        });
+        if (isMounted) setLoading(false);
+        preloadImages(stored);
       }
     );
 
-    // Safety timeout so skeleton never hangs indefinitely
+    // Safety timeout singkat agar skeleton tidak pernah menggantung
     const timer = setTimeout(() => {
       if (isMounted) setLoading(false);
-    }, 2200);
+    }, 1200);
 
     return () => {
       isMounted = false;
@@ -474,9 +514,16 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   };
 
   // Semua karya lainnya (seluruh karya yang tidak termasuk karya yang sedang dibuka)
-  const otherProjects = projects.filter(
-    p => !p.draft && String(p.id) !== String(selectedProject?.id)
-  );
+  const otherProjects = useMemo(() => {
+    return projects.filter(
+      p => !p.draft && String(p.id) !== String(selectedProject?.id)
+    );
+  }, [projects, selectedProject?.id]);
+
+  // Batasi hanya maksimal 8 karya rekomendasi di modal untuk menghemat konsumsi memori dan bandwidth browser
+  const displayedOtherProjects = useMemo(() => {
+    return otherProjects.slice(0, 8);
+  }, [otherProjects]);
 
   // Helper untuk mendapatkan semua gambar dalam proyek (gambar utama + galeri)
   const projectGalleryImages: string[] = selectedProject ? [
@@ -552,30 +599,86 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               );
             })}
           </motion.div>
+
+          {/* Bar Kontrol Pilihan Kisi Layout Karya (di bawah kategori, sebelah kanan) */}
+          <div className="flex items-center justify-between pt-2.5 pb-2">
+            <span className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-medium select-none">
+              {filteredProjects.length} karya ditemukan
+            </span>
+
+            {/* Pilihan Kisi di Sebelah Kanan */}
+            <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-100/90 dark:bg-[#141414] border border-zinc-200/80 dark:border-zinc-800 shadow-2xs">
+              {/* Tombol 1: Kisi Dua Gambar Kanan dan Kiri */}
+              <button
+                type="button"
+                onClick={() => handleSetLayoutMode('grid-2')}
+                title="Tampilan Kisi Dua (Kanan & Kiri)"
+                aria-label="Tampilan Kisi Dua (Kanan & Kiri)"
+                className={`p-1.5 sm:p-2 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
+                  layoutMode === 'grid-2'
+                    ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-xs'
+                    : 'text-zinc-400 dark:text-zinc-500 hover:text-black dark:hover:text-white'
+                }`}
+              >
+                {/* Logo sederhana kisi dua kanan dan kiri */}
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <rect x="2.5" y="3" width="6.5" height="14" rx="1.5" />
+                  <rect x="11" y="3" width="6.5" height="14" rx="1.5" />
+                </svg>
+              </button>
+
+              {/* Tombol 2: Kisi Satu Gambar Kebawah */}
+              <button
+                type="button"
+                onClick={() => handleSetLayoutMode('single')}
+                title="Tampilan Satu Gambar ke Bawah"
+                aria-label="Tampilan Satu Gambar ke Bawah"
+                className={`p-1.5 sm:p-2 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
+                  layoutMode === 'single'
+                    ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-xs'
+                    : 'text-zinc-400 dark:text-zinc-500 hover:text-black dark:hover:text-white'
+                }`}
+              >
+                {/* Logo sederhana satu gambar kebawah */}
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <rect x="3" y="3" width="14" height="6" rx="1.5" />
+                  <rect x="3" y="11" width="14" height="6" rx="1.5" />
+                </svg>
+              </button>
+            </div>
+          </div>
         </div>
 
         {loading ? (
-          <div className="columns-1 sm:columns-2 lg:columns-2 xl:columns-3 2xl:columns-3 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-12 space-y-6 sm:space-y-8 md:space-y-10 lg:space-y-10 xl:space-y-12">
+          <div className={
+            layoutMode === 'single'
+              ? 'columns-1 gap-6 sm:gap-8 space-y-6 sm:space-y-8 max-w-2xl sm:max-w-3xl mx-auto'
+              : 'columns-2 gap-3.5 sm:gap-6 md:gap-8 lg:gap-8 xl:gap-10 space-y-3.5 sm:space-y-6 md:space-y-8 lg:space-y-8 xl:space-y-10'
+          }>
             {[1, 2, 3, 4, 5, 6].map((n, i) => (
               <div 
                 key={n} 
                 className={`w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden animate-shimmer ${
-                  i % 3 === 0 
-                    ? 'aspect-[3/4] min-h-[460px]' 
-                    : i % 3 === 1 
-                    ? 'aspect-[4/5] min-h-[380px]' 
-                    : 'aspect-[1/1] min-h-[340px]'
+                  layoutMode === 'single'
+                    ? 'aspect-[16/10] min-h-[300px] sm:min-h-[420px]'
+                    : i % 2 === 0 
+                    ? 'aspect-[3/4] min-h-[240px] sm:min-h-[380px]' 
+                    : 'aspect-[4/5] min-h-[220px] sm:min-h-[340px]'
                 }`}
               />
             ))}
           </div>
         ) : (
           <motion.div 
-            key={activeCategory + '_' + (searchQuery ? searchQuery : 'all')}
+            key={activeCategory + '_' + (searchQuery ? searchQuery : 'all') + '_' + layoutMode}
             variants={gridContainerVariants}
             initial="hidden"
             animate="visible"
-            className="columns-1 sm:columns-2 lg:columns-2 xl:columns-3 2xl:columns-3 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-12 space-y-6 sm:space-y-8 md:space-y-10 lg:space-y-10 xl:space-y-12"
+            className={
+              layoutMode === 'single'
+                ? 'columns-1 gap-6 sm:gap-8 space-y-6 sm:space-y-8 max-w-2xl sm:max-w-3xl mx-auto'
+                : 'columns-2 gap-3.5 sm:gap-6 md:gap-8 lg:gap-8 xl:gap-10 space-y-3.5 sm:space-y-6 md:space-y-8 lg:space-y-8 xl:space-y-10'
+            }
           >
             {/* Tampilan 50% awal dan sisa dimuat otomatis saat scroll/ganti menu */}
             {(() => {
@@ -605,9 +708,17 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               src={project.image} 
                               alt={project.title} 
                               priority={index < 2}
-                              className="w-full h-auto min-h-[320px] sm:min-h-[420px] md:min-h-[520px] lg:min-h-[600px] xl:min-h-[680px] 2xl:min-h-[740px] object-cover transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100" 
+                              className={`w-full h-auto ${
+                                layoutMode === 'single'
+                                  ? 'min-h-[280px] sm:min-h-[420px] md:min-h-[520px]'
+                                  : 'min-h-[190px] sm:min-h-[300px] md:min-h-[400px]'
+                              } object-cover transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100`} 
                               skeletonClassName="rounded-xl sm:rounded-2xl"
-                              aspectClass="min-h-[320px] sm:min-h-[420px] md:min-h-[520px] lg:min-h-[600px] xl:min-h-[680px] 2xl:min-h-[740px]"
+                              aspectClass={
+                                layoutMode === 'single'
+                                  ? 'min-h-[280px] sm:min-h-[420px] md:min-h-[520px]'
+                                  : 'min-h-[190px] sm:min-h-[300px] md:min-h-[400px]'
+                              }
                             />
                           ) : (
                             <div className="w-full aspect-[4/5] min-h-[320px] sm:min-h-[420px] lg:min-h-[600px] transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800 animate-shimmer rounded-xl sm:rounded-2xl"></div>
@@ -762,43 +873,58 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               <div ref={modalTopRef} id="portfolio-modal-top" className="w-full h-0 opacity-0 pointer-events-none absolute top-0 left-0" />
 
               {/* AREA GAMBAR & GALERI:
-                  - Gambar memenuhi bingkai kanan dan kiri (tanpa ruang kosong di kanan & kiri bingkai)
+                  - Pada desktop: Rasio gambar sesuai dengan bingkai gambar, bingkai hanya polos berwarna putih, dan mengikuti bentuk rasio asli gambar
                   - Transisi super halus dan cepat
                   - Carousel galeri jika memiliki lebih dari 1 gambar
-                  - Dukungan kontrol muat utuh / penuhi bingkai
               */}
-              <div className="w-full md:w-[64%] lg:w-[66%] xl:w-[68%] relative border-b md:border-b-0 md:border-r flex flex-col items-center justify-between h-auto min-h-[300px] md:h-full shrink-0 bg-black dark:bg-[#050505] border-zinc-200/60 dark:border-zinc-800/60 p-0 overflow-hidden select-none">
-                <div className="w-full h-full flex-1 flex items-center justify-center relative overflow-hidden bg-black">
+              <div className="w-full md:w-[64%] lg:w-[66%] xl:w-[68%] relative border-b md:border-b-0 md:border-r flex flex-col items-center justify-between h-auto min-h-[300px] md:h-full shrink-0 bg-white dark:bg-white border-zinc-200/80 dark:border-zinc-800/80 p-0 overflow-hidden select-none">
+                <div className="w-full h-full flex-1 flex items-center justify-center relative overflow-hidden bg-white p-3 sm:p-5 md:p-8">
                   {activeImage ? (
                     activeImage.includes('.pdf') || activeImage.includes('.ai') || activeImage.includes('.eps') ? (
-                      <div className="text-center p-8">
-                        <p className="text-xs md:text-sm font-medium mb-6 text-white">
+                      <div className="text-center p-8 bg-white rounded-2xl border border-zinc-200 shadow-xs">
+                        <p className="text-xs md:text-sm font-semibold mb-6 text-zinc-800">
                           File ini adalah Dokumen / Vektor ({activeImage.split('.').pop()?.toUpperCase()})
                         </p>
                         <a 
                           href={resolveImageUrl(activeImage)} 
                           target="_blank" 
                           rel="noopener noreferrer" 
-                          className="px-6 py-3 text-xs font-semibold inline-flex items-center justify-center gap-2 rounded-full hover:opacity-90 active:scale-95 shadow-md bg-white text-black transition-all cursor-pointer"
+                          className="px-6 py-3 text-xs font-semibold inline-flex items-center justify-center gap-2 rounded-full hover:opacity-90 active:scale-95 shadow-md bg-black text-white transition-all cursor-pointer"
                         >
                           <ExternalLink size={14} /> Buka / Unduh File
                         </a>
                       </div>
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center relative overflow-hidden bg-black p-0">
-                        {/* Skeleton Shimmer Background saat gambar sedang dimuat / berpindah */}
-                        <div className="absolute inset-0 bg-zinc-900 animate-shimmer pointer-events-none z-0" />
-                        <motion.img 
-                          key={activeImage + '_' + imageFitMode}
-                          initial={{ opacity: 0.8 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0.8 }}
-                          transition={{ duration: 0.12, ease: "easeOut" }}
-                          src={resolveImageUrl(activeImage)} 
-                          alt={selectedProject.title} 
-                          className={`w-full ${imageFitMode === 'cover' ? 'h-full object-cover' : 'h-auto max-h-[85vh] md:max-h-[92vh] object-contain'} block mx-auto transition-all duration-150 ease-out relative z-10`} 
-                          onError={handleImageError}
-                        />
+                      /* Bingkai Gambar Desktop & Mobile: Polos Berwarna Putih & Mengikuti Rasio Asli Gambar */
+                      <div className="w-full h-full flex items-center justify-center relative overflow-hidden bg-white p-0">
+                        <div 
+                          className="relative flex items-center justify-center bg-white rounded-2xl md:rounded-3xl p-1 md:p-2 border border-zinc-100 md:border-zinc-200/70 shadow-xs max-w-full max-h-full transition-all duration-150 overflow-hidden"
+                          style={{
+                            aspectRatio: imageAspectRatio ? `${imageAspectRatio}` : undefined,
+                            maxWidth: '100%',
+                            maxHeight: '100%',
+                          }}
+                        >
+                          {/* Soft Shimmer Placeholder saat memuat gambar */}
+                          <div className="absolute inset-0 bg-zinc-50 rounded-2xl animate-pulse pointer-events-none -z-0" />
+                          <motion.img 
+                            key={activeImage}
+                            initial={{ opacity: 0.85 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0.85 }}
+                            transition={{ duration: 0.15, ease: "easeOut" }}
+                            src={resolveImageUrl(activeImage)} 
+                            alt={selectedProject.title} 
+                            onLoad={(e) => {
+                              const el = e.currentTarget;
+                              if (el.naturalWidth && el.naturalHeight) {
+                                setImageAspectRatio(el.naturalWidth / el.naturalHeight);
+                              }
+                            }}
+                            className="w-auto h-auto max-w-full max-h-[72vh] md:max-h-[84vh] object-contain block mx-auto rounded-xl md:rounded-2xl relative z-10 bg-white" 
+                            onError={handleImageError}
+                          />
+                        </div>
 
                         {/* Navigasi Carousel Galeri jika gambar > 1 */}
                         {uniqueGalleryImages.length > 1 && (
@@ -808,53 +934,29 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                 e.stopPropagation();
                                 setActiveImageIndex((prev) => (prev > 0 ? prev - 1 : uniqueGalleryImages.length - 1));
                               }}
-                              className="absolute left-3 top-1/2 -translate-y-1/2 z-20 p-2 sm:p-2.5 rounded-full bg-black/60 hover:bg-black/85 text-white backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer"
+                              className="absolute left-3 md:left-5 top-1/2 -translate-y-1/2 z-20 p-2 sm:p-2.5 rounded-full bg-white/95 hover:bg-white text-zinc-900 border border-zinc-200/80 hover:border-zinc-400 backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer"
                               title="Gambar Sebelumnya"
                             >
-                              <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                              <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 text-black" />
                             </button>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setActiveImageIndex((prev) => (prev < uniqueGalleryImages.length - 1 ? prev + 1 : 0));
                               }}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 z-20 p-2 sm:p-2.5 rounded-full bg-black/60 hover:bg-black/85 text-white backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer"
+                              className="absolute right-3 md:right-5 top-1/2 -translate-y-1/2 z-20 p-2 sm:p-2.5 rounded-full bg-white/95 hover:bg-white text-zinc-900 border border-zinc-200/80 hover:border-zinc-400 backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer"
                               title="Gambar Berikutnya"
                             >
-                              <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                              <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-black" />
                             </button>
                           </>
                         )}
-                        
-                        {/* Control Bar Overlay di Atas Gambar: Toggle Fit Mode */}
-                        <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setImageFitMode((prev) => (prev === 'cover' ? 'contain' : 'cover'));
-                            }}
-                            className="px-2.5 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white/90 hover:text-white backdrop-blur-md text-[10px] font-medium transition-all shadow-md active:scale-95 flex items-center gap-1 cursor-pointer border border-white/10"
-                            title={imageFitMode === 'cover' ? 'Tampilkan utuh (Fit)' : 'Penuhi bingkai kanan-kiri (Cover)'}
-                          >
-                            {imageFitMode === 'cover' ? (
-                              <>
-                                <Minimize2 className="w-3 h-3" />
-                                <span>Muat Utuh</span>
-                              </>
-                            ) : (
-                              <>
-                                <Maximize2 className="w-3 h-3" />
-                                <span>Penuhi Bingkai</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
 
                         {/* Tombol Bagikan Gambar */}
                         <button
                           type="button"
                           onClick={(e) => handleShareProject(selectedProject, e)}
-                          className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-full bg-black/65 hover:bg-black/85 text-white backdrop-blur-md border border-white/20 flex items-center gap-1.5 shadow-lg cursor-pointer transition-all active:scale-90"
+                          className="absolute bottom-3 right-3 z-20 px-3 py-2 rounded-full bg-black/80 hover:bg-black text-white backdrop-blur-md border border-white/20 flex items-center gap-1.5 shadow-md cursor-pointer transition-all active:scale-90"
                           title="Bagikan Karya"
                         >
                           <Share2 className="w-4 h-4 stroke-[1.8]" />
@@ -863,13 +965,13 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                       </div>
                     )
                   ) : (
-                    <div className="w-full h-48 md:h-full bg-zinc-900 animate-shimmer" />
+                    <div className="w-full h-48 md:h-full bg-zinc-100 animate-pulse rounded-2xl" />
                   )}
                 </div>
 
                 {/* Thumbnail Galeri (Jika terdapat lebih dari 1 gambar) */}
                 {uniqueGalleryImages.length > 1 && (
-                  <div className="w-full px-4 py-2.5 bg-black/75 backdrop-blur-md border-t border-white/10 shrink-0 flex items-center justify-between gap-3">
+                  <div className="w-full px-4 py-2.5 bg-white border-t border-zinc-200/80 shrink-0 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                       {uniqueGalleryImages.map((img, idx) => (
                         <button
@@ -878,20 +980,22 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           onClick={() => setActiveImageIndex(idx)}
                           className={`relative w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-lg overflow-hidden border-2 transition-all duration-150 cursor-pointer ${
                             activeImageIndex === idx 
-                              ? 'border-white ring-2 ring-white/30 scale-105 opacity-100' 
-                              : 'border-transparent opacity-50 hover:opacity-100'
+                              ? 'border-black ring-2 ring-black/20 scale-105 opacity-100' 
+                              : 'border-zinc-200 opacity-60 hover:opacity-100'
                           }`}
                         >
                           <img
                             src={resolveImageUrl(img)}
                             alt={`Preview ${idx + 1}`}
+                            loading="lazy"
+                            decoding="async"
                             className="w-full h-full object-cover"
                             onError={handleImageError}
                           />
                         </button>
                       ))}
                     </div>
-                    <span className="text-[10px] text-white/70 font-semibold shrink-0 whitespace-nowrap hidden sm:inline">
+                    <span className="text-[10px] text-zinc-600 font-semibold shrink-0 whitespace-nowrap hidden sm:inline">
                       {activeImageIndex + 1} / {uniqueGalleryImages.length}
                     </span>
                   </div>
@@ -1129,12 +1233,12 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                       </h4>
                     </div>
                     <span className="text-[9px] md:text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
-                      {otherProjects.length} karya
+                      {displayedOtherProjects.length} dari {otherProjects.length} karya
                     </span>
                   </div>
 
                   <div className="columns-2 gap-2 [column-fill:_balance]">
-                    {otherProjects.map((item, oIdx) => {
+                    {displayedOtherProjects.map((item, oIdx) => {
                       return (
                         <div 
                           key={item.id ? `other-${item.id}-${oIdx}` : `other-idx-${oIdx}`} 
