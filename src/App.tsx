@@ -667,9 +667,9 @@ export default function App() {
         <PromoPosterWidget currentView={view} onNavigateToStore={() => handleSetView('store')} />
         <CookieBanner />
         
-        <main className={view !== 'home' && view !== 'admin' ? 'pt-16 md:pt-20' : ''}>
+        <main className={view !== 'home' ? 'pt-20 sm:pt-24 md:pt-28' : ''}>
           {view !== 'home' && view !== 'admin' && (
-            <div className="w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 pt-3 md:pt-5 pb-1">
+            <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18 pt-1 sm:pt-2 pb-2">
               <button
                 type="button"
                 onClick={() => handleSetView('home')}

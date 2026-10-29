@@ -433,7 +433,7 @@ Terima kasih.`;
   const inputClassDesktop = "w-full pl-11 lg:pl-12 pr-4 py-3.5 bg-white/70 dark:bg-black/40 backdrop-blur-xs hover:bg-white/90 dark:hover:bg-black/60 focus:bg-white dark:focus:bg-black/80 border border-zinc-200/80 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-black dark:focus:ring-white outline-none transition-all dark:text-white text-sm font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500";
 
   return (
-    <section id="store" className={`pt-5 md:pt-8 ${isOrderView ? 'pb-16 min-h-screen' : 'pb-2 md:pb-3 min-h-0'} bg-white dark:bg-[#0A0A0A] relative`}>
+    <section id="store" className={`pt-5 md:pt-8 ${isOrderView ? 'pb-16 min-h-screen' : 'pb-2 md:pb-3 min-h-0'} bg-white dark:bg-[#0A0A0A] relative scroll-mt-24 md:scroll-mt-32`}>
       <AnimatePresence>
         {toastMsg && (
           <motion.div

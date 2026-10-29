@@ -24,7 +24,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-7 mb-6 md:mb-7">
           
           {/* Column 1: Brand, Tagline & Copyright Law (5 cols on Desktop) */}
-          <div className="col-span-1 md:col-span-5 flex flex-col gap-2.5">
+          <div className="col-span-1 md:col-span-5 flex flex-col gap-3">
             <button 
               onClick={(e) => scrollToSection(e, 'top')} 
               className="group relative flex items-center justify-start hover:opacity-85 active:scale-95 transition-all select-none w-fit focus:outline-none" 
@@ -33,19 +33,10 @@ export default function Footer() {
               <BrandLogo className="h-7 sm:h-7.5 md:h-7.5" />
             </button>
 
-            {/* Availability Indicator */}
-            <div className="inline-flex items-center gap-2 text-[11px] font-mono text-zinc-600 dark:text-zinc-400">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span>Tersedia untuk Proyek & Kolaborasi</span>
-            </div>
-
-            {/* Copyright Law Box */}
-            <div className="text-[10.5px] text-zinc-500 dark:text-zinc-400 font-normal leading-relaxed max-w-sm space-y-1 bg-zinc-200/40 dark:bg-zinc-900/40 p-2.5 rounded-lg border border-zinc-200/60 dark:border-zinc-800/60">
+            {/* Copyright Law - Plain Text Without Shape/Background */}
+            <div className="text-[10.5px] text-zinc-500 dark:text-zinc-400 font-normal leading-relaxed max-w-sm space-y-1">
               <span className="block font-semibold text-zinc-700 dark:text-zinc-300">
-                Undang-Undang Perlindungan Hak Cipta:
+                Undang Undang Perlindungan Hak Cipta:
               </span>
               <p className="text-zinc-500 dark:text-zinc-400 text-left">
                 Seluruh konten, desain, dan materi pada situs ini dilindungi oleh UU No. 28 Tahun 2014 tentang Hak Cipta. Dilarang menjiplak, memperbanyak, atau mendistribusikan karya tanpa izin tertulis dari ALFREELNC.
@@ -55,8 +46,7 @@ export default function Footer() {
 
           {/* Column 2: Quick Links (3 cols on Desktop) */}
           <div className="col-span-1 md:col-span-3 flex flex-col gap-2.5">
-            <h4 className="text-[11px] font-mono font-bold uppercase tracking-widest text-black dark:text-white flex items-center gap-2">
-              <span className="w-2.5 h-[1.5px] bg-black dark:bg-white inline-block"></span>
+            <h4 className="text-[11px] font-mono font-bold uppercase tracking-widest text-black dark:text-white">
               Pintasan Web
             </h4>
             <nav className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-0.5">
@@ -107,26 +97,22 @@ export default function Footer() {
 
           {/* Column 3: Social Media & Contacts (4 cols on Desktop) */}
           <div className="col-span-1 md:col-span-4 flex flex-col gap-2.5">
-            <h4 className="text-[11px] font-mono font-bold uppercase tracking-widest text-black dark:text-white flex items-center gap-2">
-              <span className="w-2.5 h-[1.5px] bg-black dark:bg-white inline-block"></span>
+            <h4 className="text-[11px] font-mono font-bold uppercase tracking-widest text-black dark:text-white">
               Kontak & Media Sosial
             </h4>
             
-            {/* Simple, Solid Small Icons with Neat Alignment */}
-            <div className="flex flex-col gap-2 pt-0.5">
+            {/* Simple Solid Gray Icons without brand colors or account text */}
+            <div className="flex items-center gap-2.5 pt-1">
               {/* WhatsApp */}
               <a 
                 href="https://wa.me/6282394549268"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors group w-fit"
-                title="Chat WhatsApp: +62 823-9454-9268"
+                className="w-7 h-7 rounded-md bg-zinc-400 hover:bg-zinc-500 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-white flex items-center justify-center transition-all hover:scale-105 shadow-xs"
+                title="WhatsApp"
                 aria-label="WhatsApp"
               >
-                <span className="w-6 h-6 rounded-md bg-[#25D366] text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                  <MessageCircle className="w-3.5 h-3.5" />
-                </span>
-                <span className="font-medium">+62 823-9454-9268</span>
+                <MessageCircle className="w-3.5 h-3.5" />
               </a>
 
               {/* Instagram */}
@@ -134,27 +120,21 @@ export default function Footer() {
                 href="https://instagram.com/alfreelnc"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors group w-fit"
-                title="Instagram: @alfreelnc"
+                className="w-7 h-7 rounded-md bg-zinc-400 hover:bg-zinc-500 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-white flex items-center justify-center transition-all hover:scale-105 shadow-xs"
+                title="Instagram"
                 aria-label="Instagram"
               >
-                <span className="w-6 h-6 rounded-md bg-[#E1306C] text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                  <Instagram className="w-3.5 h-3.5" />
-                </span>
-                <span className="font-medium">@alfreelnc</span>
+                <Instagram className="w-3.5 h-3.5" />
               </a>
 
               {/* Email */}
               <a 
                 href="mailto:alfreelnc.desigh@gmail.com"
-                className="inline-flex items-center gap-2.5 text-xs text-zinc-600 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors group w-fit"
-                title="Email: alfreelnc.desigh@gmail.com"
+                className="w-7 h-7 rounded-md bg-zinc-400 hover:bg-zinc-500 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-white flex items-center justify-center transition-all hover:scale-105 shadow-xs"
+                title="Email"
                 aria-label="Email"
               >
-                <span className="w-6 h-6 rounded-md bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
-                  <Mail className="w-3.5 h-3.5" />
-                </span>
-                <span className="font-medium truncate max-w-[210px] sm:max-w-none">alfreelnc.desigh@gmail.com</span>
+                <Mail className="w-3.5 h-3.5" />
               </a>
             </div>
           </div>
