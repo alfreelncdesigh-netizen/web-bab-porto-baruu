@@ -590,86 +590,179 @@ export default function BlogAdmin() {
           </div>
         </motion.form>
       ) : (
-        <div className="bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-x-auto shadow-sm">
-          <table className="w-full min-w-[300px] md:min-w-[700px] text-left text-[10px] md:text-xs text-black dark:text-white">
-            <thead className="bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
-              <tr>
-                <th className="p-2 md:p-5 font-semibold w-16">Cover</th>
-                <th className="p-2 md:p-5 font-semibold">Judul</th>
-                <th className="p-2 md:p-5 font-semibold">Kategori</th>
-                <th className="p-2 md:p-5 font-semibold">Tanggal</th>
-                <th className="p-2 md:p-5 font-semibold text-center">Status</th>
-                <th className="p-2 md:p-5 font-semibold text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {posts.map(post => (
-                <tr
-                  key={post.id}
-                  className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-[#111111]/50 transition-colors group"
-                >
-                  <td className="p-4 w-16">
-                    <div className="w-10 h-10 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shrink-0">
-                      {post.image ? (
-                        <img
-                          src={resolveImageUrl(post.image)}
-                          onError={handleImageError}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-zinc-400 text-[10px]">
-                          No Img
-                        </div>
+        <div className="space-y-4">
+          {/* Mobile Card View (md:hidden) */}
+          <div className="md:hidden space-y-3">
+            {posts.map(post => (
+              <div
+                key={post.id}
+                className="bg-white dark:bg-[#101010] border border-zinc-200/80 dark:border-zinc-800 p-3.5 rounded-2xl shadow-xs space-y-3"
+              >
+                <div className="flex items-start gap-3">
+                  {/* Thumbnail Cover */}
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60 shrink-0">
+                    {post.image ? (
+                      <img
+                        src={resolveImageUrl(post.image)}
+                        onError={handleImageError}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-zinc-400 text-[10px]">
+                        No Img
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                        {post.category || 'Umum'}
+                      </span>
+                      <button
+                        onClick={() => togglePublish(post.id)}
+                        className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-md transition-all active:scale-95 ${
+                          post.published
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400'
+                            : 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400'
+                        }`}
+                      >
+                        {post.published ? 'Publik' : 'Draft'}
+                      </button>
+                      {post.isCollaboration && (
+                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-400 flex items-center gap-1">
+                          <Handshake size={10} /> Mitra
+                        </span>
                       )}
                     </div>
-                  </td>
-                  <td className="p-2 md:p-5 font-bold whitespace-normal md:truncate min-w-[120px]" title={post.title}>
-                    {post.title}
-                  </td>
-                  <td className="p-2 md:p-5 text-black dark:text-zinc-400">{post.category}</td>
-                  <td className="p-2 md:p-5 text-black dark:text-zinc-400">
-                    {new Date(post.date).toLocaleDateString('id-ID')}
-                  </td>
-                  <td className="p-2 md:p-5 text-center">
-                    <button
-                      onClick={() => togglePublish(post.id)}
-                      className={`px-4 py-1.5 text-[10px] font-semibold tracking-widest rounded-2xl transition-all active:scale-95 border ${
-                        post.published
-                          ? 'bg-transparent text-black border-black dark:text-white dark:border-zinc-600 hover:bg-black hover:text-white dark:hover:bg-sky-400/10'
-                          : 'bg-transparent text-black border-zinc-300 dark:border-zinc-800/50 dark:text-zinc-500 hover:border-zinc-500 dark:hover:border-zinc-500'
-                      }`}
-                    >
-                      {post.published ? 'Publik' : 'Draft'}
-                    </button>
-                  </td>
-                  <td className="p-2 md:p-5 flex justify-end gap-2">
-                    <button
-                      onClick={() => setEditingPost(post)}
-                      className="w-8 h-8 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-400 hover:bg-black hover:text-white dark:hover:bg-sky-400 dark:hover:text-[#0A0A0A] rounded-2xl transition-all"
-                      title="Edit"
-                    >
-                      <Edit size={14} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(post)}
-                      className="w-8 h-8 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 hover:bg-red-500 hover:text-white dark:hover:bg-red-500 dark:hover:text-white rounded-2xl transition-all"
-                      title="Hapus"
-                    >
-                      <Trash size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {posts.length === 0 && (
+                    <h4 className="text-sm font-bold text-black dark:text-white leading-snug line-clamp-2">
+                      {post.title}
+                    </h4>
+                    <span className="text-[10px] text-zinc-400 font-mono block mt-0.5">
+                      {new Date(post.date).toLocaleDateString('id-ID', { dateStyle: 'medium' })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Mobile Action Buttons Bar */}
+                <div className="pt-2.5 border-t border-zinc-100 dark:border-zinc-800/60 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setEditingPost(post)}
+                    className="flex items-center justify-center gap-1.5 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black rounded-xl text-xs font-semibold text-black dark:text-white transition-all active:scale-95"
+                    title="Edit Artikel"
+                  >
+                    <Edit size={14} />
+                    <span>Edit Artikel</span>
+                  </button>
+                  <button
+                    onClick={() => handleDelete(post)}
+                    className="flex items-center justify-center gap-1.5 py-2.5 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 hover:bg-red-600 hover:text-white rounded-xl text-xs font-semibold transition-all active:scale-95"
+                    title="Hapus Artikel"
+                  >
+                    <Trash size={14} />
+                    <span>Hapus</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+            {posts.length === 0 && (
+              <div className="p-8 text-center text-zinc-500 font-bold bg-zinc-50 dark:bg-zinc-900/40 rounded-2xl border border-zinc-200/60 dark:border-zinc-800/60 text-xs">
+                Belum ada data postingan blog.
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Table View (hidden on mobile) */}
+          <div className="hidden md:block bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-x-auto shadow-sm">
+            <table className="w-full min-w-[700px] text-left text-xs text-black dark:text-white">
+              <thead className="bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
                 <tr>
-                  <td colSpan={6} className="p-12 text-center text-black dark:text-zinc-400 font-bold">
-                    Belum ada data postingan.
-                  </td>
+                  <th className="p-4 md:p-5 font-semibold w-20">Cover</th>
+                  <th className="p-4 md:p-5 font-semibold">Judul</th>
+                  <th className="p-4 md:p-5 font-semibold">Kategori</th>
+                  <th className="p-4 md:p-5 font-semibold">Tanggal</th>
+                  <th className="p-4 md:p-5 font-semibold text-center">Status</th>
+                  <th className="p-4 md:p-5 font-semibold text-right">Aksi</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {posts.map(post => (
+                  <tr
+                    key={post.id}
+                    className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-[#111111]/50 transition-colors group"
+                  >
+                    <td className="p-4 w-20">
+                      <div className="w-12 h-12 rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shrink-0">
+                        {post.image ? (
+                          <img
+                            src={resolveImageUrl(post.image)}
+                            onError={handleImageError}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-zinc-400 text-[10px]">
+                            No Img
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-4 md:p-5 font-bold truncate max-w-[280px]" title={post.title}>
+                      <div className="flex items-center gap-2">
+                        <span>{post.title}</span>
+                        {post.isCollaboration && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 font-semibold uppercase">
+                            Mitra
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-4 md:p-5 text-zinc-600 dark:text-zinc-400">{post.category}</td>
+                    <td className="p-4 md:p-5 text-zinc-600 dark:text-zinc-400">
+                      {new Date(post.date).toLocaleDateString('id-ID')}
+                    </td>
+                    <td className="p-4 md:p-5 text-center">
+                      <button
+                        onClick={() => togglePublish(post.id)}
+                        className={`px-3.5 py-1.5 text-xs font-semibold rounded-xl transition-all active:scale-95 cursor-pointer border ${
+                          post.published
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800'
+                            : 'bg-zinc-100 text-zinc-600 border-zinc-300 dark:bg-zinc-900 dark:text-zinc-400 dark:border-zinc-800'
+                        }`}
+                      >
+                        {post.published ? 'Publik' : 'Draft'}
+                      </button>
+                    </td>
+                    <td className="p-4 md:p-5 flex justify-end gap-2 items-center">
+                      <button
+                        onClick={() => setEditingPost(post)}
+                        className="w-9 h-9 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-300 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black rounded-xl transition-all active:scale-95 cursor-pointer shadow-2xs"
+                        title="Edit"
+                      >
+                        <Edit size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(post)}
+                        className="w-9 h-9 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-2xs"
+                        title="Hapus"
+                      >
+                        <Trash size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {posts.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="p-12 text-center text-zinc-500 font-bold">
+                      Belum ada data postingan.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

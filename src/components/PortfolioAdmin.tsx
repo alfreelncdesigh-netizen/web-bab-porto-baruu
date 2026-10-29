@@ -763,87 +763,199 @@ export default function PortfolioAdmin() {
           </div>
         </motion.form>
       ) : (
-        <div className="bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-x-auto shadow-sm">
-          <table className="w-full min-w-[300px] md:min-w-[700px] text-left text-[10px] md:text-xs text-black dark:text-white">
-            <thead className="bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
-              <tr>
-                <th className="p-2 md:p-5 font-semibold">Pratinjau</th>
-                <th className="p-2 md:p-5 font-semibold">Judul</th>
-                <th className="p-2 md:p-5 font-semibold">Kategori</th>
-                <th className="p-2 md:p-5 font-semibold text-right">Aksi</th>
-              </tr>
-            </thead>
-            <tbody>
-              {projects.map(project => (
-                <tr
-                  key={project.id}
-                  className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-[#111111]/50 transition-colors group"
-                >
-                  <td className="p-2 md:p-5">
-                    <div className="w-16 h-12 bg-zinc-200 dark:bg-zinc-800 rounded-2xl overflow-hidden flex items-center justify-center">
-                      <img
-                        src={
-                          project.image?.includes('.pdf')
-                            ? 'https://via.placeholder.com/150?text=PDF'
-                            : project.image?.includes('.eps') || project.image?.includes('.ai')
-                            ? 'https://via.placeholder.com/150?text=Vektor'
-                            : resolveImageUrl(project.image)
-                        }
-                        alt={project.title}
-                        className="w-full h-full object-cover"
-                        onError={e => (e.currentTarget.src = 'https://via.placeholder.com/150?text=Err')}
-                      />
+        <div className="space-y-4">
+          {/* Mobile Card View (md:hidden) */}
+          <div className="md:hidden space-y-3">
+            {projects.map(project => (
+              <div 
+                key={project.id}
+                className="bg-white dark:bg-[#101010] border border-zinc-200/80 dark:border-zinc-800 p-3.5 rounded-2xl shadow-xs space-y-3"
+              >
+                <div className="flex items-start gap-3">
+                  {/* Thumbnail */}
+                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-hidden shrink-0 border border-zinc-200/60 dark:border-zinc-700/60">
+                    <img
+                      src={
+                        project.image?.includes('.pdf')
+                          ? 'https://via.placeholder.com/150?text=PDF'
+                          : project.image?.includes('.eps') || project.image?.includes('.ai')
+                          ? 'https://via.placeholder.com/150?text=Vektor'
+                          : resolveImageUrl(project.image)
+                      }
+                      alt={project.title}
+                      className="w-full h-full object-cover"
+                      onError={e => (e.currentTarget.src = 'https://via.placeholder.com/150?text=Err')}
+                    />
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
+                        {project.category}
+                      </span>
+                      {project.draft ? (
+                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-md bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400">
+                          Draft
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400">
+                          Publik
+                        </span>
+                      )}
+                      {project.isCollaboration && (
+                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-400 flex items-center gap-1">
+                          <Handshake size={10} /> Mitra
+                        </span>
+                      )}
                     </div>
-                  </td>
-                  <td className="p-2 md:p-5 font-bold whitespace-normal md:truncate min-w-[120px]" title={project.title}>
-                    {project.title}
-                  </td>
-                  <td className="p-2 md:p-5 text-black dark:text-zinc-400">{project.category}</td>
-                  <td className="p-2 md:p-5 flex justify-end gap-1 md:gap-2 items-center">
-                    <button
-                      onClick={() => setEditingProject(project)}
-                      className="w-8 h-8 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-400 hover:bg-black hover:text-white dark:hover:bg-sky-400 dark:hover:text-[#0A0A0A] rounded-2xl transition-all"
-                      title="Edit"
-                    >
-                      <Edit size={14} />
-                    </button>
-                    <button
-                      onClick={() => setArchiveItemId(project.id.toString())}
-                      className="w-8 h-8 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-400 hover:bg-black hover:text-white dark:hover:bg-blue-400 dark:hover:text-[#0A0A0A] rounded-2xl transition-all"
-                      title="Arsipkan"
-                    >
-                      <Archive size={14} />
-                    </button>
-                    <button
-                      onClick={() => handleToggleDraft(project)}
-                      className={`w-8 h-8 flex items-center justify-center rounded-2xl transition-all ${
-                        project.draft
-                          ? 'bg-zinc-800 text-white dark:bg-zinc-700'
-                          : 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-400 hover:bg-black hover:text-white dark:hover:bg-sky-400 dark:hover:text-[#0A0A0A]'
-                      }`}
-                      title={project.draft ? 'Publikasikan' : 'Jadikan Draft'}
-                    >
-                      {project.draft ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                    <button
-                      onClick={() => handleDelete(project)}
-                      className="w-8 h-8 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 hover:bg-red-500 hover:text-white dark:hover:bg-red-500 dark:hover:text-white rounded-2xl transition-all"
-                      title="Hapus"
-                    >
-                      <Trash size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {projects.length === 0 && (
+                    <h4 className="text-sm font-bold text-black dark:text-white leading-snug line-clamp-2">
+                      {project.title}
+                    </h4>
+                    {project.date && (
+                      <span className="text-[10px] text-zinc-400 font-mono block mt-0.5">{project.date}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Mobile Action Buttons Bar */}
+                <div className="pt-2.5 border-t border-zinc-100 dark:border-zinc-800/60 grid grid-cols-4 gap-2">
+                  <button
+                    onClick={() => setEditingProject(project)}
+                    className="flex items-center justify-center gap-1.5 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black rounded-xl text-xs font-semibold text-black dark:text-white transition-all active:scale-95"
+                    title="Edit Karya"
+                  >
+                    <Edit size={14} />
+                    <span className="text-[11px]">Edit</span>
+                  </button>
+                  <button
+                    onClick={() => setArchiveItemId(project.id.toString())}
+                    className="flex items-center justify-center gap-1.5 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-blue-600 hover:text-white rounded-xl text-xs font-semibold text-zinc-700 dark:text-zinc-300 transition-all active:scale-95"
+                    title="Arsipkan"
+                  >
+                    <Archive size={14} />
+                    <span className="text-[11px]">Arsip</span>
+                  </button>
+                  <button
+                    onClick={() => handleToggleDraft(project)}
+                    className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 ${
+                      project.draft
+                        ? 'bg-zinc-800 text-white dark:bg-zinc-700'
+                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
+                    }`}
+                    title={project.draft ? 'Publikasikan' : 'Jadikan Draft'}
+                  >
+                    {project.draft ? <EyeOff size={14} /> : <Eye size={14} />}
+                    <span className="text-[11px]">{project.draft ? 'Publik' : 'Draft'}</span>
+                  </button>
+                  <button
+                    onClick={() => handleDelete(project)}
+                    className="flex items-center justify-center gap-1.5 py-2.5 bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 hover:bg-red-600 hover:text-white rounded-xl text-xs font-semibold transition-all active:scale-95"
+                    title="Hapus"
+                  >
+                    <Trash size={14} />
+                    <span className="text-[11px]">Hapus</span>
+                  </button>
+                </div>
+              </div>
+            ))}
+            {projects.length === 0 && (
+              <div className="p-8 text-center text-zinc-500 font-bold bg-zinc-50 dark:bg-zinc-900/40 rounded-2xl border border-zinc-200/60 dark:border-zinc-800/60 text-xs">
+                Belum ada karya di Cloud.
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Table View (hidden on mobile) */}
+          <div className="hidden md:block bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-x-auto shadow-sm">
+            <table className="w-full min-w-[700px] text-left text-xs text-black dark:text-white">
+              <thead className="bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
                 <tr>
-                  <td colSpan={4} className="p-12 text-center text-black dark:text-zinc-400 font-bold">
-                    Belum ada karya di Cloud.
-                  </td>
+                  <th className="p-4 md:p-5 font-semibold">Pratinjau</th>
+                  <th className="p-4 md:p-5 font-semibold">Judul</th>
+                  <th className="p-4 md:p-5 font-semibold">Kategori</th>
+                  <th className="p-4 md:p-5 font-semibold text-right">Aksi</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {projects.map(project => (
+                  <tr
+                    key={project.id}
+                    className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-[#111111]/50 transition-colors group"
+                  >
+                    <td className="p-4 md:p-5">
+                      <div className="w-16 h-12 bg-zinc-200 dark:bg-zinc-800 rounded-xl overflow-hidden flex items-center justify-center border border-zinc-200 dark:border-zinc-700">
+                        <img
+                          src={
+                            project.image?.includes('.pdf')
+                              ? 'https://via.placeholder.com/150?text=PDF'
+                              : project.image?.includes('.eps') || project.image?.includes('.ai')
+                              ? 'https://via.placeholder.com/150?text=Vektor'
+                              : resolveImageUrl(project.image)
+                          }
+                          alt={project.title}
+                          className="w-full h-full object-cover"
+                          onError={e => (e.currentTarget.src = 'https://via.placeholder.com/150?text=Err')}
+                        />
+                      </div>
+                    </td>
+                    <td className="p-4 md:p-5 font-bold truncate max-w-[280px]" title={project.title}>
+                      <div className="flex items-center gap-2">
+                        <span>{project.title}</span>
+                        {project.isCollaboration && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 font-semibold uppercase">
+                            Mitra
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-4 md:p-5 text-zinc-600 dark:text-zinc-400">{project.category}</td>
+                    <td className="p-4 md:p-5 flex justify-end gap-2 items-center">
+                      <button
+                        onClick={() => setEditingProject(project)}
+                        className="w-9 h-9 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-300 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black rounded-xl transition-all active:scale-95 cursor-pointer shadow-2xs"
+                        title="Edit"
+                      >
+                        <Edit size={14} />
+                      </button>
+                      <button
+                        onClick={() => setArchiveItemId(project.id.toString())}
+                        className="w-9 h-9 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-300 hover:bg-blue-600 hover:text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-2xs"
+                        title="Arsipkan"
+                      >
+                        <Archive size={14} />
+                      </button>
+                      <button
+                        onClick={() => handleToggleDraft(project)}
+                        className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all active:scale-95 cursor-pointer shadow-2xs ${
+                          project.draft
+                            ? 'bg-zinc-800 text-white dark:bg-zinc-700'
+                            : 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-300 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black'
+                        }`}
+                        title={project.draft ? 'Publikasikan' : 'Jadikan Draft'}
+                      >
+                        {project.draft ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(project)}
+                        className="w-9 h-9 flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-2xs"
+                        title="Hapus"
+                      >
+                        <Trash size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {projects.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="p-12 text-center text-zinc-500 font-bold">
+                      Belum ada karya di Cloud.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

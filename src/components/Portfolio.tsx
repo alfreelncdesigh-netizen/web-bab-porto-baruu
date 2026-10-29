@@ -238,6 +238,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   useEffect(() => {
     setImageAspectRatio(null);
   }, [selectedProject, activeImageIndex]);
+
+  const [isFullscreenLightbox, setIsFullscreenLightbox] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showSharePopup, setShowSharePopup] = useState(false);
   const [sharingProject, setSharingProject] = useState<Project | null>(null);
@@ -873,15 +875,16 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               <div ref={modalTopRef} id="portfolio-modal-top" className="w-full h-0 opacity-0 pointer-events-none absolute top-0 left-0" />
 
               {/* AREA GAMBAR & GALERI:
-                  - Pada desktop: Rasio gambar sesuai dengan bingkai gambar, bingkai hanya polos berwarna putih, dan mengikuti bentuk rasio asli gambar
+                  - Pada mobile: Rasio full kanan dan kiri serta atas layar (edge-to-edge flush ke atas tanpa margin/padding)
+                  - Pada desktop: Rasio gambar sesuai dengan bingkai gambar, bingkai polos putih dan mengikuti rasio asli gambar
                   - Transisi super halus dan cepat
                   - Carousel galeri jika memiliki lebih dari 1 gambar
               */}
-              <div className="w-full md:w-[64%] lg:w-[66%] xl:w-[68%] relative border-b md:border-b-0 md:border-r flex flex-col items-center justify-between h-auto min-h-[300px] md:h-full shrink-0 bg-white dark:bg-white border-zinc-200/80 dark:border-zinc-800/80 p-0 overflow-hidden select-none">
-                <div className="w-full h-full flex-1 flex items-center justify-center relative overflow-hidden bg-white p-3 sm:p-5 md:p-8">
+              <div className="w-full md:w-[64%] lg:w-[66%] xl:w-[68%] relative border-b md:border-b-0 md:border-r flex flex-col items-center justify-between h-auto md:h-full shrink-0 bg-white dark:bg-white border-zinc-200/80 dark:border-zinc-800/80 p-0 overflow-hidden select-none">
+                <div className="w-full h-full flex-1 flex items-start md:items-center justify-center relative overflow-hidden bg-white p-0 md:p-3 lg:p-4">
                   {activeImage ? (
                     activeImage.includes('.pdf') || activeImage.includes('.ai') || activeImage.includes('.eps') ? (
-                      <div className="text-center p-8 bg-white rounded-2xl border border-zinc-200 shadow-xs">
+                      <div className="text-center p-8 bg-white rounded-2xl border border-zinc-200 shadow-xs my-auto">
                         <p className="text-xs md:text-sm font-semibold mb-6 text-zinc-800">
                           File ini adalah Dokumen / Vektor ({activeImage.split('.').pop()?.toUpperCase()})
                         </p>
@@ -895,10 +898,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                         </a>
                       </div>
                     ) : (
-                      /* Bingkai Gambar Desktop & Mobile: Polos Berwarna Putih & Mengikuti Rasio Asli Gambar */
-                      <div className="w-full h-full flex items-center justify-center relative overflow-hidden bg-white p-0">
+                      /* Bingkai Gambar: Polos Berwarna Putih, Full Kanan & Kiri Serta Atas Layar di Mobile, Mengikuti Rasio Asli Gambar di Desktop */
+                      <div className="w-full h-full flex items-start md:items-center justify-center relative overflow-hidden bg-white p-0">
                         <div 
-                          className="relative flex items-center justify-center bg-white rounded-2xl md:rounded-3xl p-1 md:p-2 border border-zinc-100 md:border-zinc-200/70 shadow-xs max-w-full max-h-full transition-all duration-150 overflow-hidden"
+                          className="relative flex items-center justify-center bg-white rounded-none md:rounded-3xl p-0 md:p-2 border-0 md:border md:border-zinc-200/70 shadow-none md:shadow-xs w-full md:w-auto max-w-full max-h-full transition-all duration-150 overflow-hidden"
                           style={{
                             aspectRatio: imageAspectRatio ? `${imageAspectRatio}` : undefined,
                             maxWidth: '100%',
@@ -906,7 +909,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           }}
                         >
                           {/* Soft Shimmer Placeholder saat memuat gambar */}
-                          <div className="absolute inset-0 bg-zinc-50 rounded-2xl animate-pulse pointer-events-none -z-0" />
+                          <div className="absolute inset-0 bg-zinc-50 rounded-none md:rounded-2xl animate-pulse pointer-events-none -z-0" />
                           <motion.img 
                             key={activeImage}
                             initial={{ opacity: 0.85 }}
@@ -921,10 +924,26 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                 setImageAspectRatio(el.naturalWidth / el.naturalHeight);
                               }
                             }}
-                            className="w-auto h-auto max-w-full max-h-[72vh] md:max-h-[84vh] object-contain block mx-auto rounded-xl md:rounded-2xl relative z-10 bg-white" 
+                            onClick={() => setIsFullscreenLightbox(true)}
+                            className="w-full md:w-auto h-auto max-w-full max-h-none md:max-h-[88vh] object-contain block mx-auto rounded-none md:rounded-2xl relative z-10 bg-white cursor-zoom-in" 
                             onError={handleImageError}
+                            title="Klik untuk melihat layar penuh"
                           />
                         </div>
+
+                        {/* Tombol Perbesar Layar Penuh */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsFullscreenLightbox(true);
+                          }}
+                          className="absolute top-3 left-3 z-20 p-2 sm:p-2.5 rounded-full bg-white/90 hover:bg-white text-zinc-900 border border-zinc-200/80 hover:border-zinc-400 backdrop-blur-md transition-all shadow-md active:scale-90 cursor-pointer flex items-center gap-1.5"
+                          title="Tampilan Layar Penuh"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5 text-black" />
+                          <span className="text-[10px] font-semibold hidden sm:inline">Layar Penuh</span>
+                        </button>
 
                         {/* Navigasi Carousel Galeri jika gambar > 1 */}
                         {uniqueGalleryImages.length > 1 && (
@@ -965,7 +984,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                       </div>
                     )
                   ) : (
-                    <div className="w-full h-48 md:h-full bg-zinc-100 animate-pulse rounded-2xl" />
+                    <div className="w-full h-48 md:h-full bg-zinc-100 animate-pulse rounded-none md:rounded-2xl" />
                   )}
                 </div>
 
@@ -1314,6 +1333,45 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           >
             <Check className="w-4 h-4 text-emerald-400 dark:text-emerald-600 stroke-[3] shrink-0" />
             <span className="truncate">{shareToast}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Dedicated Fullscreen Image Lightbox: Full Kanan, Kiri, dan Layar Penuh */}
+      <AnimatePresence>
+        {isFullscreenLightbox && activeImage && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            onClick={() => setIsFullscreenLightbox(false)}
+            className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-md flex items-center justify-center p-0 md:p-4 select-none cursor-zoom-out"
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsFullscreenLightbox(false);
+              }}
+              className="fixed top-3 right-3 sm:top-4 sm:right-4 z-[310] p-2.5 sm:p-3 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md border border-white/20 transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-xl"
+              aria-label="Tutup Tampilan Layar Penuh"
+            >
+              <X className="w-5 h-5 md:w-6 md:h-6" />
+            </button>
+            <div className="w-full h-full flex items-center justify-center p-1 sm:p-4">
+              <motion.img
+                initial={{ scale: 0.96 }}
+                animate={{ scale: 1 }}
+                exit={{ scale: 0.96 }}
+                transition={{ duration: 0.15 }}
+                src={resolveImageUrl(activeImage)}
+                alt={selectedProject?.title || 'Karya Desain'}
+                onError={handleImageError}
+                className="w-auto h-auto max-w-full max-h-[96vh] md:max-h-[98vh] object-contain rounded-none md:rounded-lg shadow-2xl block mx-auto"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { getStoredExperiences, saveStoredExperiences } from '../lib/contentStorage';
-import { Briefcase, ArrowRight, X, Camera, Handshake } from 'lucide-react';
+import { Briefcase, ArrowRight, X, Camera, Handshake, Info } from 'lucide-react';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { 
   sectionStaggerContainer, 
@@ -17,6 +17,7 @@ export default function Experience() {
   const [loading, setLoading] = useState(() => getStoredExperiences().length === 0);
   const [selectedImg, setSelectedImg] = useState<{url: string, exp: any} | null>(null);
   const [documentationExp, setDocumentationExp] = useState<any | null>(null);
+  const [showExpDetail, setShowExpDetail] = useState(false);
 
   useEffect(() => {
     const handleUpdate = (e: any) => {
@@ -275,111 +276,154 @@ export default function Experience() {
         </div>
       )}
 
-      {/* Fullscreen Image Modal */}
+      {/* Modal Sertifikat: Tampilan Rasio Penuh Sesuai Ukuran Asli Gambar */}
       <AnimatePresence>
-      {selectedImg && (
-        <motion.div 
-          initial={{ opacity: 0, y: 50 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 50 }}
-          className="fixed inset-0 z-[200] bg-white dark:bg-[#0A0A0A] flex flex-col md:flex-row overflow-y-auto md:overflow-hidden custom-scrollbar"
-        >
-        <button 
-          onClick={() => setSelectedImg(null)}
-          className="fixed md:absolute top-4 right-4 md:top-6 md:right-6 z-[210] p-2.5 rounded-full bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border border-zinc-200 dark:border-zinc-700 text-black dark:text-white hover:scale-105 transition-transform shadow-md"
-        >
-          <X className="w-5 h-5" />
-        </button>
-          
-          <div className="relative w-full md:w-1/2 lg:w-[60%] h-auto min-h-[280px] md:h-full bg-black md:bg-zinc-50 dark:bg-black md:dark:bg-[#111111] border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 shrink-0 flex items-center justify-center p-0 sm:p-4 md:p-10">
-            <div className="w-full h-full flex items-center justify-center p-0">
-              <img src={resolveImageUrl(selectedImg.url)} onError={handleImageError} className="w-full h-auto max-h-[85vh] md:max-h-[88vh] object-contain block mx-auto rounded-none sm:rounded-xl shadow-xl" alt={selectedImg.exp?.header} />
-            </div>
-          </div>
-          
-          <div className="w-full md:w-1/2 lg:w-[40%] px-4 py-5 sm:px-6 sm:py-6 md:px-10 md:py-12 flex flex-col shrink-0 md:h-full md:overflow-y-auto custom-scrollbar pb-16 md:pb-12">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full text-[9px] md:text-xs font-bold text-black dark:text-white uppercase tracking-widest mb-2.5 w-fit shadow-sm">
-              <Briefcase className="w-3.5 h-3.5 text-zinc-500" /> {selectedImg.exp?.subtheme}
-            </div>
-            <h3 className="text-lg sm:text-2xl md:text-3xl lg:text-4xl font-bold text-black dark:text-white mb-3 md:mb-4 leading-snug md:leading-tight tracking-tight">
-              {selectedImg.exp?.header}
-            </h3>
-            
-            {selectedImg.exp?.description && (
-              <div className="prose prose-sm dark:prose-invert max-w-none mb-6">
-                <h4 className="text-[10px] uppercase font-bold tracking-wider text-zinc-400 dark:text-zinc-500 mb-1.5">Deskripsi Lengkap</h4>
-                <p className="text-xs sm:text-sm md:text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed font-normal whitespace-pre-wrap">
-                  {selectedImg.exp.description}
-                </p>
-              </div>
-            )}
-
-            {/* BAGIAN BAWAH DESKRIPSI PENGALAMAN: TEKS & LOGO KOLABORASI */}
-            {(selectedImg.exp?.isCollaboration || selectedImg.exp?.collaborationPartner) && (
-              <div className="mb-6 p-3.5 sm:p-4 rounded-2xl bg-zinc-50 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 flex items-center justify-between gap-3 shadow-xs">
-                <div className="flex items-center gap-3 min-w-0">
-                  {selectedImg.exp.collaborationLogo ? (
-                    <div className="p-1 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200/70 dark:border-zinc-700/70 shrink-0">
-                      <img 
-                        src={resolveImageUrl(selectedImg.exp.collaborationLogo)} 
-                        alt={selectedImg.exp.collaborationPartner || "Mitra Kolaborasi"} 
-                        className="h-9 sm:h-10 w-auto max-w-[70px] sm:max-w-[90px] object-contain rounded-lg"
-                        onError={handleImageError}
-                      />
-                    </div>
-                  ) : (
-                    <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 shrink-0">
-                      <Handshake size={20} />
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <span className="text-[9.5px] md:text-[10px] font-mono uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold block">
-                      {selectedImg.exp.collaborationText || 'Kolaborasi Bersama'}
-                    </span>
-                    <h4 className="text-xs sm:text-[13px] font-semibold text-black dark:text-white truncate">
-                      {selectedImg.exp.collaborationPartner ? `Kolaborasi dengan ${selectedImg.exp.collaborationPartner}` : 'Pengalaman Kolaborasi Mitra'}
-                    </h4>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Thumbnail switcher jika terdapat lebih dari 1 foto dokumentasi */}
-            {selectedImg.exp?.images && selectedImg.exp.images.length > 1 && (
-              <div className="mt-2 pt-4 border-t border-zinc-200/70 dark:border-zinc-800/70">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-semibold text-zinc-600 dark:text-zinc-400">
-                    Foto & Dokumentasi ({selectedImg.exp.images.length})
+        {selectedImg && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-[200] bg-black/92 dark:bg-black/95 backdrop-blur-xl flex flex-col justify-between overflow-hidden select-none"
+            onClick={() => {
+              setSelectedImg(null);
+              setShowExpDetail(false);
+            }}
+          >
+            {/* Top Bar: Kategori, Judul Sertifikat, Toggle Info, dan Tombol Tutup */}
+            <div 
+              className="w-full px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between gap-3 z-[220] bg-gradient-to-b from-black/85 via-black/50 to-transparent shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex flex-col min-w-0 pr-2">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-white border border-white/20 text-[9px] sm:text-[10px] font-bold tracking-wider uppercase flex items-center gap-1.5 backdrop-blur-md">
+                    <Briefcase className="w-3 h-3 text-white" />
+                    <span>{selectedImg.exp?.subtheme || 'Sertifikasi & Pengalaman'}</span>
                   </span>
-                  <button
-                    onClick={() => {
-                      const exp = selectedImg.exp;
-                      setSelectedImg(null);
-                      setDocumentationExp(exp);
-                    }}
-                    className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
-                  >
-                    <Camera className="w-3 h-3" /> Buka Galeri Penuh
-                  </button>
+                  {(selectedImg.exp?.isCollaboration || selectedImg.exp?.collaborationPartner) && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-600/90 text-white border border-indigo-400/30 text-[9px] sm:text-[10px] font-bold tracking-wider uppercase flex items-center gap-1 backdrop-blur-md">
+                      <Handshake size={11} />
+                      <span className="truncate max-w-[120px] sm:max-w-none">{selectedImg.exp.collaborationPartner || 'Mitra'}</span>
+                    </span>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 overflow-x-auto pb-2 [scrollbar-width:none]">
+                <h3 className="text-sm sm:text-base md:text-lg font-bold text-white truncate max-w-xl">
+                  {selectedImg.exp?.header}
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {selectedImg.exp?.description && (
+                  <button
+                    type="button"
+                    onClick={() => setShowExpDetail(prev => !prev)}
+                    className="px-3 py-1.5 sm:py-2 rounded-full bg-white/15 hover:bg-white/25 text-white border border-white/25 text-xs font-semibold backdrop-blur-md transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                    title="Lihat Detail Deskripsi"
+                  >
+                    <Info className="w-3.5 h-3.5 text-white" />
+                    <span className="hidden sm:inline">{showExpDetail ? 'Tutup Deskripsi' : 'Deskripsi'}</span>
+                  </button>
+                )}
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setSelectedImg(null);
+                    setShowExpDetail(false);
+                  }}
+                  className="p-2 sm:p-2.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md border border-white/20 transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-lg"
+                  aria-label="Tutup Sertifikat"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Center Area: Sertifikat dengan Rasio Penuh Sesuai Ukuran Asli Gambar */}
+            <div 
+              className="flex-1 w-full h-full flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-hidden relative"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setSelectedImg(null);
+                  setShowExpDetail(false);
+                }
+              }}
+            >
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="relative max-w-full max-h-full flex items-center justify-center"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <img 
+                  src={resolveImageUrl(selectedImg.url)} 
+                  alt={selectedImg.exp?.header || 'Sertifikat'} 
+                  onError={handleImageError}
+                  className="w-auto h-auto max-w-[96vw] max-h-[76vh] sm:max-h-[82vh] md:max-h-[86vh] object-contain rounded-lg sm:rounded-xl md:rounded-2xl shadow-2xl bg-white border border-white/10" 
+                />
+              </motion.div>
+            </div>
+
+            {/* Bottom Section: Panel Detail Deskripsi (Drawer) & Switcher Thumbnail */}
+            <div 
+              className="w-full px-4 py-3 sm:px-6 z-[220] bg-gradient-to-t from-black/90 via-black/60 to-transparent shrink-0 flex flex-col items-center gap-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Detail Deskripsi Mengambang saat Diaktifkan */}
+              <AnimatePresence>
+                {showExpDetail && selectedImg.exp?.description && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20, height: 0 }}
+                    animate={{ opacity: 1, y: 0, height: 'auto' }}
+                    exit={{ opacity: 0, y: 20, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="w-full max-w-2xl overflow-hidden mb-2"
+                  >
+                    <div className="p-4 rounded-2xl bg-zinc-900/95 border border-zinc-700/80 text-white backdrop-blur-xl shadow-2xl max-h-[30vh] overflow-y-auto custom-scrollbar">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] uppercase font-bold tracking-wider text-zinc-400">Deskripsi Lengkap</span>
+                        <button 
+                          onClick={() => setShowExpDetail(false)}
+                          className="text-[11px] text-zinc-400 hover:text-white"
+                        >
+                          Tutup
+                        </button>
+                      </div>
+                      <p className="text-xs sm:text-sm text-zinc-200 leading-relaxed font-normal whitespace-pre-wrap">
+                        {selectedImg.exp.description}
+                      </p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Switcher Foto Dokumentasi jika ada lebih dari 1 gambar */}
+              {selectedImg.exp?.images && selectedImg.exp.images.length > 1 && (
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
                   {selectedImg.exp.images.map((img: string, idx: number) => (
                     <button
                       key={idx}
+                      type="button"
                       onClick={() => setSelectedImg({ url: img, exp: selectedImg.exp })}
-                      className={`relative w-12 h-12 sm:w-14 sm:h-14 shrink-0 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
-                        selectedImg.url === img ? 'border-black dark:border-white scale-105 shadow-sm' : 'border-transparent opacity-60 hover:opacity-100'
+                      className={`relative w-11 h-11 sm:w-13 sm:h-13 shrink-0 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                        selectedImg.url === img ? 'border-white scale-105 shadow-md ring-2 ring-white/30' : 'border-white/30 opacity-60 hover:opacity-100'
                       }`}
                     >
                       <img src={resolveImageUrl(img)} onError={handleImageError} alt={`Foto ${idx + 1}`} className="w-full h-full object-cover" />
                     </button>
                   ))}
                 </div>
-              </div>
-            )}
-          </div>
-        </motion.div>
-      )}
+              )}
+
+              {/* Sub-label informasi */}
+              <span className="text-[10px] text-zinc-400 select-none hidden sm:inline">
+                Sertifikat & Dokumen Resmi • Rasio penuh sesuai ukuran asli gambar
+              </span>
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </motion.section>
   )

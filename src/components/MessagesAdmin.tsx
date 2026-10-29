@@ -89,25 +89,30 @@ export default function MessagesAdmin() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.05 }}
                 key={msg.id} 
-                className="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-zinc-800/50 p-6 rounded-2xl flex flex-col md:flex-row gap-6 relative group"
+                className="bg-zinc-50 dark:bg-[#111111] border border-zinc-200 dark:border-zinc-800/50 p-4 sm:p-6 rounded-2xl flex flex-col md:flex-row gap-3 sm:gap-6 relative group"
               >
-                <div className="flex-1 space-y-3">
-                  <div className="flex flex-wrap items-center gap-4 text-xs font-bold text-black dark:text-white">
-                    <span className="text-sm">{msg.name}</span>
-                    <a href={`mailto:${msg.email}`} className="text-blue-500 hover:underline inline-flex items-center gap-1"><Mail size={12}/> {msg.email}</a>
-                    <span className="text-zinc-500 inline-flex items-center gap-1 font-medium"><Calendar size={12}/> {formatDate(msg.dateAdded)}</span>
+                <div className="flex-1 space-y-2.5">
+                  <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs font-bold text-black dark:text-white">
+                    <span className="text-sm font-bold">{msg.name}</span>
+                    <a href={`mailto:${msg.email}`} className="text-blue-500 hover:underline inline-flex items-center gap-1 font-mono text-[11px] truncate max-w-[200px] sm:max-w-none">
+                      <Mail size={12}/> {msg.email}
+                    </a>
+                    <span className="text-zinc-500 inline-flex items-center gap-1 font-mono text-[10px]">
+                      <Calendar size={12}/> {formatDate(msg.dateAdded)}
+                    </span>
                   </div>
-                  <p className="text-sm text-zinc-700 dark:text-zinc-400 leading-relaxed font-medium">
+                  <p className="text-xs sm:text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed font-normal whitespace-pre-wrap">
                     {msg.message}
                   </p>
                 </div>
-                <div>
+                <div className="flex justify-end pt-2 md:pt-0 border-t md:border-0 border-zinc-200/50 dark:border-zinc-800/50">
                   <button 
                     onClick={() => handleDelete(msg)} 
-                    className="p-3 rounded-xl bg-white dark:bg-[#0A0A0A] text-red-500 hover:bg-red-50 hover:border-red-200 dark:hover:bg-red-500/10 dark:hover:border-red-500/30 border border-zinc-200 dark:border-zinc-800 transition-colors opacity-100 md:opacity-0 group-hover:opacity-100 active:scale-90 duration-300 shadow-sm"
+                    className="p-2.5 sm:p-3 rounded-xl bg-white dark:bg-[#161616] text-red-500 hover:bg-red-50 hover:border-red-200 dark:hover:bg-red-500/10 dark:hover:border-red-500/30 border border-zinc-200 dark:border-zinc-800 transition-colors opacity-100 md:opacity-0 group-hover:opacity-100 active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1.5 text-xs font-semibold"
                     title="Hapus Pesan"
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={15} />
+                    <span className="md:hidden">Hapus</span>
                   </button>
                 </div>
               </motion.div>

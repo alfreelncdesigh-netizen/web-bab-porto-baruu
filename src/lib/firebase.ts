@@ -6,6 +6,7 @@ import {
   persistentMultipleTabManager,
   memoryLocalCache,
   doc,
+  getDoc,
   getDocFromServer
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
@@ -26,11 +27,11 @@ try {
   dbInstance = dbId 
     ? initializeFirestore(app, { 
         localCache: cacheSettings,
-        experimentalAutoDetectLongPolling: true 
+        experimentalForceLongPolling: true 
       }, dbId) 
     : initializeFirestore(app, { 
         localCache: cacheSettings,
-        experimentalAutoDetectLongPolling: true 
+        experimentalForceLongPolling: true 
       });
 } catch (e) {
   try {
@@ -47,8 +48,8 @@ export const db = dbInstance;
 export async function testConnection(): Promise<boolean> {
   try {
     if (typeof window !== 'undefined') {
-      await getDocFromServer(doc(db, 'test', 'connection'));
-      return true;
+      const snap = await getDoc(doc(db, 'stats', 'views'));
+      return snap.exists();
     }
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
@@ -56,13 +57,6 @@ export async function testConnection(): Promise<boolean> {
     }
   }
   return false;
-}
-
-if (typeof window !== 'undefined') {
-  // Jalankan uji koneksi secara asynchronous setelah inisialisasi awal tanpa menghalangi UI
-  setTimeout(() => {
-    testConnection().catch(() => {});
-  }, 2000);
 }
 
 let authInstance;

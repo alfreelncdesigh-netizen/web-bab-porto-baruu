@@ -471,35 +471,103 @@ export default function AdminDashboard() {
   }
 
   return (
-    <section className="py-6 md:py-10 px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 w-full mx-auto min-h-screen relative">
-      <div className="mb-4 md:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+    <section className="py-4 md:py-8 lg:py-10 px-3 sm:px-6 md:px-8 lg:px-12 xl:px-16 w-full mx-auto min-h-screen relative">
+      {/* Dashboard Top Header */}
+      <div className="mb-3 md:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div>
-          <h4 className="text-[10px] font-mono font-bold text-zinc-500 dark:text-zinc-400 mb-1.5 md:mb-2 flex items-center gap-2 uppercase tracking-widest">
-            <span className="w-4 h-[1px] bg-zinc-500 dark:bg-zinc-400 inline-block"></span> SYS_ADMIN // KENDALI
-          </h4>
-          <h2 className="text-2xl md:text-3xl lg:text-4xl font-semibold tracking-tight text-black dark:text-white leading-[1.1]">
+          <div className="text-[10px] font-mono font-bold text-zinc-500 dark:text-zinc-400 mb-1 flex items-center gap-1.5 uppercase tracking-widest">
+            <span className="w-3.5 h-[1.5px] bg-zinc-500 dark:bg-zinc-400 inline-block"></span> 
+            SYS_ADMIN // KENDALI SISTEM
+          </div>
+          <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-semibold tracking-tight text-black dark:text-white leading-[1.15]">
             Administrator Console
           </h2>
         </div>
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-mono font-bold text-zinc-700 dark:text-zinc-300 self-start sm:self-auto">
+        
+        {/* Active Admin Badge */}
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-[#141414] border border-zinc-200/80 dark:border-zinc-800 text-xs font-mono font-semibold text-zinc-800 dark:text-zinc-200 self-start sm:self-auto shadow-xs">
+          <span className="relative flex h-2 w-2">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${adminRole === 'collaborator' ? 'bg-indigo-400' : 'bg-emerald-400'}`}></span>
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${adminRole === 'collaborator' ? 'bg-indigo-500' : 'bg-emerald-500'}`}></span>
+          </span>
           <ShieldCheck size={14} className={adminRole === 'collaborator' ? "text-indigo-500" : "text-emerald-500"} />
-          <span>{adminRole === 'collaborator' ? `Kolaborator: ${activeAdminName}` : `Admin: ${activeAdminName}`}</span>
+          <span className="truncate max-w-[190px] sm:max-w-none">
+            {adminRole === 'collaborator' ? `Kolaborator: ${activeAdminName}` : `Admin: ${activeAdminName}`}
+          </span>
+        </div>
+      </div>
+
+      {/* Mobile Top Sticky Navigation Bar */}
+      <div className="lg:hidden w-full sticky top-[68px] z-40 mb-3">
+        {/* Active Tab Preview & Drawer Toggle */}
+        <div 
+          onClick={() => setIsMobileMenuOpen(true)}
+          className="flex items-center justify-between bg-white/95 dark:bg-[#0c0c0c]/95 backdrop-blur-md p-2.5 rounded-2xl border border-zinc-200/90 dark:border-zinc-800 shadow-sm cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors"
+        >
+          <div className="flex items-center gap-2.5 min-w-0 pl-1">
+            <div className="w-8 h-8 rounded-xl bg-black text-white dark:bg-white dark:text-black flex items-center justify-center shrink-0 shadow-xs">
+              {(() => {
+                const currentTabObj = [
+                  { id: 'portfolio', icon: ImageIcon },
+                  { id: 'blog', icon: FileText },
+                  { id: 'experience', icon: Briefcase },
+                  { id: 'stats', icon: BarChart3 },
+                  { id: 'messages', icon: Mail },
+                  { id: 'store', icon: ShoppingCart },
+                  { id: 'collaboration', icon: Handshake },
+                  { id: 'about', icon: User },
+                  { id: 'cv', icon: FileText },
+                  { id: 'archive', icon: Archive },
+                  { id: 'promo', icon: Sparkles },
+                  { id: 'settings', icon: Settings },
+                  { id: 'access', icon: Lock },
+                ].find(t => t.id === activeTab);
+                const ActiveIcon = currentTabObj?.icon || Settings;
+                return <ActiveIcon size={15} />;
+              })()}
+            </div>
+            <div className="min-w-0">
+              <span className="block text-[9px] font-mono uppercase tracking-widest text-zinc-400 font-semibold">Menu Aktif</span>
+              <span className="block text-xs font-bold text-black dark:text-white truncate">
+                {(() => {
+                  const labels: Record<string, string> = {
+                    portfolio: 'Kelola Karya (Portofolio)',
+                    blog: 'Kelola Artikel Blog',
+                    experience: 'Kelola Pengalaman',
+                    store: 'Kelola Order Desain',
+                    messages: 'Pesan Klien Masuk',
+                    stats: 'Statistik Pengunjung',
+                    collaboration: 'Mitra Kolaborasi',
+                    about: 'Profil Tentang Saya',
+                    cv: 'Curriculum Vitae (CV)',
+                    archive: 'Arsip Konten',
+                    promo: 'Widget Poster Promo',
+                    settings: 'Pengaturan Situs',
+                    access: 'Akses Admin'
+                  };
+                  return labels[activeTab] || activeTab;
+                })()}
+              </span>
+            </div>
+          </div>
+
+          <button 
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsMobileMenuOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700/80 text-black dark:text-white transition-all active:scale-95 text-xs font-semibold shrink-0 cursor-pointer"
+            aria-label="Buka Semua Menu"
+          >
+            <Menu size={14} />
+            <span className="text-[11px] font-mono uppercase">Menu ▾</span>
+          </button>
         </div>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 items-start relative">
         
-        {/* Tombol Toggle Menu Mobile */}
-        <div className="lg:hidden w-full flex items-center justify-between bg-zinc-50 dark:bg-[#0A0A0A] p-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800/50 shadow-sm sticky top-[72px] z-40">
-          <div className="font-mono text-[10px] uppercase tracking-widest pl-2 font-bold text-zinc-600 dark:text-zinc-400">Dashboard Menu</div>
-          <button 
-            onClick={() => setIsMobileMenuOpen(true)}
-            className="p-2 bg-white dark:bg-[#111111] rounded-lg border border-zinc-200 dark:border-zinc-800 shadow-sm text-black dark:text-white hover:bg-zinc-100 transition-colors"
-          >
-            <Menu size={14} />
-          </button>
-        </div>
-
         {/* Overlay Backdrop untuk Menu Mobile */}
         <AnimatePresence>
           {isMobileMenuOpen && (
@@ -513,92 +581,173 @@ export default function AdminDashboard() {
           )}
         </AnimatePresence>
 
-        {/* Sidebar Menus (Slide-bar di Mobile, Sticky di Desktop) */}
-        <aside className={`fixed inset-y-0 left-0 z-[100] w-[240px] lg:w-56 bg-white dark:bg-[#050505] lg:bg-transparent lg:dark:bg-transparent lg:sticky lg:top-24 transform transition-transform duration-300 ease-[0.25,1,0.5,1] ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'} flex flex-col h-full lg:h-auto border-r lg:border-none border-zinc-200 dark:border-zinc-800`}>
+        {/* Sidebar Navigation: Slide-over Drawer on Mobile, Sticky Column on Desktop */}
+        <aside className={`fixed inset-y-0 left-0 z-[100] w-[280px] sm:w-[320px] lg:w-60 bg-white dark:bg-[#0c0c0c] lg:bg-transparent lg:dark:bg-transparent lg:sticky lg:top-24 transform transition-transform duration-300 ease-[0.25,1,0.5,1] ${isMobileMenuOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'} flex flex-col h-full lg:h-auto border-r lg:border-none border-zinc-200 dark:border-zinc-800`}>
           
-          {/* Header Sidebar Mobile */}
-          <div className="flex lg:hidden items-center justify-between p-4 border-b border-zinc-100 dark:border-zinc-800/50">
-            <span className="font-mono font-bold text-[10px] tracking-widest uppercase text-zinc-500">Sys Menu</span>
-            <button onClick={() => setIsMobileMenuOpen(false)} className="p-1.5 bg-zinc-100 dark:bg-zinc-900 rounded-lg text-zinc-500 hover:text-black dark:hover:text-white">
-              <X size={14} />
+          {/* Header Drawer Mobile */}
+          <div className="flex lg:hidden items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-800">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-black text-white dark:bg-white dark:text-black flex items-center justify-center font-bold text-xs">
+                A
+              </div>
+              <div>
+                <span className="font-mono font-bold text-xs uppercase tracking-wider text-black dark:text-white block leading-tight">Admin Console</span>
+                <span className="text-[10px] text-zinc-500 font-mono block">Navigasi Seluler</span>
+              </div>
+            </div>
+            <button 
+              onClick={() => setIsMobileMenuOpen(false)} 
+              className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl text-zinc-600 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+              aria-label="Tutup Menu"
+            >
+              <X size={16} />
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto lg:overflow-visible p-3 lg:p-0 no-scrollbar">
-            <div className="flex flex-col bg-zinc-50 dark:bg-[#0A0A0A] p-1.5 rounded-xl gap-0.5 border border-zinc-200 dark:border-zinc-800/50 shadow-sm">
-              {(adminRole === 'collaborator'
-                ? [
-                    { id: 'portfolio', label: 'Karya', icon: ImageIcon },
-                    { id: 'blog', label: 'Blog', icon: FileText },
-                    { id: 'experience', label: 'Pengalaman', icon: Briefcase },
-                  ]
-                : [
-                    { id: 'stats', label: 'Statistik', icon: BarChart3 },
-                    { id: 'messages', label: 'Pesan', icon: Mail },
-                    { id: 'store', label: 'Order', icon: ShoppingCart },
-                    { id: 'portfolio', label: 'Karya', icon: ImageIcon },
-                    { id: 'blog', label: 'Blog', icon: FileText },
-                    { id: 'experience', label: 'Pengalaman', icon: Briefcase },
-                    { id: 'collaboration', label: 'Kolaborasi', icon: Handshake, collab: true },
-                    { id: 'about', label: 'Tentang Saya', icon: User },
-                    { id: 'cv', label: 'CV', icon: FileText },
-                    { id: 'archive', label: 'Arsip', icon: Archive },
-                    { id: 'promo', label: 'Widget Promo', icon: Sparkles, special: true },
-                    { id: 'settings', label: 'Situs', icon: Settings },
-                    { id: 'access', label: 'Akses Admin', icon: Lock }
-                  ]
-              ).map((tab) => {
+          {/* User info strip in Mobile Drawer */}
+          <div className="flex lg:hidden items-center gap-2.5 p-3.5 mx-3 mt-3 rounded-xl bg-zinc-100/80 dark:bg-zinc-900/80 border border-zinc-200 dark:border-zinc-800">
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <ShieldCheck size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 block">Sesi Aktif</span>
+              <span className="text-xs font-bold text-black dark:text-white truncate block">{activeAdminName}</span>
+            </div>
+          </div>
+
+          {/* Menu Items List */}
+          <div className="flex-1 overflow-y-auto lg:overflow-visible p-3 lg:p-0 space-y-1.5 no-scrollbar">
+            
+            {/* Group 1: Konten Utama */}
+            <div className="bg-zinc-50 dark:bg-[#101010] p-2 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs space-y-1">
+              <div className="px-2.5 pt-1.5 pb-1 font-mono text-[9px] uppercase tracking-wider font-bold text-zinc-400">
+                Konten Portofolio
+              </div>
+              {[
+                { id: 'portfolio', label: 'Karya', icon: ImageIcon },
+                { id: 'blog', label: 'Blog', icon: FileText },
+                { id: 'experience', label: 'Pengalaman', icon: Briefcase },
+                ...(adminRole !== 'collaborator' ? [
+                  { id: 'about', label: 'Tentang Saya', icon: User },
+                  { id: 'cv', label: 'CV Lengkap', icon: FileText },
+                  { id: 'archive', label: 'Arsip Konten', icon: Archive }
+                ] : [])
+              ].map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
-                let activeClass = 'bg-white text-black shadow-sm dark:bg-[#1A1A1A] dark:text-white dark:border-zinc-700 border-zinc-200';
-                let inactiveClass = 'bg-transparent text-zinc-600 hover:text-black hover:bg-zinc-100 dark:text-zinc-500 dark:hover:text-zinc-300 dark:hover:bg-zinc-900/50 border-transparent';
-
-                if ((tab as any).special) {
-                  activeClass = 'bg-amber-500 text-white shadow-sm dark:bg-amber-500 border-amber-400';
-                  inactiveClass = 'bg-transparent text-amber-600 dark:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 border-transparent';
-                } else if ((tab as any).collab) {
-                  activeClass = 'bg-indigo-600 text-white shadow-sm dark:bg-indigo-600 border-indigo-500';
-                  inactiveClass = 'bg-transparent text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 border-transparent';
-                }
-                
                 return (
-                  <button 
+                  <button
                     key={tab.id}
-                    onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }} 
-                    className={`w-full text-left flex items-center justify-start gap-2.5 px-3 py-2.5 text-[10px] font-mono font-bold uppercase tracking-widest transition-all rounded-lg border ${isActive ? activeClass : inactiveClass}`}
+                    onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }}
+                    className={`w-full text-left flex items-center gap-3 px-3 py-2.5 text-xs font-medium transition-all rounded-xl cursor-pointer ${
+                      isActive
+                        ? 'bg-black text-white dark:bg-white dark:text-black font-semibold shadow-xs'
+                        : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/60'
+                    }`}
                   >
-                    <Icon size={12} className={`hidden lg:block ${((tab as any).special || (tab as any).collab) && !isActive ? "fill-current" : ""}`} /> 
-                    <span className="w-full text-left">{tab.label}</span>
+                    <Icon size={15} className="shrink-0" />
+                    <span className="flex-1">{tab.label}</span>
                   </button>
                 );
               })}
             </div>
-            
-            <button onClick={handleLogout} className="w-full mt-2 text-black hover:text-red-500 dark:text-zinc-400 dark:hover:text-red-400 transition-colors flex items-center justify-start gap-2.5 px-4 py-3 border border-transparent rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 active:scale-95 text-[10px] font-mono font-bold uppercase tracking-widest cursor-pointer">
-              <LogOut size={12} className="hidden lg:block" /> 
-              <span>Keluar</span>
+
+            {/* Group 2: Interaksi & Bisnis (Khusus Admin/Master) */}
+            {adminRole !== 'collaborator' && (
+              <div className="bg-zinc-50 dark:bg-[#101010] p-2 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs space-y-1">
+                <div className="px-2.5 pt-1.5 pb-1 font-mono text-[9px] uppercase tracking-wider font-bold text-zinc-400">
+                  Interaksi & Order
+                </div>
+                {[
+                  { id: 'store', label: 'Order Masuk', icon: ShoppingCart },
+                  { id: 'messages', label: 'Pesan Klien', icon: Mail },
+                  { id: 'stats', label: 'Statistik Web', icon: BarChart3 },
+                  { id: 'collaboration', label: 'Mitra Kolaborasi', icon: Handshake, collab: true },
+                  { id: 'promo', label: 'Widget Promo', icon: Sparkles, special: true }
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }}
+                      className={`w-full text-left flex items-center gap-3 px-3 py-2.5 text-xs font-medium transition-all rounded-xl cursor-pointer ${
+                        isActive
+                          ? (tab as any).special
+                            ? 'bg-amber-500 text-white font-semibold shadow-xs'
+                            : (tab as any).collab
+                            ? 'bg-indigo-600 text-white font-semibold shadow-xs'
+                            : 'bg-black text-white dark:bg-white dark:text-black font-semibold shadow-xs'
+                          : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/60'
+                      }`}
+                    >
+                      <Icon size={15} className="shrink-0" />
+                      <span className="flex-1">{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Group 3: Pengaturan & Sistem */}
+            {adminRole !== 'collaborator' && (
+              <div className="bg-zinc-50 dark:bg-[#101010] p-2 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 shadow-xs space-y-1">
+                <div className="px-2.5 pt-1.5 pb-1 font-mono text-[9px] uppercase tracking-wider font-bold text-zinc-400">
+                  Sistem & Akses
+                </div>
+                {[
+                  { id: 'settings', label: 'Pengaturan Situs', icon: Settings },
+                  { id: 'access', label: 'Akses Admin', icon: Lock }
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const isActive = activeTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }}
+                      className={`w-full text-left flex items-center gap-3 px-3 py-2.5 text-xs font-medium transition-all rounded-xl cursor-pointer ${
+                        isActive
+                          ? 'bg-black text-white dark:bg-white dark:text-black font-semibold shadow-xs'
+                          : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800/60'
+                      }`}
+                    >
+                      <Icon size={15} className="shrink-0" />
+                      <span className="flex-1">{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Logout Button */}
+            <button 
+              onClick={handleLogout} 
+              className="w-full mt-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center gap-3 px-4 py-3 border border-red-200 dark:border-red-900/40 rounded-xl text-xs font-semibold cursor-pointer active:scale-95"
+            >
+              <LogOut size={15} />
+              <span>Keluar dari Admin</span>
             </button>
           </div>
         </aside>
 
         {/* Content Area */}
-        <main className="flex-1 w-full min-w-0 bg-transparent lg:bg-white lg:dark:bg-[#050505] lg:border lg:border-zinc-200 lg:dark:border-zinc-800 lg:p-6 lg:rounded-2xl lg:shadow-sm">
+        <main className="flex-1 w-full min-w-0 bg-transparent lg:bg-white lg:dark:bg-[#080808] lg:border lg:border-zinc-200 lg:dark:border-zinc-800 lg:p-6 lg:rounded-2xl lg:shadow-xs">
           {adminRole === 'collaborator' && (
-            <div className="mb-5 p-4 rounded-2xl bg-indigo-50/90 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs animate-fadeIn">
+            <div className="mb-4 p-3.5 sm:p-4 rounded-2xl bg-indigo-50/90 dark:bg-indigo-950/30 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs shadow-xs">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-xl bg-indigo-600 text-white shrink-0 shadow-sm">
-                  <Handshake size={20} />
+                  <Handshake size={18} />
                 </div>
                 <div>
-                  <h4 className="font-bold text-sm text-indigo-950 dark:text-indigo-200">
+                  <h4 className="font-bold text-xs sm:text-sm text-indigo-950 dark:text-indigo-200">
                     Mode Administrator Kolaborator: {activeAdminName}
                   </h4>
-                  <p className="text-[11.5px] text-indigo-800/80 dark:text-indigo-300/80 mt-0.5 leading-relaxed">
-                    Anda masuk dengan akun kolaborator. Anda memiliki akses khusus untuk menambahkan, mengedit, dan mengelola <b>Karya</b>, <b>Blog</b>, dan <b>Pengalaman</b> kolaborasi.
+                  <p className="text-[11px] sm:text-xs text-indigo-800/80 dark:text-indigo-300/80 mt-0.5 leading-relaxed">
+                    Anda masuk dengan akun kolaborator. Anda memiliki akses untuk mengelola <b>Karya</b>, <b>Blog</b>, dan <b>Pengalaman</b> kolaborasi.
                   </p>
                 </div>
               </div>
-              <span className="self-start sm:self-auto px-3 py-1 rounded-full bg-indigo-600 text-white font-mono text-[10px] font-bold uppercase tracking-wider shrink-0">
+              <span className="self-start sm:self-auto px-2.5 py-1 rounded-full bg-indigo-600 text-white font-mono text-[10px] font-bold uppercase tracking-wider shrink-0">
                 Akses Terbatas
               </span>
             </div>
@@ -607,9 +756,9 @@ export default function AdminDashboard() {
           <AnimatePresence mode="wait">
             <motion.div 
               key={activeTab}
-              initial={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
+              exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.15, ease: [0.25, 1, 0.5, 1] }}
             >
               {activeTab === 'portfolio' && <PortfolioAdmin />}

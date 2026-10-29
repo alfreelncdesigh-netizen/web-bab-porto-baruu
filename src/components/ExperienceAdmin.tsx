@@ -562,52 +562,54 @@ export default function ExperienceAdmin() {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="flex items-center justify-between bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 p-6 rounded-2xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 rounded-2xl shadow-xs">
             <div>
-              <h2 className="text-xl font-bold text-black dark:text-white">Pengalaman & Prestasi</h2>
-              <p className="text-sm text-zinc-500 mt-1">Kelola data pengalaman kerja, prestasi, dan portofolio Anda.</p>
+              <h2 className="text-lg sm:text-xl font-bold text-black dark:text-white">Pengalaman & Prestasi</h2>
+              <p className="text-xs sm:text-sm text-zinc-500 mt-0.5">Kelola data pengalaman kerja, prestasi, dan portofolio Anda.</p>
             </div>
             <button
               onClick={handleAddNew}
-              className="bg-black text-white dark:bg-white dark:text-black px-5 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-black/10"
+              className="bg-black text-white dark:bg-white dark:text-black px-4 py-2.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-sm self-start sm:self-auto cursor-pointer"
             >
               <Plus className="w-4 h-4" /> Tambah Baru
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4 md:gap-6">
             {experiences.map((exp) => (
               <div
                 key={exp.id}
-                className="bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+                className="bg-white dark:bg-[#050505] border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden hover:shadow-lg transition-all duration-300 flex flex-col"
               >
                 {exp.images && exp.images.length > 0 && (
-                  <div className="w-full h-48 bg-zinc-100 dark:bg-zinc-900 overflow-hidden relative">
+                  <div className="w-full h-44 sm:h-48 bg-zinc-100 dark:bg-zinc-900 overflow-hidden relative">
                     <img src={exp.images[0]} alt="" className="w-full h-full object-cover" />
                     {exp.images.length > 1 && (
-                      <div className="absolute bottom-3 right-3 bg-black/70 backdrop-blur text-white text-[10px] font-bold px-2 py-1 rounded-md flex items-center gap-1">
+                      <div className="absolute bottom-2.5 right-2.5 bg-black/75 backdrop-blur text-white text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 font-mono">
                         <ImageIcon className="w-3 h-3" /> +{exp.images.length - 1}
                       </div>
                     )}
                   </div>
                 )}
-                <div className="p-6">
-                  <h3 className="text-lg font-bold text-black dark:text-white line-clamp-1">{exp.header}</h3>
-                  <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-1 uppercase tracking-wider">
-                    {exp.subtheme}
-                  </p>
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-3 line-clamp-2">{exp.description}</p>
+                <div className="p-4 sm:p-6 flex-1 flex flex-col justify-between">
+                  <div>
+                    <h3 className="text-base sm:text-lg font-bold text-black dark:text-white line-clamp-1">{exp.header}</h3>
+                    <p className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 mt-1 uppercase tracking-wider font-mono">
+                      {exp.subtheme}
+                    </p>
+                    <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 mt-2 line-clamp-2 leading-relaxed">{exp.description}</p>
+                  </div>
 
-                  <div className="flex items-center gap-3 mt-6 pt-6 border-t border-zinc-100 dark:border-zinc-800/50">
+                  <div className="flex items-center gap-2.5 mt-5 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
                     <button
                       onClick={() => handleEdit(exp)}
-                      className="flex-1 bg-zinc-100 dark:bg-zinc-900 text-black dark:text-white py-2 rounded-xl text-xs font-bold hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white py-2.5 rounded-xl text-xs font-semibold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
                     >
                       <Edit2 className="w-3.5 h-3.5" /> Edit
                     </button>
                     <button
                       onClick={() => handleDelete(exp)}
-                      className="flex-1 bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400 py-2 rounded-xl text-xs font-bold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2"
+                      className="flex-1 bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400 py-2.5 rounded-xl text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" /> Hapus
                     </button>
@@ -616,7 +618,7 @@ export default function ExperienceAdmin() {
               </div>
             ))}
             {experiences.length === 0 && (
-              <div className="col-span-full py-12 text-center text-zinc-500 text-sm border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl">
+              <div className="col-span-full py-12 text-center text-zinc-500 text-xs sm:text-sm border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl">
                 Belum ada data pengalaman.
               </div>
             )}

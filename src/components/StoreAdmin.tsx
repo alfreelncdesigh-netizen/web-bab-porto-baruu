@@ -182,7 +182,7 @@ export default function StoreAdmin() {
           <p className="text-xs font-semibold">Belum ada order pemesanan desain yang masuk.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-3 sm:gap-4">
           {filteredOrders.map((order) => {
             const cleanPhone = (order.whatsapp || '').replace(/\D/g, '');
             const currentStatus = order.status || 'pending';
@@ -190,15 +190,15 @@ export default function StoreAdmin() {
             return (
               <div
                 key={order.id}
-                className="bg-white dark:bg-[#111111] p-5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4"
+                className="bg-white dark:bg-[#111111] p-4 sm:p-5 rounded-2xl border border-zinc-200/80 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3.5"
               >
-                <div className="space-y-1.5 flex-1 min-w-0">
+                <div className="space-y-2 flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-bold text-black dark:text-white">
+                    <span className="text-sm sm:text-base font-bold text-black dark:text-white">
                       {order.nama || 'Klien Tanpa Nama'}
                     </span>
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                      className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-md uppercase tracking-wider ${
                         currentStatus === 'selesai'
                           ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400'
                           : currentStatus === 'proses'
@@ -208,25 +208,26 @@ export default function StoreAdmin() {
                     >
                       {currentStatus}
                     </span>
-                    <span className="text-[11px] text-zinc-400 flex items-center gap-1">
+                    <span className="text-[11px] text-zinc-400 font-mono flex items-center gap-1">
                       <Calendar className="w-3 h-3" /> {formatDate(order.createdAt)}
                     </span>
                   </div>
 
-                  <div className="text-xs text-zinc-600 dark:text-zinc-300 flex flex-wrap gap-x-4 gap-y-1">
-                    <div>
+                  <div className="text-xs text-zinc-600 dark:text-zinc-300 flex flex-wrap gap-x-4 gap-y-1.5">
+                    <div className="bg-zinc-50 dark:bg-zinc-900/60 px-2 py-1 rounded-lg border border-zinc-200/60 dark:border-zinc-800">
                       <span className="text-zinc-400">Layanan:</span>{' '}
-                      <strong className="text-black dark:text-white">{order.layanan || 'Custom'}</strong>
+                      <strong className="text-black dark:text-white font-semibold">{order.layanan || 'Custom'}</strong>
                     </div>
                     {order.deadline && (
-                      <div>
-                        <span className="text-zinc-400">Deadline:</span> {order.deadline}
+                      <div className="bg-zinc-50 dark:bg-zinc-900/60 px-2 py-1 rounded-lg border border-zinc-200/60 dark:border-zinc-800">
+                        <span className="text-zinc-400">Deadline:</span>{' '}
+                        <strong className="text-black dark:text-white">{order.deadline}</strong>
                       </div>
                     )}
                     {order.totalEstimasi ? (
-                      <div>
-                        <span className="text-zinc-400">Estimasi:</span>{' '}
-                        <strong className="text-emerald-600 dark:text-emerald-400">
+                      <div className="bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-200/60 dark:border-emerald-800/40">
+                        <span className="text-zinc-500 dark:text-zinc-400">Estimasi:</span>{' '}
+                        <strong className="text-emerald-600 dark:text-emerald-400 font-bold font-mono">
                           {formatIDR(order.totalEstimasi)}
                         </strong>
                       </div>
@@ -234,29 +235,31 @@ export default function StoreAdmin() {
                   </div>
 
                   {(order.tujuan || order.format || order.gaya) && (
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-1">
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
                       {[order.tujuan, order.gaya, order.format].filter(Boolean).join(' • ')}
                     </p>
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                {/* Actions: Full touch friendly on mobile */}
+                <div className="flex items-center gap-2 pt-2 md:pt-0 border-t md:border-t-0 border-zinc-100 dark:border-zinc-800/60 shrink-0 flex-wrap sm:flex-nowrap">
                   {cleanPhone && (
                     <a
                       href={`https://wa.me/${cleanPhone}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-all active:scale-95 shadow-xs"
+                      className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-all active:scale-95 shadow-xs"
                       title="Hubungi di WhatsApp"
                     >
-                      <Phone className="w-3.5 h-3.5" /> Chat WA
+                      <Phone className="w-3.5 h-3.5" /> 
+                      <span>Chat WA</span>
                     </a>
                   )}
 
                   <select
                     value={currentStatus}
                     onChange={(e) => handleUpdateStatus(order.id, e.target.value as any)}
-                    className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-[11px] font-bold rounded-xl px-2.5 py-1.5 text-black dark:text-white outline-none cursor-pointer"
+                    className="flex-1 sm:flex-none bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs font-semibold rounded-xl px-3 py-2.5 text-black dark:text-white outline-none cursor-pointer"
                   >
                     <option value="pending">Pending</option>
                     <option value="proses">Diproses</option>
@@ -265,7 +268,7 @@ export default function StoreAdmin() {
 
                   <button
                     onClick={() => handleDelete(order)}
-                    className="p-1.5 text-zinc-400 hover:text-red-500 rounded-xl transition-colors cursor-pointer"
+                    className="p-2.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl transition-colors cursor-pointer shrink-0"
                     title="Hapus Order"
                   >
                     <Trash2 className="w-4 h-4" />
