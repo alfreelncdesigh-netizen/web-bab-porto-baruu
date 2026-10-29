@@ -113,52 +113,13 @@ export default function CvAdmin() {
     const isPng = file.type === 'image/png';
     setUploading(true);
     try {
-      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-      const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'ml_default';
-      
-      if (!cloudName || cloudName === "your_cloud_name") {
-        throw new Error("Cloudinary belum dikonfigurasi");
+      const cleanUrl = await uploadImageToStorage(file, file.name, undefined, 'cv');
+      if (cleanUrl) {
+        setSettings((prev: any) => ({ ...prev, cvPdfFile: cleanUrl }));
+        showToast(isPng ? "File CV (PNG) berhasil diunggah & tersimpan permanen!" : "File CV (PDF) berhasil diunggah & tersimpan permanen!");
+        return;
       }
-
-      if (isPng) {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', uploadPreset);
-        formData.append('folder', 'cv');
-        
-        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        const data = await response.json();
-        
-        if (data.secure_url) {
-          setSettings((prev: any) => ({ ...prev, cvPdfFile: data.secure_url }));
-          showToast("File CV (PNG) berhasil diunggah!");
-        } else {
-          throw new Error(data.error?.message || "Gagal mengunggah");
-        }
-      } else {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', uploadPreset);
-        formData.append('folder', 'cv');
-        
-        const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        const data = await response.json();
-        
-        if (data.secure_url) {
-          setSettings((prev: any) => ({ ...prev, cvPdfFile: data.secure_url }));
-          showToast("File CV (PDF) berhasil diunggah!");
-        } else {
-          throw new Error(data.error?.message || "Gagal mengunggah PDF");
-        }
-      }
+      throw new Error("Gagal mengunggah file CV");
     } catch (err: any) {
       if (isPng) {
         const reader = new FileReader();

@@ -352,7 +352,7 @@ app.post('/api/experiences', requireAdminAuth, (req: Request, res: Response): vo
 });
 
 // ============================================================================
-// 4. FIREWALL UPLOAD DENGAN PROTEKSI FILE AMAN
+// 4. FIREWALL UPLOAD DENGAN PROTEKSI FILE AMAN & REGISTRY PERMANEN
 // ============================================================================
 // Blokir file script berbahaya (.html, .php, .js, .exe, .sh), izinkan semua media & dokumen desain
 const FORBIDDEN_EXTENSIONS = new Set([
@@ -360,6 +360,59 @@ const FORBIDDEN_EXTENSIONS = new Set([
   '.js', '.mjs', '.cjs', '.exe', '.sh', '.bat', '.cmd', '.py',
   '.pl', '.cgi', '.asp', '.aspx', '.jsp', '.jar'
 ]);
+
+const mediaRegistryPath = path.resolve(__dirname, 'uploads-registry.json');
+
+function registerUploadedMedia(record: { url: string; filename: string; size: number; mimeType?: string; uploadedAt: string }): void {
+  try {
+    let list: any[] = [];
+    if (fs.existsSync(mediaRegistryPath)) {
+      try {
+        list = JSON.parse(fs.readFileSync(mediaRegistryPath, 'utf-8'));
+        if (!Array.isArray(list)) list = [];
+      } catch {}
+    }
+    list.unshift({
+      id: `media_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      ...record
+    });
+    if (list.length > 2000) list = list.slice(0, 2000);
+    fs.writeFileSync(mediaRegistryPath, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('Notice: Failed writing media registry:', e);
+  }
+}
+
+app.get('/api/media-registry', (_req: Request, res: Response): void => {
+  try {
+    if (fs.existsSync(mediaRegistryPath)) {
+      const data = JSON.parse(fs.readFileSync(mediaRegistryPath, 'utf-8'));
+      res.status(200).json(Array.isArray(data) ? data : []);
+      return;
+    }
+  } catch {}
+  res.status(200).json([]);
+});
+
+app.post('/api/media-registry', requireAdminAuth, (req: Request, res: Response): void => {
+  try {
+    const item = req.body;
+    if (item && item.url) {
+      registerUploadedMedia({
+        url: item.url,
+        filename: item.filename || path.basename(item.url),
+        size: item.size || 0,
+        mimeType: item.mimeType || 'image/webp',
+        uploadedAt: item.uploadedAt || new Date().toISOString()
+      });
+      res.status(200).json({ success: true });
+      return;
+    }
+    res.status(400).json({ error: 'Data media tidak valid' });
+  } catch {
+    res.status(500).json({ error: 'Gagal mencatat media' });
+  }
+});
 
 app.post('/api/upload', (req: Request, res: Response): void => {
   // A. JSON base64 upload
@@ -390,7 +443,17 @@ app.post('/api/upload', (req: Request, res: Response): void => {
       const filePath = path.join(uploadsDir, safeName);
 
       fs.writeFileSync(filePath, fileBuffer);
-      res.status(200).json({ url: `/uploads/${safeName}` });
+      const publicUrl = `/uploads/${safeName}`;
+
+      registerUploadedMedia({
+        url: publicUrl,
+        filename: safeName,
+        size: fileBuffer.length,
+        mimeType: cleanExt === '.svg' ? 'image/svg+xml' : cleanExt === '.pdf' ? 'application/pdf' : 'image/webp',
+        uploadedAt: new Date().toISOString()
+      });
+
+      res.status(200).json({ url: publicUrl });
       return;
     } catch {
       res.status(500).json({ error: 'Gagal memproses upload file' });
@@ -472,7 +535,17 @@ app.post('/api/upload', (req: Request, res: Response): void => {
       const filePath = path.join(uploadsDir, safeName);
 
       fs.writeFileSync(filePath, fileBuffer);
-      res.status(200).json({ url: `/uploads/${safeName}` });
+      const publicUrl = `/uploads/${safeName}`;
+
+      registerUploadedMedia({
+        url: publicUrl,
+        filename: safeName,
+        size: fileBuffer.length,
+        mimeType: cleanExt === '.svg' ? 'image/svg+xml' : cleanExt === '.pdf' ? 'application/pdf' : 'image/webp',
+        uploadedAt: new Date().toISOString()
+      });
+
+      res.status(200).json({ url: publicUrl });
     } catch {
       res.status(500).json({ error: 'Upload gagal diproses' });
     }

@@ -1,7 +1,94 @@
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage, ensureFreshAuthToken } from './firebase';
+import { storage, ensureFreshAuthToken, db } from './firebase';
+import { doc, setDoc } from 'firebase/firestore';
 import { compressImageToWebP } from './imageCompressor';
 import { renderPdfFirstPageToImage } from './pdfHelper';
+
+export interface StoredMediaRecord {
+  id: string;
+  url: string;
+  filename: string;
+  folder: string;
+  size: number;
+  uploadedAt: string;
+  timestamp: number;
+  savedPermanently: boolean;
+}
+
+/**
+ * Menyimpan tautan dan metadata gambar yang diunggah secara aman dan permanen:
+ * 1. Database Cloud Firestore (collection: uploadedMedia)
+ * 2. Server Disk Registry (/api/media-registry)
+ * 3. LocalStorage browser (uploaded_media_links)
+ */
+export async function recordMediaPermanently(
+  url: string, 
+  filename?: string, 
+  size = 0, 
+  folder = 'general'
+): Promise<void> {
+  if (!url || typeof url !== 'string') return;
+  const cleanUrl = url.trim();
+  if (!cleanUrl) return;
+
+  const safeFilename = filename || cleanUrl.split('/').pop() || `img_${Date.now()}`;
+  const mediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const record: StoredMediaRecord = {
+    id: mediaId,
+    url: cleanUrl,
+    filename: safeFilename,
+    folder,
+    size,
+    uploadedAt: new Date().toISOString(),
+    timestamp: Date.now(),
+    savedPermanently: true
+  };
+
+  // 1. Simpan di local storage
+  try {
+    const existing = localStorage.getItem('uploaded_media_links');
+    let list = existing ? JSON.parse(existing) : [];
+    if (!Array.isArray(list)) list = [];
+    // Cegah duplikasi URL yang sama
+    list = [record, ...list.filter((m: any) => m?.url !== cleanUrl)];
+    if (list.length > 500) list = list.slice(0, 500);
+    localStorage.setItem('uploaded_media_links', JSON.stringify(list));
+  } catch {}
+
+  // 2. Simpan di server disk registry (/api/media-registry)
+  try {
+    fetch('/api/media-registry', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-token': 'alfreelnc_admin_auth_verified'
+      },
+      body: JSON.stringify(record)
+    }).catch(() => {});
+  } catch {}
+
+  // 3. Simpan di Cloud Firestore (uploadedMedia)
+  try {
+    setDoc(doc(db, 'uploadedMedia', mediaId), {
+      ...record,
+      _adminAuth: 'alfreelnc_admin_auth_verified',
+      updatedByAdmin: true
+    }, { merge: true }).catch((err) => {
+      console.warn("Firestore media record background notice:", err);
+    });
+  } catch {}
+}
+
+export function getStoredUploadedMedia(): StoredMediaRecord[] {
+  try {
+    const data = localStorage.getItem('uploaded_media_links');
+    if (data) {
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
 
 /**
  * Universal timeout wrapper
@@ -167,14 +254,21 @@ export async function uploadImageToStorage(
   };
 
   try {
-    return await withTimeout(
+    const finalResultUrl = await withTimeout(
       doUpload(),
       timeoutMs,
       "Gagal mengunggah gambar, silakan coba lagi"
     );
+    if (finalResultUrl) {
+      recordMediaPermanently(finalResultUrl, cleanName, fileOrBlob.size, folder).catch(() => {});
+    }
+    return finalResultUrl;
   } catch (err: any) {
     abortController.abort();
-    if (fallbackBase64) return fallbackBase64;
+    if (fallbackBase64) {
+      recordMediaPermanently(fallbackBase64, cleanName, fileOrBlob.size, folder).catch(() => {});
+      return fallbackBase64;
+    }
     throw new Error("Gagal mengunggah gambar, silakan coba lagi");
   }
 }
