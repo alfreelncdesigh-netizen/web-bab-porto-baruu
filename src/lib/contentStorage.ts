@@ -225,6 +225,20 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
   } else if (cleaned.collaboration === undefined) {
     cleaned.collaboration = defaultSettings.collaboration;
   }
+  if (Array.isArray(cleaned.deletedMessageIds)) {
+    cleaned.deletedMessageIds = Array.from(new Set(cleaned.deletedMessageIds.filter((id: any) => typeof id === 'string' && id.trim().length > 0)));
+  } else {
+    try {
+      const localDel = typeof window !== 'undefined' ? localStorage.getItem('deleted_message_ids') : null;
+      if (localDel) {
+        cleaned.deletedMessageIds = JSON.parse(localDel);
+      } else {
+        cleaned.deletedMessageIds = [];
+      }
+    } catch {
+      cleaned.deletedMessageIds = [];
+    }
+  }
   return cleaned;
 }
 
@@ -361,6 +375,19 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
           cvRole: merged.cvRole || '',
           savedAt: merged.savedAt || Date.now(),
           updatedAt: new Date().toISOString(),
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true
+        }), { merge: true })
+      );
+    }
+
+    if (Array.isArray(merged.promoPosters)) {
+      firestoreTasks.push(
+        setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
+          posters: merged.promoPosters,
+          active: merged.promoWidgetActive !== false,
+          updatedAt: new Date().toISOString(),
+          savedAt: Date.now(),
           _adminAuth: 'alfreelnc_admin_auth_verified',
           updatedByAdmin: true
         }), { merge: true })

@@ -1,50 +1,43 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, Check, Loader2, Upload, Image as ImageIcon, Eye, EyeOff, RotateCcw, ExternalLink, RefreshCw, AlertCircle } from 'lucide-react';
-import { SiteSettings, defaultSettings, PromoPosterItem, defaultPromoPosters } from '../data/settings';
-import { getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { SiteSettings, defaultSettings, PromoPosterItem } from '../data/settings';
+import { getStoredSettings, saveStoredSettings, cleanForFirestore } from '../lib/contentStorage';
 import { NAMA_COOKIE_RIWAYAT, setCookie, deleteCookie, getCookie } from './PromoPosterWidget';
 import { uploadImageToStorage, base64ToBlob } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { db } from '../lib/firebase';
+import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+
+const createDefaultSlots = (): PromoPosterItem[] => [
+  { id: 'poster-1', title: '', image: '', ctaText: 'Ambil Diskon', link: '#store', active: true },
+  { id: 'poster-2', title: '', image: '', ctaText: 'Ambil Diskon', link: '#store', active: true },
+  { id: 'poster-3', title: '', image: '', ctaText: 'Ambil Diskon', link: '#store', active: true },
+];
+
+const normalizeSlots = (rawList?: PromoPosterItem[]): PromoPosterItem[] => {
+  const slots = createDefaultSlots();
+  if (Array.isArray(rawList)) {
+    rawList.forEach((p, idx) => {
+      if (idx < 3 && p) {
+        slots[idx] = {
+          id: p.id || `poster-${idx + 1}`,
+          title: p.title || '',
+          image: p.image || '',
+          ctaText: p.ctaText || 'Ambil Diskon',
+          link: p.link || '#store',
+          active: p.active !== false,
+        };
+      }
+    });
+  }
+  return slots;
+};
 
 export default function PromoAdmin() {
   const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
   const [posters, setPosters] = useState<PromoPosterItem[]>(() => {
     const s = getStoredSettings();
-    if (Array.isArray(s.promoPosters) && s.promoPosters.length > 0) {
-      // Pastikan selalu ada minimal 3 slot dengan ID unik
-      const existing = [...s.promoPosters];
-      const usedIds = new Set<string>();
-      existing.forEach((p, idx) => {
-        if (!p.id || usedIds.has(p.id)) {
-          p.id = `poster-${idx + 1}`;
-          if (usedIds.has(p.id)) {
-            p.id = `poster-${idx + 1}-${Date.now()}`;
-          }
-        }
-        usedIds.add(p.id);
-      });
-
-      while (existing.length < 3) {
-        let counter = existing.length + 1;
-        let nextId = `poster-${counter}`;
-        while (usedIds.has(nextId)) {
-          counter++;
-          nextId = `poster-${counter}`;
-        }
-        usedIds.add(nextId);
-        const fallback = defaultPromoPosters[existing.length] || {
-          id: nextId,
-          title: `Poster Promosi ${counter}`,
-          image: defaultPromoPosters[0].image,
-          ctaText: "Ambil Diskon",
-          link: defaultPromoPosters[0].link,
-          active: true,
-        };
-        existing.push({ ...fallback, id: nextId });
-      }
-      return existing.slice(0, 3);
-    }
-    return defaultPromoPosters;
+    return normalizeSlots(s.promoPosters);
   });
 
   const [isGlobalActive, setIsGlobalActive] = useState<boolean>(() => settings.promoWidgetActive !== false);
@@ -69,6 +62,38 @@ export default function PromoAdmin() {
 
   useEffect(() => {
     refreshCookieStatus();
+
+    // 1. Dengarkan doc settings/promoPosters secara realtime
+    const unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data.posters) && data.posters.length > 0) {
+          setPosters(normalizeSlots(data.posters));
+        }
+        if (data.active !== undefined) {
+          setIsGlobalActive(data.active !== false);
+        }
+      }
+    }, (err) => console.warn("Firestore promoPosters notice:", err));
+
+    // 2. Dengarkan doc settings/global secara realtime
+    const unsubGlobal = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as SiteSettings;
+        setSettings(prev => ({ ...prev, ...data }));
+        if (Array.isArray(data.promoPosters) && data.promoPosters.length > 0) {
+          setPosters(normalizeSlots(data.promoPosters));
+        }
+        if (data.promoWidgetActive !== undefined) {
+          setIsGlobalActive(data.promoWidgetActive !== false);
+        }
+      }
+    }, (err) => console.warn("Firestore settings/global notice:", err));
+
+    return () => {
+      unsubPromo();
+      unsubGlobal();
+    };
   }, []);
 
   const showNotification = (message: string, type: 'success' | 'info' = 'success') => {
@@ -83,9 +108,8 @@ export default function PromoAdmin() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Cek ukuran awal file (maksimal 15MB)
-    if (file.size > 15 * 1024 * 1024) {
-      showNotification("Ukuran file terlalu besar! Silakan pilih gambar di bawah 15MB.", "info");
+    if (file.size > 20 * 1024 * 1024) {
+      showNotification("Ukuran file terlalu besar! Silakan pilih gambar di bawah 20MB.", "info");
       return;
     }
 
@@ -126,10 +150,32 @@ export default function PromoAdmin() {
         reader.readAsDataURL(file);
       });
 
-      // 2. Unggah Blob ke server storage (/api/upload / storage) agar didapatkan URL permanen bersih
-      const blob = base64ToBlob(dataUrl);
+      // 2. Unggah Blob ke server storage (/api/upload) untuk mendapatkan URL permanen bersih
       const cleanFileName = `promo_poster_${Date.now()}_slot${index + 1}.webp`;
-      const uploadedUrl = await uploadImageToStorage(blob, cleanFileName, dataUrl, 'promos');
+      let uploadedUrl = '';
+
+      try {
+        const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-token': 'alfreelnc_admin_auth_verified'
+          },
+          body: JSON.stringify({ file: dataUrl, filename: cleanFileName })
+        });
+        if (uploadRes.ok) {
+          const jsonRes = await uploadRes.json();
+          if (jsonRes.url) uploadedUrl = jsonRes.url;
+        }
+      } catch (errUpload) {
+        console.warn("Direct upload error, falling back to storage:", errUpload);
+      }
+
+      if (!uploadedUrl) {
+        const blob = base64ToBlob(dataUrl);
+        uploadedUrl = await uploadImageToStorage(blob, cleanFileName, dataUrl, 'promos');
+      }
+
       const finalUrl = uploadedUrl || dataUrl;
 
       // 3. Simpan ke local state
@@ -137,21 +183,35 @@ export default function PromoAdmin() {
       updated[index] = { ...updated[index], image: finalUrl };
       setPosters(updated);
 
-      // 4. Sinkronisasi instan ke settings, local storage, dan Firestore
+      // 4. Sinkronisasi instan ke Firestore dan LocalStorage
       const currentStored = getStoredSettings();
       const updatedSettings: SiteSettings = {
         ...currentStored,
         promoWidgetActive: isGlobalActive,
         promoPosters: updated,
-        promoWidgetImage: updated[0]?.image || currentStored.promoWidgetImage,
-        promoWidgetLink: updated[0]?.link || currentStored.promoWidgetLink,
-        promoWidgetCtaText: updated[0]?.ctaText || currentStored.promoWidgetCtaText,
+        promoWidgetImage: updated.find(p => p.image)?.image || '',
+        promoWidgetLink: updated.find(p => p.link)?.link || '#store',
+        promoWidgetCtaText: updated.find(p => p.ctaText)?.ctaText || 'Ambil Diskon',
       };
 
       setSettings(updatedSettings);
       await saveStoredSettings(updatedSettings);
-      window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
 
+      // Simpan langsung ke koleksi terpisah settings/promoPosters agar selalu tersimpan di Firebase
+      try {
+        await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
+          posters: updated,
+          active: isGlobalActive,
+          updatedAt: new Date().toISOString(),
+          savedAt: Date.now(),
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true
+        }), { merge: true });
+      } catch (cloudErr) {
+        console.warn("Direct promoPosters cloud sync:", cloudErr);
+      }
+
+      window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
       showNotification(`Poster #${index + 1} berhasil disimpan & langsung aktif di Menu Order!`);
     } catch (err: any) {
       console.error("Upload poster error:", err);
@@ -177,8 +237,20 @@ export default function PromoAdmin() {
         posters.map(async (p, idx) => {
           if (p.image && p.image.startsWith('data:image/')) {
             try {
-              const blob = base64ToBlob(p.image);
               const cleanFileName = `promo_poster_${Date.now()}_slot${idx + 1}.webp`;
+              const res = await fetch('/api/upload', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-admin-token': 'alfreelnc_admin_auth_verified'
+                },
+                body: JSON.stringify({ file: p.image, filename: cleanFileName })
+              });
+              if (res.ok) {
+                const j = await res.json();
+                if (j.url) return { ...p, image: j.url };
+              }
+              const blob = base64ToBlob(p.image);
               const url = await uploadImageToStorage(blob, cleanFileName, p.image, 'promos');
               return { ...p, image: url };
             } catch {
@@ -195,15 +267,29 @@ export default function PromoAdmin() {
         ...settings,
         promoWidgetActive: isGlobalActive,
         promoPosters: cleanedPosters,
-        promoWidgetImage: cleanedPosters[0]?.image || settings.promoWidgetImage,
-        promoWidgetLink: cleanedPosters[0]?.link || settings.promoWidgetLink,
-        promoWidgetCtaText: cleanedPosters[0]?.ctaText || settings.promoWidgetCtaText,
+        promoWidgetImage: cleanedPosters.find(p => p.image)?.image || '',
+        promoWidgetLink: cleanedPosters.find(p => p.link)?.link || '#store',
+        promoWidgetCtaText: cleanedPosters.find(p => p.ctaText)?.ctaText || 'Ambil Diskon',
       };
 
       setSettings(updatedSettings);
       await saveStoredSettings(updatedSettings);
-      window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
 
+      // Simpan langsung ke dokumen terpisah settings/promoPosters di Firestore
+      try {
+        await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
+          posters: cleanedPosters,
+          active: isGlobalActive,
+          updatedAt: new Date().toISOString(),
+          savedAt: Date.now(),
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true
+        }), { merge: true });
+      } catch (cloudErr) {
+        console.warn("Direct promoPosters cloud save:", cloudErr);
+      }
+
+      window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
       showNotification('Semua pengaturan 3 poster promosi berhasil disimpan & diperbarui di Menu Order!');
     } catch (err) {
       console.error("Save promo settings error:", err);

@@ -626,7 +626,141 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction): void => {
 });
 
 // ============================================================================
-// 5. VITE MIDDLEWARE (DEV) OR DIST STATIC SERVING (PROD)
+// 5. DYNAMIC METADATA & OPENGRAPH INJECTOR (WHATSAPP & SOCIAL SHARING)
+// ============================================================================
+function getRequestOrigin(req: Request): string {
+  const forwardedProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim();
+  const forwardedHost = (req.headers['x-forwarded-host'] as string)?.split(',')[0]?.trim();
+  const rawHost = forwardedHost || req.headers['host'] || 'localhost:3000';
+  const isLocal = rawHost.includes('localhost') || rawHost.includes('127.0.0.1');
+  const proto = forwardedProto || (isLocal ? (req.secure ? 'https' : 'http') : 'https');
+  return `${proto}://${rawHost}`;
+}
+
+function getPrimaryCoverImage(): { imagePath: string; mimeType: string; width: number; height: number } {
+  let imagePath = '/uploads/cover_web_1792581846511.png';
+  try {
+    if (fs.existsSync(settingsFilePath)) {
+      const data = JSON.parse(fs.readFileSync(settingsFilePath, 'utf-8'));
+      if (data && typeof data.heroImage === 'string' && data.heroImage.trim().length > 0) {
+        const candidate = data.heroImage.trim();
+        if (candidate.startsWith('http://') || candidate.startsWith('https://')) {
+          const isWebp = candidate.toLowerCase().endsWith('.webp');
+          const isJpg = candidate.toLowerCase().endsWith('.jpg') || candidate.toLowerCase().endsWith('.jpeg');
+          return {
+            imagePath: candidate,
+            mimeType: isWebp ? 'image/webp' : isJpg ? 'image/jpeg' : 'image/png',
+            width: 1408,
+            height: 768,
+          };
+        }
+        const rel = candidate.startsWith('/') ? candidate : `/${candidate}`;
+        const localFile = path.join(publicDir, rel);
+        if (fs.existsSync(localFile)) {
+          imagePath = rel;
+        } else if (candidate.includes('cover_web')) {
+          imagePath = '/uploads/cover_web_1792581846511.png';
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading settings for cover image:', e);
+  }
+
+  const isWebp = imagePath.toLowerCase().endsWith('.webp');
+  const isJpg = imagePath.toLowerCase().endsWith('.jpg') || imagePath.toLowerCase().endsWith('.jpeg');
+  return {
+    imagePath,
+    mimeType: isWebp ? 'image/webp' : isJpg ? 'image/jpeg' : 'image/png',
+    width: 1408,
+    height: 768,
+  };
+}
+
+function injectDynamicMeta(html: string, req: Request): string {
+  const origin = getRequestOrigin(req);
+  const { imagePath, mimeType, width, height } = getPrimaryCoverImage();
+  const absoluteImageUrl = imagePath.startsWith('http://') || imagePath.startsWith('https://')
+    ? imagePath
+    : `${origin}${imagePath.startsWith('/') ? imagePath : '/' + imagePath}`;
+  
+  const fullUrl = `${origin}${req.originalUrl || '/'}`;
+
+  let modified = html;
+
+  // Replace og:image
+  if (/<meta\s+property=["']og:image["']/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+property=["']og:image["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta property="og:image" content="${absoluteImageUrl}" id="og-image" />`
+    );
+  } else {
+    modified = modified.replace('</head>', `    <meta property="og:image" content="${absoluteImageUrl}" id="og-image" />\n  </head>`);
+  }
+
+  // Replace og:image:secure_url
+  if (/<meta\s+property=["']og:image:secure_url["']/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+property=["']og:image:secure_url["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta property="og:image:secure_url" content="${absoluteImageUrl}" id="og-image-secure" />`
+    );
+  } else {
+    modified = modified.replace('</head>', `    <meta property="og:image:secure_url" content="${absoluteImageUrl}" id="og-image-secure" />\n  </head>`);
+  }
+
+  // Replace og:image:type
+  if (/<meta\s+property=["']og:image:type["']/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+property=["']og:image:type["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta property="og:image:type" content="${mimeType}" />`
+    );
+  }
+
+  // Replace og:image:width
+  if (/<meta\s+property=["']og:image:width["']/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+property=["']og:image:width["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta property="og:image:width" content="${width}" />`
+    );
+  }
+
+  // Replace og:image:height
+  if (/<meta\s+property=["']og:image:height["']/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+property=["']og:image:height["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta property="og:image:height" content="${height}" />`
+    );
+  }
+
+  // Replace twitter:image
+  if (/<meta\s+name=["']twitter:image["']/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+name=["']twitter:image["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta name="twitter:image" content="${absoluteImageUrl}" id="twitter-image" />`
+    );
+  }
+
+  // Replace og:url
+  if (/<meta\s+property=["']og:url["']/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+property=["']og:url["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta property="og:url" content="${fullUrl}" id="og-url" />`
+    );
+  }
+
+  // Replace canonical link
+  if (/<link\s+rel=["']canonical["']/i.test(modified)) {
+    modified = modified.replace(
+      /<link\s+rel=["']canonical["']\s+href=["'][^"']*["'][^>]*>/i,
+      `<link rel="canonical" href="${fullUrl}" id="canonical-url" />`
+    );
+  }
+
+  return modified;
+}
+
+// ============================================================================
+// 6. VITE MIDDLEWARE (DEV) OR DIST STATIC SERVING (PROD)
 // ============================================================================
 async function startServer() {
   const server = http.createServer(app);
@@ -638,9 +772,34 @@ async function startServer() {
         middlewareMode: true,
         hmr: { server }
       },
-      appType: 'spa',
+      appType: 'custom',
     });
     app.use(vite.middlewares);
+
+    app.get('*', async (req: Request, res: Response, next: NextFunction) => {
+      // Don't intercept API, uploads, images, or vite internal assets
+      if (
+        req.path.startsWith('/api') ||
+        req.path.startsWith('/uploads') ||
+        req.path.startsWith('/images') ||
+        req.path.startsWith('/@') ||
+        req.path.startsWith('/src') ||
+        req.path.startsWith('/node_modules') ||
+        /\.[a-zA-Z0-9]+$/.test(req.path)
+      ) {
+        return next();
+      }
+
+      try {
+        const rawTemplate = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+        const viteTemplate = await vite.transformIndexHtml(req.originalUrl, rawTemplate);
+        const finalHtml = injectDynamicMeta(viteTemplate, req);
+        res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(finalHtml);
+      } catch (e: any) {
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
   } else {
     const distDir = path.resolve(__dirname, 'dist');
     app.use(express.static(distDir, {
@@ -653,14 +812,16 @@ async function startServer() {
         }
       }
     }));
-    app.get('*', (_req: Request, res: Response) => {
+    app.get('*', (req: Request, res: Response) => {
       const indexPath = path.resolve(distDir, 'index.html');
       if (fs.existsSync(indexPath)) {
-        res.sendFile(indexPath, (err) => {
-          if (err && !res.headersSent) {
-            res.status(500).send('Error serving application');
-          }
-        });
+        try {
+          const rawTemplate = fs.readFileSync(indexPath, 'utf-8');
+          const finalHtml = injectDynamicMeta(rawTemplate, req);
+          res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(finalHtml);
+        } catch {
+          res.sendFile(indexPath);
+        }
       } else {
         res.status(200).send('<!doctype html><html><head><meta charset="utf-8"><title>Portofolio</title></head><body><div id="root">App starting...</div></body></html>');
       }

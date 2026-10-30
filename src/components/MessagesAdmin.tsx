@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
+import { collection, onSnapshot, deleteDoc, doc, setDoc, getDoc } from 'firebase/firestore';
 import { Trash2, Mail, Calendar, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import ConfirmModal from './ConfirmModal';
@@ -16,9 +16,19 @@ export default function MessagesAdmin() {
     const unsubscribe = onSnapshot(
       collection(db, 'messages'),
       (snapshot) => {
+        let localDeleted: Set<string> = new Set();
+        try {
+          const raw = localStorage.getItem('deleted_message_ids');
+          if (raw) localDeleted = new Set(JSON.parse(raw));
+        } catch {}
+
         const msgData: any[] = [];
         snapshot.forEach((docSnap) => {
-          msgData.push({ id: docSnap.id, ...docSnap.data() });
+          const data = docSnap.data();
+          if (data.isDeleted === true || data.status === 'deleted' || localDeleted.has(docSnap.id)) {
+            return;
+          }
+          msgData.push({ id: docSnap.id, ...data });
         });
         msgData.sort((a, b) => {
           const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
@@ -45,14 +55,55 @@ export default function MessagesAdmin() {
     setIsDeleting(true);
     const id = messageToDelete.id;
 
-    // Optimistic update
+    // 1. Optimistic UI update
     setMessages(prev => prev.filter(m => m.id !== id));
     setToast("Pesan berhasil dihapus");
     setTimeout(() => setToast(''), 3000);
     setMessageToDelete(null);
 
+    // 2. Simpan ke blacklist localStorage secara instan
     try {
+      const raw = localStorage.getItem('deleted_message_ids');
+      const list = raw ? JSON.parse(raw) : [];
+      if (!list.includes(id)) {
+        list.push(id);
+        localStorage.setItem('deleted_message_ids', JSON.stringify(list));
+      }
+    } catch {}
+
+    // 3. Siarkan event ke seluruh komponen aktif (seperti Contact.tsx di halaman publik)
+    window.dispatchEvent(new CustomEvent('message_deleted', { detail: { id } }));
+    window.dispatchEvent(new CustomEvent('messages_updated'));
+
+    try {
+      // 4. Tandai dokumen sebagai isDeleted di Firestore (safety net instan)
+      await setDoc(doc(db, 'messages', id), { 
+        isDeleted: true, 
+        status: 'deleted',
+        deletedAt: new Date().toISOString(),
+        _adminAuth: 'alfreelnc_admin_auth_verified',
+        updatedByAdmin: true
+      }, { merge: true }).catch(() => {});
+
+      // 5. Hapus permanen dokumen dari database Firestore
       await deleteDoc(doc(db, 'messages', id));
+
+      // 6. Catat ID pesan terhapus di settings/global agar tersimpan permanen di cloud
+      try {
+        const globalSnap = await getDoc(doc(db, 'settings', 'global'));
+        const existingDeleted: string[] = globalSnap.exists() && Array.isArray(globalSnap.data().deletedMessageIds) 
+          ? globalSnap.data().deletedMessageIds 
+          : [];
+        if (!existingDeleted.includes(id)) {
+          await setDoc(doc(db, 'settings', 'global'), {
+            deletedMessageIds: [...existingDeleted, id],
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true
+          }, { merge: true });
+        }
+      } catch (cloudErr) {
+        console.warn("Notice: sync deletedMessageIds cloud:", cloudErr);
+      }
     } catch (err) {
       console.warn("Delete message error:", err);
     } finally {

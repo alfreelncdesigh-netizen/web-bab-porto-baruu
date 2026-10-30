@@ -284,11 +284,14 @@ export default function App() {
 
   // Dynamic social sharing images & metadata synchronizer
   useEffect(() => {
+    const currentSettings = getStoredSettings();
+    const heroImage = currentSettings.heroImage || '/uploads/cover_web_1792581846511.png';
+
     const metaMap: Record<string, { title: string; description: string; image: string; hash: string }> = {
       home: {
         title: 'Alfreelnc Design Portofolio',
         description: 'Kumpulan karya desain grafis, branding, dan informasi pemesanan jasa, kunjungi untuk info lebih lanjut .',
-        image: '/images/promo_poster_1789471291192.jpg',
+        image: heroImage,
         hash: '',
       },
       portfolio: {
@@ -330,7 +333,7 @@ export default function App() {
       contact: {
         title: 'Hubungi & Konsultasi Proyek Desain – Muhammad Albiansyah',
         description: 'Mulai kolaborasi proyek desain Anda. Hubungi langsung melalui WhatsApp atau formulir pesan.',
-        image: '/images/promo_poster_1789471291192.jpg',
+        image: heroImage,
         hash: '#contact',
       },
       stats: {

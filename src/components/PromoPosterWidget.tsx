@@ -12,7 +12,10 @@ import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 //    - Link WhatsApp: Ubah nomor WhatsApp & teks URL encoded.
 //    - Link Halaman Order Website: '#store'
 // ====================================================================================================
-export const LINK_TUJUAN_CTA_DEFAULT = "https://wa.me/628112345678?text=Halo%20saya%20tertarik%20dengan%20promo%20diskon%20desain";
+import { db } from '../lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+
+export const LINK_TUJUAN_CTA_DEFAULT = "https://wa.me/6282394549268?text=Halo%20saya%20tertarik%20dengan%20promo%20diskon%20desain";
 
 // ====================================================================================================
 // 2. TEKS TOMBOL CTA (Default):
@@ -108,7 +111,7 @@ export default function PromoPosterWidget({
   // Ref status pengunjung baru untuk sesi berjalan
   const isNewUserSessionRef = useRef<boolean>(false);
 
-  // Dengarkan event pembaruan pengaturan dari dashboard admin
+  // Dengarkan pembaruan pengaturan dari event lokal dan database Firestore secara realtime
   useEffect(() => {
     const handleSettingsUpdate = (e: any) => {
       if (e.detail) {
@@ -116,16 +119,36 @@ export default function PromoPosterWidget({
       }
     };
 
+    // 1. Dengarkan doc settings/promoPosters secara realtime
+    const unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (Array.isArray(data.posters) && data.posters.length > 0) {
+          setSettings(prev => ({
+            ...prev,
+            promoPosters: data.posters,
+            promoWidgetActive: data.active !== undefined ? data.active !== false : prev.promoWidgetActive
+          }));
+        }
+      }
+    }, (err) => console.warn("PromoWidget promoPosters notice:", err));
+
+    // 2. Dengarkan doc settings/global secara realtime
+    const unsubGlobal = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as SiteSettings;
+        setSettings(prev => ({ ...prev, ...data }));
+      }
+    }, (err) => console.warn("PromoWidget settings/global notice:", err));
+
     // Event testing dari dashboard admin: munculkan widget sekarang secara acak
     const handleTriggerPromoNow = (e?: any) => {
       const posters = getAvailablePosters();
       if (posters.length > 0) {
-        // Jika ada spesifik poster yang dites
         if (e?.detail?.posterId) {
           const specific = posters.find(p => p.id === e.detail.posterId);
           setActivePoster(specific || posters[0]);
         } else {
-          // Pilih secara acak
           const random = posters[Math.floor(Math.random() * posters.length)];
           setActivePoster(random);
         }
@@ -137,26 +160,24 @@ export default function PromoPosterWidget({
     window.addEventListener('app_settings_updated', handleSettingsUpdate);
     window.addEventListener('trigger_promo_widget_now', handleTriggerPromoNow);
     return () => {
+      unsubPromo();
+      unsubGlobal();
       window.removeEventListener('app_settings_updated', handleSettingsUpdate);
       window.removeEventListener('trigger_promo_widget_now', handleTriggerPromoNow);
     };
-  }, [settings]);
+  }, []);
 
-  // Dapatkan daftar poster yang aktif (dari 3 slot di settings)
+  // Dapatkan daftar poster yang aktif (hanya poster yang benar-benar memiliki gambar)
   const getAvailablePosters = (): PromoPosterItem[] => {
-    const rawPosters = settings.promoPosters && settings.promoPosters.length > 0
-      ? settings.promoPosters
-      : defaultPromoPosters;
+    const rawPosters = Array.isArray(settings.promoPosters) ? settings.promoPosters : [];
 
-    // Filter hanya poster yang ditandai aktif
-    const activeOnly = rawPosters.filter(p => p.active !== false);
-    if (activeOnly.length > 0) return activeOnly;
-
-    // Fallback jika semua dinonaktifkan: gunakan poster pertama
-    return rawPosters.length > 0 ? [rawPosters[0]] : defaultPromoPosters;
+    return rawPosters.filter(
+      p => p && p.active !== false && p.image && typeof p.image === 'string' && p.image.trim().length > 0 &&
+           !p.title?.includes('Diskon 30% Paket Branding') && !p.title?.includes('Konsultasi Desain & Audit Portofolio')
+    );
   };
 
-  // Fungsi untuk memilih salah satu dari 3 poster SECARA ACAK
+  // Fungsi untuk memilih salah satu dari poster yang tersedia SECARA ACAK
   const pickRandomPoster = () => {
     const available = getAvailablePosters();
     if (available.length === 0) return null;
@@ -351,12 +372,12 @@ export default function PromoPosterWidget({
     }
   };
 
-  // Jangan render jika belum saatnya tampil, di halaman admin, atau dinonaktifkan
-  if (!isVisible || currentView === 'admin' || settings.promoWidgetActive === false || !activePoster) {
+  // Jangan render jika belum saatnya tampil, di halaman admin, dinonaktifkan, atau tidak memiliki gambar
+  if (!isVisible || currentView === 'admin' || settings.promoWidgetActive === false || !activePoster || !activePoster.image) {
     return null;
   }
 
-  const posterImage = activePoster.image || "/src/assets/images/promo_poster_1789471291192.jpg";
+  const posterImage = activePoster.image;
   const ctaButtonText = activePoster.ctaText || TEKS_TOMBOL_CTA_DEFAULT;
 
   return (

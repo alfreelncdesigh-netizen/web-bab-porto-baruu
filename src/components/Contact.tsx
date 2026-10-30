@@ -65,19 +65,55 @@ export default function Contact() {
 
  useEffect(() => {
   const handleSettingsUpdate = (e: any) => {
-    if (e.detail) setSettings(e.detail);
+    if (e.detail) {
+      setSettings(e.detail);
+      if (Array.isArray(e.detail.deletedMessageIds)) {
+        const delSet = new Set(e.detail.deletedMessageIds);
+        setMessages(prev => prev.filter(m => !delSet.has(m.id)));
+      }
+    }
   };
   window.addEventListener('app_settings_updated', handleSettingsUpdate);
 
+  const handleMessageDeleted = (e: any) => {
+    const delId = e.detail?.id;
+    if (delId) {
+      setMessages(prev => prev.filter(m => m.id !== delId));
+    }
+  };
+  window.addEventListener('message_deleted', handleMessageDeleted);
+
   // Berlangganan data seluruh komentar secara publik untuk semua pengunjung
-  const qMessages = query(collection(db, 'messages'), orderBy('dateAdded', 'desc'));
   const unsubscribeMessages = onSnapshot(
-    qMessages,
+    collection(db, 'messages'),
     (snapshot) => {
+      let localDeletedIds: string[] = [];
+      try {
+        const raw = localStorage.getItem('deleted_message_ids');
+        if (raw) localDeletedIds = JSON.parse(raw);
+      } catch {}
+
+      const currentStored = getStoredSettings();
+      const cloudDeleted = currentStored.deletedMessageIds || [];
+      const deletedSet = new Set([...localDeletedIds, ...cloudDeleted]);
+
       const msgData: any[] = [];
-      snapshot.forEach((doc) => {
-        msgData.push({ id: doc.id, ...doc.data() });
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        // Saring secara ketat: pesan yang dihapus TIDAK BOLEH tampil di website utama
+        if (data.isDeleted === true || data.status === 'deleted' || deletedSet.has(docSnap.id)) {
+          return;
+        }
+        msgData.push({ id: docSnap.id, ...data });
       });
+
+      // Urutkan dari komentar terbaru ke terlama secara andal
+      msgData.sort((a, b) => {
+        const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+        const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+        return timeB - timeA;
+      });
+
       setMessages(msgData);
       setLoadingMessages(false);
     },
@@ -92,7 +128,12 @@ export default function Contact() {
    docRef,
    (docSnap) => {
     if (docSnap.exists()) {
-     setSettings({ ...defaultSettings, ...(docSnap.data() as Partial<SiteSettings>) });
+      const data = docSnap.data() as Partial<SiteSettings>;
+      setSettings({ ...defaultSettings, ...data });
+      if (Array.isArray(data.deletedMessageIds) && data.deletedMessageIds.length > 0) {
+        const delSet = new Set(data.deletedMessageIds);
+        setMessages(prev => prev.filter(m => !delSet.has(m.id)));
+      }
     }
    },
    (err) => {
@@ -105,6 +146,7 @@ export default function Contact() {
     unsubscribeMessages();
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     window.removeEventListener('app_settings_updated', handleSettingsUpdate);
+    window.removeEventListener('message_deleted', handleMessageDeleted);
   };
  }, []);
 
