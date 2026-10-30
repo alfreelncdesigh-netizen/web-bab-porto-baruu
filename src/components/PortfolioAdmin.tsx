@@ -11,6 +11,7 @@ import { SiteSettings } from '../data/settings';
 import { getOptimizedImageUrl } from "../lib/cloudinary";
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
+import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 
 export default function PortfolioAdmin() {
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
@@ -132,6 +133,19 @@ export default function PortfolioAdmin() {
     setEditingProject(null);
     setSaving(false);
 
+    // Lacak aktivitas kolaborator secara realtime jika sesi yang aktif adalah kolaborator
+    try {
+      const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
+      if (u.role === 'collaborator') {
+        const isNew = !projects.some(p => p.id.toString() === docId);
+        recordCollaboratorActivity(
+          isNew ? 'Menambahkan Karya Baru' : 'Memperbarui Karya',
+          `Kolaborator ${isNew ? 'membuat' : 'memperbarui'} karya "${savedProj.title}" (Kategori: ${savedProj.category}).`,
+          '/admin#portfolio'
+        );
+      }
+    } catch {}
+
     try {
       const projectRef = doc(db, 'projects', docId);
       await withTimeout(
@@ -178,6 +192,19 @@ export default function PortfolioAdmin() {
     setProjects(updated);
     saveStoredProjects(updated);
     showToast(`"${projectToDelete.title || 'Karya'}" berhasil dihapus permanen.`);
+    
+    // Lacak aktivitas penghapusan oleh kolaborator
+    try {
+      const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
+      if (u.role === 'collaborator') {
+        recordCollaboratorActivity(
+          'Menghapus Karya',
+          `Kolaborator menghapus karya "${projectToDelete.title || 'Tanpa Judul'}".`,
+          '/admin#portfolio'
+        );
+      }
+    } catch {}
+
     setProjectToDelete(null);
 
     // 2. Eksekusi penghapusan di database Cloud Firestore
@@ -237,8 +264,7 @@ export default function PortfolioAdmin() {
       } catch {}
     }
 
-    const isAutoCollab = isCollabUser || Boolean(siteSettings.collaboration?.enabled && siteSettings.collaboration?.autoTagNewItems);
-
+    // Saat menambahkan karya baru, toggle kolaborator selalu OFF secara default
     setEditingProject({
       id: Date.now().toString(),
       title: '',
@@ -252,10 +278,10 @@ export default function PortfolioAdmin() {
       totalHoursSpent: '',
       toolsUsed: '',
       completionDate: '',
-      isCollaboration: isAutoCollab,
-      collaborationPartner: collabPartner || (isAutoCollab ? (siteSettings.collaboration?.partnerName || '') : ''),
-      collaborationLogo: collabLogo || (isAutoCollab ? (siteSettings.collaboration?.partnerLogo || '') : ''),
-      collaborationText: isAutoCollab ? (siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama') : ''
+      isCollaboration: false,
+      collaborationPartner: collabPartner || siteSettings.collaboration?.partnerName || '',
+      collaborationLogo: collabLogo || siteSettings.collaboration?.partnerLogo || '',
+      collaborationText: siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama'
     });
   };
 

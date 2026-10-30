@@ -42,15 +42,36 @@ export default function Store({ isOrderView = false }: StoreProps) {
     return deduplicatePosters(raw);
   });
 
-  // Sinkronisasi realtime jika poster diubah dari admin dashboard
+  // Sinkronisasi realtime jika poster diubah dari admin dashboard atau database Firestore
   useEffect(() => {
     const handleSettingsUpdate = (e: any) => {
       if (e.detail?.promoPosters) {
         setPromoPosters(deduplicatePosters(e.detail.promoPosters));
       }
+      if (e.detail?.contactPhone) {
+        setWhatsappNumber(getCleanPhone(e.detail.contactPhone));
+      }
     };
     window.addEventListener('app_settings_updated', handleSettingsUpdate);
-    return () => window.removeEventListener('app_settings_updated', handleSettingsUpdate);
+
+    const unsub = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.promoPosters && Array.isArray(data.promoPosters) && data.promoPosters.length > 0) {
+          setPromoPosters(deduplicatePosters(data.promoPosters));
+        }
+        if (data.contactPhone) {
+          setWhatsappNumber(getCleanPhone(data.contactPhone));
+        }
+      }
+    }, (err) => {
+      console.warn("Store realtime sync notice:", err);
+    });
+
+    return () => {
+      window.removeEventListener('app_settings_updated', handleSettingsUpdate);
+      unsub();
+    };
   }, []);
 
   const [step, setStep] = useState(1);
@@ -1452,104 +1473,105 @@ Terima kasih.`;
           </form>
         </div>
 
-        {/* KHUSUS SAAT MENU ORDER DI-KLIK: SEMUA POSTER PROMOSI WIDGET */}
-        {isOrderView && (
-          <div className="mt-10 md:mt-16 pt-8 md:pt-12 border-t border-zinc-200/80 dark:border-zinc-800/80">
-            {/* Header Bagian Promo */}
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-6 md:mb-8 gap-3">
-              <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mb-2">
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Promo & Penawaran Spesial</span>
-                </div>
-                <h3 className="text-lg md:text-2xl lg:text-3xl font-extrabold text-black dark:text-white tracking-tight">
-                  Poster & Paket Promosi Pilihan
-                </h3>
-                <p className="text-xs md:text-sm text-zinc-500 dark:text-zinc-400 mt-1 max-w-xl">
-                  Pilih penawaran terbaik di bawah ini untuk proyek desain grafis, branding, atau kebutuhan visual Anda.
-                </p>
+        {/* PAKET SPESIAL PILIHAN */}
+        <div id="promo-posters-section" className="mt-10 md:mt-16 pt-8 md:pt-12 border-t border-zinc-200/80 dark:border-zinc-800/80">
+          {/* Header Bagian Promo */}
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-6 md:mb-8 gap-3">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/70 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-400 text-[10px] md:text-xs font-bold uppercase tracking-wider mb-2">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Promo & Penawaran Spesial</span>
               </div>
-              <div className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 shrink-0">
-                <span>{(promoPosters.filter(p => p.active !== false).length || defaultPromoPosters.length)} Poster Aktif</span>
-              </div>
+              <h3 className="text-lg md:text-2xl lg:text-3xl font-extrabold text-black dark:text-white tracking-tight">
+                Paket Spesial Pilihan
+              </h3>
+              <p className="text-xs md:text-sm text-zinc-500 dark:text-zinc-400 mt-1 max-w-xl">
+                Pilih penawaran terbaik di bawah ini untuk proyek desain grafis, branding, atau kebutuhan visual Anda.
+              </p>
             </div>
-
-            {/* Grid Poster (Rasio 4:5, terstruktur rapi di semua device: 1 kolom di mobile, 2 kolom di tablet, 3 kolom di desktop) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6 lg:gap-8">
-              {(promoPosters.filter(p => p.active !== false).length > 0 
-                ? promoPosters.filter(p => p.active !== false) 
-                : defaultPromoPosters
-              ).map((poster, index) => {
-                const isStoreLink = poster.link === '#store' || poster.link === 'store' || !poster.link;
-                return (
-                  <div
-                    key={poster.id ? `${poster.id}-${index}` : `promo-poster-${index}`}
-                    className="group bg-white dark:bg-[#111111] border border-zinc-200 dark:border-zinc-800/90 rounded-2xl md:rounded-[1.75rem] p-3.5 md:p-4 flex flex-col justify-between shadow-sm hover:shadow-xl hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-300"
-                  >
-                    <div>
-                      {/* Kontainer Gambar Vertikal Rasio 4:5 */}
-                      <div className="w-full aspect-[4/5] rounded-xl md:rounded-2xl overflow-hidden relative bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60">
-                        {poster.image ? (
-                          <img
-                            src={poster.image}
-                            alt={poster.title || `Poster Promosi #${index + 1}`}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
-                            loading="lazy"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400 p-4 text-center">
-                            <LayoutTemplate className="w-10 h-10 mb-2 opacity-40" />
-                            <span className="text-xs font-semibold">Poster Promosi 4:5</span>
-                          </div>
-                        )}
-
-                        {/* Badge Nomor Slot Promosi */}
-                        <div className="absolute top-2.5 left-2.5 bg-black/80 dark:bg-white/95 text-white dark:text-black backdrop-blur-md px-2.5 py-1 rounded-full text-[9px] md:text-[10px] font-extrabold tracking-wider uppercase shadow-md flex items-center gap-1">
-                          <Tag className="w-3 h-3" />
-                          <span>PROMO #{index + 1}</span>
-                        </div>
-                      </div>
-
-                      {/* Judul Promo */}
-                      <h4 className="text-xs md:text-sm font-bold text-black dark:text-white mt-3 mb-1 line-clamp-2 leading-snug group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                        {poster.title || `Penawaran Promo #${index + 1}`}
-                      </h4>
-                    </div>
-
-                    {/* Tombol Aksi CTA */}
-                    <div className="pt-3 mt-1 border-t border-zinc-100 dark:border-zinc-800/60">
-                      {isStoreLink ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const storeElement = document.getElementById('store');
-                            if (storeElement) {
-                              storeElement.scrollIntoView({ behavior: 'smooth' });
-                            }
-                          }}
-                          className="w-full py-2 md:py-2.5 px-3 rounded-xl text-xs font-bold bg-zinc-900 text-white dark:bg-white dark:text-black hover:bg-emerald-600 dark:hover:bg-emerald-500 dark:hover:text-white hover:text-white transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] shadow-sm cursor-pointer"
-                        >
-                          <span>{poster.ctaText || "Pesan Desain Ini"}</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      ) : (
-                        <a
-                          href={poster.link}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="w-full py-2 md:py-2.5 px-3 rounded-xl text-xs font-bold bg-zinc-900 text-white dark:bg-white dark:text-black hover:bg-emerald-600 dark:hover:bg-emerald-500 dark:hover:text-white hover:text-white transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] shadow-sm text-center"
-                        >
-                          <span>{poster.ctaText || "Ambil Diskon"}</span>
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 shrink-0">
+              <span>{(promoPosters.filter(p => p.active !== false).length || promoPosters.length || defaultPromoPosters.length)} Paket Pilihan</span>
             </div>
           </div>
-        )}
+
+          {/* Grid Poster (Rasio 4:5, terstruktur rapi di semua device: 1 kolom di mobile, 2 kolom di tablet, 3 kolom di desktop) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6 lg:gap-8">
+            {(
+              promoPosters.filter(p => p.active !== false).length > 0 
+                ? promoPosters.filter(p => p.active !== false) 
+                : (promoPosters.length > 0 ? promoPosters : defaultPromoPosters)
+            ).map((poster, index) => {
+              const isStoreLink = poster.link === '#store' || poster.link === 'store' || !poster.link;
+              const posterImgUrl = resolveImageUrl(poster.image);
+              return (
+                <div
+                  key={poster.id ? `${poster.id}-${index}` : `promo-poster-${index}`}
+                  className="group bg-white dark:bg-[#111111] border border-zinc-200 dark:border-zinc-800/90 rounded-2xl md:rounded-[1.75rem] p-3.5 md:p-4 flex flex-col justify-between shadow-sm hover:shadow-xl hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-300"
+                >
+                  <div>
+                    {/* Kontainer Gambar Vertikal Rasio 4:5 */}
+                    <div className="w-full aspect-[4/5] rounded-xl md:rounded-2xl overflow-hidden relative bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/60 dark:border-zinc-800/60">
+                      {poster.image ? (
+                        <img
+                          src={posterImgUrl}
+                          alt={poster.title || `Poster Promosi #${index + 1}`}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                          loading="lazy"
+                          onError={handleImageError}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-zinc-400 p-4 text-center">
+                          <LayoutTemplate className="w-10 h-10 mb-2 opacity-40" />
+                          <span className="text-xs font-semibold">Poster Promosi 4:5</span>
+                        </div>
+                      )}
+
+                      {/* Badge Nomor Slot Promosi */}
+                      <div className="absolute top-2.5 left-2.5 bg-black/80 dark:bg-white/95 text-white dark:text-black backdrop-blur-md px-2.5 py-1 rounded-full text-[9px] md:text-[10px] font-extrabold tracking-wider uppercase shadow-md flex items-center gap-1">
+                        <Tag className="w-3 h-3" />
+                        <span>PROMO #{index + 1}</span>
+                      </div>
+                    </div>
+
+                    {/* Judul Promo */}
+                    <h4 className="text-xs md:text-sm font-bold text-black dark:text-white mt-3 mb-1 line-clamp-2 leading-snug group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                      {poster.title || `Penawaran Promo #${index + 1}`}
+                    </h4>
+                  </div>
+
+                  {/* Tombol Aksi CTA */}
+                  <div className="pt-3 mt-1 border-t border-zinc-100 dark:border-zinc-800/60">
+                    {isStoreLink ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const storeElement = document.getElementById('store');
+                          if (storeElement) {
+                            storeElement.scrollIntoView({ behavior: 'smooth' });
+                          }
+                        }}
+                        className="w-full py-2 md:py-2.5 px-3 rounded-xl text-xs font-bold bg-zinc-900 text-white dark:bg-white dark:text-black hover:bg-emerald-600 dark:hover:bg-emerald-500 dark:hover:text-white hover:text-white transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] shadow-sm cursor-pointer"
+                      >
+                        <span>{poster.ctaText || "Pesan Desain Ini"}</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <a
+                        href={poster.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2 md:py-2.5 px-3 rounded-xl text-xs font-bold bg-zinc-900 text-white dark:bg-white dark:text-black hover:bg-emerald-600 dark:hover:bg-emerald-500 dark:hover:text-white hover:text-white transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] shadow-sm text-center"
+                      >
+                        <span>{poster.ctaText || "Ambil Diskon"}</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
       </div>
 

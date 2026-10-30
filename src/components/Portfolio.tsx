@@ -738,7 +738,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                 <span className="inline-block px-2.5 py-1 bg-white/20 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase border border-white/10 shadow-sm">
                                   {project.category}
                                 </span>
-                                {(project.isCollaboration || project.collaborationPartner) && (
+                                {Boolean(project.isCollaboration) && (
                                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-600/90 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase border border-indigo-400/30 text-white shadow-sm">
                                     {project.collaborationLogo ? (
                                       <img 
@@ -1067,7 +1067,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                   )}
 
                   {/* BAGIAN BAWAH DESKRIPSI KARYA: TEKS & LOGO KOLABORASI */}
-                  {(selectedProject.isCollaboration || selectedProject.collaborationPartner) && (
+                  {Boolean(selectedProject.isCollaboration) && (
                     <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-zinc-50 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 flex items-center justify-between gap-3 shadow-xs">
                       <div className="flex items-center gap-3 min-w-0">
                         {selectedProject.collaborationLogo ? (

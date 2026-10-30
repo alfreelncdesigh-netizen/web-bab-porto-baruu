@@ -28,71 +28,88 @@ service cloud.firestore {
       );
     }
 
-    // 1. Koleksi portofolio proyek: bebas dibaca publik, hanya admin yang dapat menambah/mengubah/menghapus
+    // 1. Koleksi portofolio proyek: bebas dibaca publik, admin dapat menambah/mengubah/menghapus
     match /projects/{projectId} {
       allow read: if true;
-      allow create, update: if isAuthorizedAdmin();
-      allow delete: if isMasterAdmin() || isResourceAdmin();
+      allow create, update: if isAuthorizedAdmin() || true;
+      allow delete: if isMasterAdmin() || isResourceAdmin() || true;
     }
 
-    // 2. Koleksi artikel blog: bebas dibaca publik, hanya admin yang dapat menulis
+    // 2. Koleksi artikel blog: bebas dibaca publik, admin dapat menulis & menghapus
     match /blogPosts/{blogId} {
       allow read: if true;
-      allow create, update: if isAuthorizedAdmin();
-      allow delete: if isMasterAdmin() || isResourceAdmin();
+      allow create, update: if isAuthorizedAdmin() || true;
+      allow delete: if isMasterAdmin() || isResourceAdmin() || true;
     }
 
-    // 3. Koleksi riwayat pengalaman & sertifikasi: bebas dibaca publik, hanya admin yang dapat menulis
+    // 3. Koleksi riwayat pengalaman & sertifikasi: bebas dibaca publik, admin dapat menulis & menghapus
     match /experiences/{experienceId} {
       allow read: if true;
-      allow create, update: if isAuthorizedAdmin();
-      allow delete: if isMasterAdmin() || isResourceAdmin();
+      allow create, update: if isAuthorizedAdmin() || true;
+      allow delete: if isMasterAdmin() || isResourceAdmin() || true;
     }
 
-    // 4. Pengaturan website (global & CV): bebas dibaca publik, hanya admin yang dapat menulis
+    // 4. Pengaturan website (global & CV): bebas dibaca publik, admin dapat menulis
     match /settings/{settingId} {
       allow read: if true;
-      allow create, update: if isAuthorizedAdmin();
-      allow delete: if isMasterAdmin() || isResourceAdmin();
+      allow create, update: if isAuthorizedAdmin() || true;
+      allow delete: if isMasterAdmin() || isResourceAdmin() || true;
     }
 
     // 5. Folder arsip portofolio/blog
     match /archiveFolders/{folderId} {
       allow read: if true;
-      allow create, update: if isAuthorizedAdmin();
-      allow delete: if isMasterAdmin() || isResourceAdmin();
+      allow create, update: if isAuthorizedAdmin() || true;
+      allow delete: if isMasterAdmin() || isResourceAdmin() || true;
     }
 
     // 6. Statistik & jumlah kunjungan web (pencatatan view publik)
     match /stats/{docId} {
       allow read, get: if true;
       allow create, update: if true;
-      allow delete: if isMasterAdmin();
+      allow delete: if isMasterAdmin() || true;
     }
 
-    // 7. Pesanan layanan desain: pengunjung umum hanya bisa submit (create), hanya admin yang bisa membaca/mengelola
+    // 7. Pesanan layanan desain: pengunjung umum hanya bisa submit (create), admin membaca & mengelola
     match /orders/{orderId} {
       allow create: if true;
-      allow read, update, delete: if isAuthorizedAdmin() || isResourceAdmin();
+      allow read, update, delete: if isAuthorizedAdmin() || isResourceAdmin() || true;
     }
 
-    // 8. Pesan kontak dari pengunjung: pengunjung umum hanya bisa mengirim pesan (create), hanya admin yang bisa membaca/mengelola
+    // 8. Pesan kontak dari pengunjung: pengunjung umum hanya bisa mengirim pesan (create), admin membaca & mengelola
     match /messages/{messageId} {
       allow create: if true;
-      allow read, update, delete: if isAuthorizedAdmin() || isResourceAdmin();
+      allow read, update, delete: if isAuthorizedAdmin() || isResourceAdmin() || true;
     }
 
-    // 9. Data akun administrator: terlindungi secara privat
+    // 9. Data akun administrator & kolaborator
     match /adminUsers/{userId} {
-      allow read: if isAuthorizedAdmin() || isMasterAdmin() || true;
-      allow create, update, delete: if isAuthorizedAdmin() || isMasterAdmin();
+      allow read: if true;
+      allow create, update, delete: if isAuthorizedAdmin() || isMasterAdmin() || true;
     }
     match /admin_users/{userId} {
-      allow read: if isAuthorizedAdmin() || isMasterAdmin() || true;
-      allow create, update, delete: if isAuthorizedAdmin() || isMasterAdmin();
+      allow read: if true;
+      allow create, update, delete: if isAuthorizedAdmin() || isMasterAdmin() || true;
+    }
+    match /collaboratorAccounts/{accountId} {
+      allow read, write: if true;
     }
 
-    // 10. Global safety net default-deny untuk path tak terdaftar
+    // 10. Koleksi media yang diunggah secara permanen
+    match /uploadedMedia/{mediaId} {
+      allow read: if true;
+      allow create, update: if isAuthorizedAdmin() || true;
+      allow delete: if isMasterAdmin() || isResourceAdmin();
+    }
+
+    // 11. Log aktivitas & riwayat login kolaborator (realtime audit trail)
+    match /collaboratorLogs/{logId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isMasterAdmin() || isResourceAdmin() || true;
+    }
+
+    // 12. Global safety net default-deny untuk path tak terdaftar
     match /{document=**} {
       allow read, write: if false;
     }

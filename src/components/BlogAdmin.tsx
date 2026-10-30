@@ -10,6 +10,7 @@ import { getStoredBlogs, saveStoredBlogs, cleanBlogs, getStoredSettings, saveSto
 import { SiteSettings } from '../data/settings';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
+import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 
 export default function BlogAdmin() {
   const [posts, setPosts] = useState<BlogPost[]>(() => getStoredBlogs());
@@ -123,6 +124,19 @@ export default function BlogAdmin() {
     setEditingPost(null);
     setSavingPost(false);
 
+    // Lacak aktivitas kolaborator secara realtime jika sesi aktif adalah kolaborator
+    try {
+      const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
+      if (u.role === 'collaborator') {
+        const isNew = !posts.some(p => p.id === payloadToSave.id);
+        recordCollaboratorActivity(
+          isNew ? 'Menambahkan Artikel Blog' : 'Memperbarui Artikel Blog',
+          `Kolaborator ${isNew ? 'menulis artikel baru' : 'memperbarui artikel'} "${payloadToSave.title}".`,
+          '/admin#blog'
+        );
+      }
+    } catch {}
+
     try {
       await withTimeout(
         setDoc(doc(db, 'blogPosts', payloadToSave.id), {
@@ -152,6 +166,19 @@ export default function BlogAdmin() {
     const updated = posts.filter(p => p.id !== id);
     savePosts(updated);
     showToast(`"${postToDelete.title || 'Postingan'}" berhasil dihapus permanen.`);
+    
+    // Lacak aktivitas penghapusan artikel oleh kolaborator
+    try {
+      const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
+      if (u.role === 'collaborator') {
+        recordCollaboratorActivity(
+          'Menghapus Artikel Blog',
+          `Kolaborator menghapus artikel "${postToDelete.title || 'Tanpa Judul'}".`,
+          '/admin#blog'
+        );
+      }
+    } catch {}
+
     setPostToDelete(null);
 
     // 2. Eksekusi penghapusan di cloud

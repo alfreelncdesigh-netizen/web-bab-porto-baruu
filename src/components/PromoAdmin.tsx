@@ -3,6 +3,8 @@ import { Sparkles, Check, Loader2, Upload, Image as ImageIcon, Eye, EyeOff, Rota
 import { SiteSettings, defaultSettings, PromoPosterItem, defaultPromoPosters } from '../data/settings';
 import { getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { NAMA_COOKIE_RIWAYAT, setCookie, deleteCookie, getCookie } from './PromoPosterWidget';
+import { uploadImageToStorage, base64ToBlob } from '../lib/storageUploader';
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 
 export default function PromoAdmin() {
   const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
@@ -76,54 +78,87 @@ export default function PromoAdmin() {
     }, 4000);
   };
 
-  // Kompresi Gambar Otomatis ke Canvas (Rasio 4:5 ringan & jernih)
-  const handlePosterImageUpload = (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+  // Kompresi Gambar Otomatis ke Canvas (Rasio 4:5 ringan & jernih) lalu unggah ke storage permanen
+  const handlePosterImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Cek ukuran awal file (maksimal 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      showNotification("Ukuran file terlalu besar! Silakan pilih gambar di bawah 10MB.", "info");
+    // Cek ukuran awal file (maksimal 15MB)
+    if (file.size > 15 * 1024 * 1024) {
+      showNotification("Ukuran file terlalu besar! Silakan pilih gambar di bawah 15MB.", "info");
       return;
     }
 
     setUploadingIndex(index);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 900;
-        let width = img.width;
-        let height = img.height;
+    try {
+      // 1. Render ke Canvas dengan rasio kompresi WebP optimal (max-width 900)
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 900;
+            let width = img.width;
+            let height = img.height;
 
-        if (width > MAX_WIDTH) {
-          height = Math.round((height * MAX_WIDTH) / width);
-          width = MAX_WIDTH;
-        }
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
 
-        canvas.width = width;
-        canvas.height = height;
+            canvas.width = width;
+            canvas.height = height;
 
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          // Kompresi WebP / JPEG dengan kualitas optimal
-          const compressedDataUrl = canvas.toDataURL('image/webp', 0.88);
-          
-          setPosters(prev => {
-            const updated = [...prev];
-            updated[index] = { ...updated[index], image: compressedDataUrl };
-            return updated;
-          });
-          setUploadingIndex(null);
-          showNotification(`Gambar Poster #${index + 1} berhasil diunggah! Klik "Simpan Pengaturan" untuk menerapkan.`);
-        }
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/webp', 0.88));
+            } else {
+              reject(new Error("Gagal menginisialisasi canvas"));
+            }
+          };
+          img.onerror = () => reject(new Error("Gagal memuat gambar"));
+          img.src = event.target?.result as string;
+        };
+        reader.onerror = () => reject(new Error("Gagal membaca file gambar"));
+        reader.readAsDataURL(file);
+      });
+
+      // 2. Unggah Blob ke server storage (/api/upload / storage) agar didapatkan URL permanen bersih
+      const blob = base64ToBlob(dataUrl);
+      const cleanFileName = `promo_poster_${Date.now()}_slot${index + 1}.webp`;
+      const uploadedUrl = await uploadImageToStorage(blob, cleanFileName, dataUrl, 'promos');
+      const finalUrl = uploadedUrl || dataUrl;
+
+      // 3. Simpan ke local state
+      const updated = [...posters];
+      updated[index] = { ...updated[index], image: finalUrl };
+      setPosters(updated);
+
+      // 4. Sinkronisasi instan ke settings, local storage, dan Firestore
+      const currentStored = getStoredSettings();
+      const updatedSettings: SiteSettings = {
+        ...currentStored,
+        promoWidgetActive: isGlobalActive,
+        promoPosters: updated,
+        promoWidgetImage: updated[0]?.image || currentStored.promoWidgetImage,
+        promoWidgetLink: updated[0]?.link || currentStored.promoWidgetLink,
+        promoWidgetCtaText: updated[0]?.ctaText || currentStored.promoWidgetCtaText,
       };
-      img.src = event.target?.result as string;
-    };
-    reader.readAsDataURL(file);
+
+      setSettings(updatedSettings);
+      await saveStoredSettings(updatedSettings);
+      window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
+
+      showNotification(`Poster #${index + 1} berhasil disimpan & langsung aktif di Menu Order!`);
+    } catch (err: any) {
+      console.error("Upload poster error:", err);
+      showNotification("Gagal memproses gambar poster. Silakan coba lagi.", "info");
+    } finally {
+      setUploadingIndex(null);
+    }
   };
 
   const updatePosterField = (index: number, field: keyof PromoPosterItem, value: any) => {
@@ -136,25 +171,43 @@ export default function PromoAdmin() {
 
   const handleSaveAll = async () => {
     setSaving(true);
-    showNotification('Pengaturan 3 Poster Promosi berhasil disimpan!');
     try {
+      // Pastikan semua poster yang berformat Base64 diunggah menjadi URL bersih
+      const cleanedPosters = await Promise.all(
+        posters.map(async (p, idx) => {
+          if (p.image && p.image.startsWith('data:image/')) {
+            try {
+              const blob = base64ToBlob(p.image);
+              const cleanFileName = `promo_poster_${Date.now()}_slot${idx + 1}.webp`;
+              const url = await uploadImageToStorage(blob, cleanFileName, p.image, 'promos');
+              return { ...p, image: url };
+            } catch {
+              return p;
+            }
+          }
+          return p;
+        })
+      );
+
+      setPosters(cleanedPosters);
+
       const updatedSettings: SiteSettings = {
         ...settings,
         promoWidgetActive: isGlobalActive,
-        promoPosters: posters,
-        // Update kompatibilitas dengan slot 1
-        promoWidgetImage: posters[0]?.image || settings.promoWidgetImage,
-        promoWidgetLink: posters[0]?.link || settings.promoWidgetLink,
-        promoWidgetCtaText: posters[0]?.ctaText || settings.promoWidgetCtaText,
+        promoPosters: cleanedPosters,
+        promoWidgetImage: cleanedPosters[0]?.image || settings.promoWidgetImage,
+        promoWidgetLink: cleanedPosters[0]?.link || settings.promoWidgetLink,
+        promoWidgetCtaText: cleanedPosters[0]?.ctaText || settings.promoWidgetCtaText,
       };
 
       setSettings(updatedSettings);
-      await Promise.race([
-        saveStoredSettings(updatedSettings),
-        new Promise((resolve) => setTimeout(resolve, 180))
-      ]);
+      await saveStoredSettings(updatedSettings);
+      window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
+
+      showNotification('Semua pengaturan 3 poster promosi berhasil disimpan & diperbarui di Menu Order!');
     } catch (err) {
-      console.error(err);
+      console.error("Save promo settings error:", err);
+      showNotification('Pengaturan tersimpan di penyimpanan lokal.', 'info');
     } finally {
       setSaving(false);
     }
@@ -350,9 +403,10 @@ export default function PromoAdmin() {
                     ) : poster.image ? (
                       <>
                         <img
-                          src={poster.image}
+                          src={resolveImageUrl(poster.image)}
                           alt={`Preview Poster ${slotNumber}`}
                           className="w-full h-full object-cover absolute inset-0"
+                          onError={handleImageError}
                         />
                         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center z-10">
                           <Upload size={20} className="text-white mb-1.5" />

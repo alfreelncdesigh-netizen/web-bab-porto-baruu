@@ -8,6 +8,7 @@ import { SiteSettings } from '../data/settings';
 import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake, Upload } from 'lucide-react';
 import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 
 export default function ExperienceAdmin() {
   const [experiences, setExperiences] = useState<any[]>(() => getStoredExperiences());
@@ -75,8 +76,7 @@ export default function ExperienceAdmin() {
       } catch {}
     }
 
-    const isAutoCollab = isCollabUser || Boolean(siteSettings.collaboration?.enabled && siteSettings.collaboration?.autoTagNewItems);
-
+    // Saat menambahkan pengalaman baru, toggle kolaborator selalu OFF secara default
     setEditingItem({
       id: Date.now().toString(),
       header: '',
@@ -84,10 +84,10 @@ export default function ExperienceAdmin() {
       description: '',
       images: [],
       isNew: true,
-      isCollaboration: isAutoCollab,
-      collaborationPartner: collabPartner || (isAutoCollab ? (siteSettings.collaboration?.partnerName || '') : ''),
-      collaborationLogo: collabLogo || (isAutoCollab ? (siteSettings.collaboration?.partnerLogo || '') : ''),
-      collaborationText: isAutoCollab ? (siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama') : ''
+      isCollaboration: false,
+      collaborationPartner: collabPartner || siteSettings.collaboration?.partnerName || '',
+      collaborationLogo: collabLogo || siteSettings.collaboration?.partnerLogo || '',
+      collaborationText: siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama'
     });
     setIsEditing(true);
   };
@@ -111,6 +111,19 @@ export default function ExperienceAdmin() {
     setExperiences(updated);
     saveStoredExperiences(updated);
     showToast(`Pengalaman "${itemToDelete.header || ''}" berhasil dihapus permanen.`);
+    
+    // Lacak aktivitas penghapusan pengalaman oleh kolaborator
+    try {
+      const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
+      if (u.role === 'collaborator') {
+        recordCollaboratorActivity(
+          'Menghapus Pengalaman',
+          `Kolaborator menghapus pengalaman "${itemToDelete.header || 'Tanpa Judul'}".`,
+          '/admin#experience'
+        );
+      }
+    } catch {}
+
     setItemToDelete(null);
 
     // 2. Eksekusi penghapusan di cloud
@@ -200,6 +213,18 @@ export default function ExperienceAdmin() {
     setIsEditing(false);
     setEditingItem(null);
     setSaving(false);
+
+    // Lacak aktivitas kolaborator secara realtime jika sesi aktif adalah kolaborator
+    try {
+      const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
+      if (u.role === 'collaborator') {
+        recordCollaboratorActivity(
+          isNew ? 'Menambahkan Pengalaman Baru' : 'Memperbarui Pengalaman',
+          `Kolaborator ${isNew ? 'menambahkan pengalaman baru' : 'memperbarui pengalaman'} "${toFirestore.header}".`,
+          '/admin#experience'
+        );
+      }
+    } catch {}
 
     try {
       await withTimeout(

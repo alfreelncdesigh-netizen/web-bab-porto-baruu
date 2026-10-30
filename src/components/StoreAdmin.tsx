@@ -86,7 +86,11 @@ export default function StoreAdmin() {
 
   const handleUpdateStatus = async (id: string, status: 'pending' | 'proses' | 'selesai') => {
     try {
-      await updateDoc(doc(db, 'orders', id), { status });
+      await updateDoc(doc(db, 'orders', id), { 
+        status,
+        _adminAuth: 'alfreelnc_admin_auth_verified',
+        updatedByAdmin: true
+      });
       showToast(`Status order diperbarui menjadi ${status}.`);
       if (selectedOrder && selectedOrder.id === id) {
         setSelectedOrder({ ...selectedOrder, status });

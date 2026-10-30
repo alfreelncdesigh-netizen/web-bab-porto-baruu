@@ -414,6 +414,63 @@ app.post('/api/media-registry', requireAdminAuth, (req: Request, res: Response):
   }
 });
 
+const collaboratorLogsPath = path.resolve(__dirname, 'collaborator-logs.json');
+
+function registerCollaboratorLog(record: any): void {
+  try {
+    let list: any[] = [];
+    if (fs.existsSync(collaboratorLogsPath)) {
+      try {
+        list = JSON.parse(fs.readFileSync(collaboratorLogsPath, 'utf-8'));
+        if (!Array.isArray(list)) list = [];
+      } catch {}
+    }
+    list.unshift(record);
+    if (list.length > 2000) list = list.slice(0, 2000);
+    fs.writeFileSync(collaboratorLogsPath, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (e) {
+    console.warn('Notice: Failed writing collaborator log:', e);
+  }
+}
+
+app.get('/api/collaborator-logs', (_req: Request, res: Response): void => {
+  try {
+    if (fs.existsSync(collaboratorLogsPath)) {
+      const data = JSON.parse(fs.readFileSync(collaboratorLogsPath, 'utf-8'));
+      res.status(200).json(Array.isArray(data) ? data : []);
+      return;
+    }
+  } catch {}
+  res.status(200).json([]);
+});
+
+app.post('/api/collaborator-logs', (req: Request, res: Response): void => {
+  try {
+    const item = req.body;
+    if (item && item.username) {
+      registerCollaboratorLog({
+        id: item.id || `log_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        ...item,
+        timestamp: item.timestamp || Date.now()
+      });
+      res.status(200).json({ success: true });
+      return;
+    }
+    res.status(400).json({ error: 'Data log kolaborator tidak valid' });
+  } catch {
+    res.status(500).json({ error: 'Gagal mencatat log kolaborator' });
+  }
+});
+
+app.delete('/api/collaborator-logs', requireAdminAuth, (_req: Request, res: Response): void => {
+  try {
+    fs.writeFileSync(collaboratorLogsPath, JSON.stringify([], null, 2), 'utf-8');
+    res.status(200).json({ success: true });
+  } catch {
+    res.status(500).json({ error: 'Gagal membersihkan log kolaborator' });
+  }
+});
+
 app.post('/api/upload', (req: Request, res: Response): void => {
   // A. JSON base64 upload
   if (req.body && (req.body.data || req.body.file)) {

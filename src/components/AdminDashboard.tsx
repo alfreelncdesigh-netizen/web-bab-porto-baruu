@@ -23,6 +23,7 @@ import PromoAdmin from './PromoAdmin';
 import AdminAccessAdmin from './AdminAccessAdmin';
 import CollaborationAdmin from './CollaborationAdmin';
 import { getStoredSettings } from '../lib/contentStorage';
+import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 import { Handshake } from 'lucide-react';
 
 export const MASTER_ADMINS = [
@@ -147,21 +148,45 @@ export default function AdminDashboard() {
         return;
       }
 
-      // 2. Cek Kredensial Khusus Kolaborator dari Settings
-      const siteSettings = getStoredSettings();
-      const collabCfg = siteSettings.collaboration;
-      const accounts = collabCfg?.collaboratorAccounts || [];
+      // 2. Cek Kredensial Khusus Kolaborator dari Settings (Lokal & Firestore)
+      let siteSettings = getStoredSettings();
+      let collabCfg = siteSettings.collaboration;
+      let accounts = collabCfg?.collaboratorAccounts || [];
 
-      const matchedAccount = accounts.find(
+      // Jika akun belum ditemukan di local storage, ambil langsung dokumen 'settings/global' dari Firestore
+      let matchedAccount = accounts.find(
         (a) => a.username?.toLowerCase().trim() === cleanUser && a.password?.trim() === cleanPass
       );
 
-      const isDirectCollabMatch = 
+      let isDirectCollabMatch = 
         (collabCfg?.collaboratorUsername &&
          collabCfg.collaboratorUsername.toLowerCase().trim() === cleanUser &&
          collabCfg?.collaboratorPassword &&
          collabCfg.collaboratorPassword.trim() === cleanPass) ||
         (cleanUser === 'kolaborator' && cleanPass === 'kolaborasi123');
+
+      if (!matchedAccount && !isDirectCollabMatch) {
+        try {
+          const globalDocSnap = await getDoc(doc(db, 'settings', 'global'));
+          if (globalDocSnap.exists()) {
+            const remoteSettings = globalDocSnap.data();
+            if (remoteSettings?.collaboration) {
+              collabCfg = remoteSettings.collaboration;
+              accounts = collabCfg.collaboratorAccounts || [];
+              matchedAccount = accounts.find(
+                (a: any) => a.username?.toLowerCase().trim() === cleanUser && a.password?.trim() === cleanPass
+              );
+              isDirectCollabMatch = 
+                (collabCfg?.collaboratorUsername &&
+                 collabCfg.collaboratorUsername.toLowerCase().trim() === cleanUser &&
+                 collabCfg?.collaboratorPassword &&
+                 collabCfg.collaboratorPassword.trim() === cleanPass);
+            }
+          }
+        } catch (fetchErr) {
+          console.warn("Notice: Remote settings check error:", fetchErr);
+        }
+      }
 
       if (matchedAccount || isDirectCollabMatch) {
         if (matchedAccount && !matchedAccount.active) {
@@ -186,13 +211,22 @@ export default function AdminDashboard() {
         setIsAuth(true);
         setWebPassword('');
         setIsLoggingIn(false);
+
+        // Catat aktivitas login kolaborator ke sistem audit log realtime
+        recordCollaboratorActivity(
+          'Login ke Mode Admin',
+          `Kolaborator "${cleanUser}" (${partnerName}) berhasil masuk ke mode admin.`,
+          '/admin#portfolio',
+          { username: cleanUser, partnerName, role: 'collaborator' }
+        );
+
         return;
       }
 
-      // 3. Cek Firestore collection adminUsers untuk username tambahan yang didaftarkan
+      // 3. Cek Firestore collection adminUsers & collaboratorAccounts untuk username tambahan yang didaftarkan
       let foundData: any = null;
 
-      // Cek langsung berdasarkan Document ID
+      // Cek langsung berdasarkan Document ID di adminUsers
       try {
         const directDoc = await getDoc(doc(db, 'adminUsers', cleanUser));
         if (directDoc.exists()) {
@@ -200,6 +234,23 @@ export default function AdminDashboard() {
         }
       } catch (err) {
         console.warn("Direct doc check err:", err);
+      }
+
+      // Jika belum ditemukan, cek langsung koleksi collaboratorAccounts
+      if (!foundData) {
+        try {
+          const collabDocSnap = await getDoc(doc(db, 'collaboratorAccounts', cleanUser));
+          if (collabDocSnap.exists()) {
+            const cData = collabDocSnap.data();
+            foundData = {
+              ...cData,
+              role: 'collaborator',
+              status: cData.active !== false ? 'allowed' : 'blocked'
+            };
+          }
+        } catch (cErr) {
+          console.warn("Collaborator doc check notice:", cErr);
+        }
       }
 
       // Jika belum ditemukan, cari via query field 'username' atau 'email'
@@ -228,7 +279,7 @@ export default function AdminDashboard() {
           return;
         }
 
-        const expectedPass = foundData.password || (foundData.role === 'collaborator' ? 'kolaborasi123' : '31102008');
+        const expectedPass = (foundData.password || (foundData.role === 'collaborator' ? 'kolaborasi123' : '31102008')).toString().trim();
         if (cleanPass === expectedPass || (foundData.role !== 'collaborator' && cleanPass === '31102008')) {
           const role = foundData.role === 'collaborator' ? 'collaborator' : (foundData.role || 'admin');
           setActiveAdminName(cleanUser);
@@ -250,13 +301,25 @@ export default function AdminDashboard() {
           // Update last login
           try {
             await setDoc(doc(db, 'adminUsers', cleanUser), {
-              lastLogin: new Date().toISOString()
+              lastLogin: new Date().toISOString(),
+              _adminAuth: 'alfreelnc_admin_auth_verified',
+              updatedByAdmin: true
             }, { merge: true });
           } catch {}
 
+          // Jika role collaborator, catat aktivitas login
+          if (role === 'collaborator') {
+            recordCollaboratorActivity(
+              'Login ke Mode Admin',
+              `Kolaborator "${cleanUser}" (${foundData.partnerName || 'Mitra'}) berhasil masuk ke mode admin.`,
+              '/admin#portfolio',
+              { username: cleanUser, partnerName: foundData.partnerName, role: 'collaborator' }
+            );
+          }
+
           return;
         } else {
-          setError('Username atau kata sandi tidak sesuai. Silakan masukkan kredensial yang valid.');
+          setError('Username atau kata sandi tidak sesuai. Silakan periksa kembali kata sandi kolaborator Anda.');
           setIsLoggingIn(false);
           return;
         }
@@ -284,6 +347,12 @@ export default function AdminDashboard() {
         sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
         setIsAuth(true);
         setWebPassword('');
+        recordCollaboratorActivity(
+          'Login ke Mode Admin',
+          'Kolaborator "kolaborator" berhasil login ke mode admin.',
+          '/admin#portfolio',
+          { username: 'kolaborator', role: 'collaborator' }
+        );
         return;
       }
       setError('Terjadi kendala saat otentikasi. Silakan periksa koneksi Anda.');
@@ -319,7 +388,34 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleSelectTab = (tabId: any) => {
+    setActiveTab(tabId);
+    setIsMobileMenuOpen(false);
+    if (adminRole === 'collaborator') {
+      const tabLabels: Record<string, string> = {
+        portfolio: 'Menu Karya (Portofolio)',
+        blog: 'Menu Artikel Blog',
+        experience: 'Menu Pengalaman'
+      };
+      const label = tabLabels[tabId] || `Menu ${tabId}`;
+      recordCollaboratorActivity(
+        `Membuka ${label}`,
+        `Kolaborator mengakses dan melihat daftar pada ${label}.`,
+        `/admin#${tabId}`,
+        { username: activeAdminName, role: 'collaborator' }
+      );
+    }
+  };
+
   const handleLogout = async () => {
+    if (adminRole === 'collaborator') {
+      recordCollaboratorActivity(
+        'Logout dari Mode Admin',
+        `Kolaborator "${activeAdminName}" keluar dari mode admin.`,
+        '/admin#logout',
+        { username: activeAdminName, role: 'collaborator' }
+      );
+    }
     try {
       sessionStorage.removeItem('admin_auth_user');
       sessionStorage.removeItem('admin_auth_token');
@@ -638,7 +734,7 @@ export default function AdminDashboard() {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }}
+                    onClick={() => handleSelectTab(tab.id as any)}
                     className={`w-full text-left flex items-center gap-3 px-3 py-2.5 text-xs font-medium transition-all rounded-xl cursor-pointer ${
                       isActive
                         ? 'bg-black text-white dark:bg-white dark:text-black font-semibold shadow-xs'
@@ -670,7 +766,7 @@ export default function AdminDashboard() {
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }}
+                      onClick={() => handleSelectTab(tab.id as any)}
                       className={`w-full text-left flex items-center gap-3 px-3 py-2.5 text-xs font-medium transition-all rounded-xl cursor-pointer ${
                         isActive
                           ? (tab as any).special
@@ -704,7 +800,7 @@ export default function AdminDashboard() {
                   return (
                     <button
                       key={tab.id}
-                      onClick={() => { setActiveTab(tab.id as any); setIsMobileMenuOpen(false); }}
+                      onClick={() => handleSelectTab(tab.id as any)}
                       className={`w-full text-left flex items-center gap-3 px-3 py-2.5 text-xs font-medium transition-all rounded-xl cursor-pointer ${
                         isActive
                           ? 'bg-black text-white dark:bg-white dark:text-black font-semibold shadow-xs'

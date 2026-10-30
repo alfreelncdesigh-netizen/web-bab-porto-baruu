@@ -43,18 +43,20 @@ try {
 export const db = dbInstance;
 
 /**
- * Validasi dan uji koneksi Firestore ke server cloud
+ * Validasi dan uji koneksi Firestore ke server cloud dengan timeout aman
  */
 export async function testConnection(): Promise<boolean> {
   try {
     if (typeof window !== 'undefined') {
-      const snap = await getDoc(doc(db, 'stats', 'views'));
-      return snap.exists();
+      const snap = await Promise.race([
+        getDoc(doc(db, 'stats', 'views')),
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
+      ]);
+      return snap ? snap.exists() : false;
     }
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Firestore client berjalan dalam mode offline / cache lokal.");
-    }
+    // Berjalan aman dengan local cache tanpa melempar error unhandled
+    return false;
   }
   return false;
 }

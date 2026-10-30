@@ -512,7 +512,7 @@ export default function Experience() {
                   )}
 
                   {/* Kolaborasi Mitra jika ada */}
-                  {(selectedExp.isCollaboration || selectedExp.collaborationPartner) && (
+                  {Boolean(selectedExp.isCollaboration) && (
                     <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-zinc-50 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 flex items-center justify-between gap-3 shadow-xs">
                       <div className="flex items-center gap-3 min-w-0">
                         {selectedExp.collaborationLogo ? (
