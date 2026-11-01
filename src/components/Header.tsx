@@ -6,6 +6,7 @@ import BrandLogo from './BrandLogo';
 import { SiteSettings } from '../data/settings';
 import { getStoredSettings } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
  setView: (view: string) => void;
@@ -251,6 +252,8 @@ export default function Header({ setView, currentView }: HeaderProps) {
         </AnimatePresence>
       </div>
 
+      <PWAInstallButton />
+
       <button 
        onClick={() => {
         setIsMobileMenuOpen(false);
@@ -347,7 +350,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
         )
        })}
 
-       <div className="pt-2 mt-1 border-t border-zinc-100 dark:border-zinc-800/80">
+       <div className="pt-2 mt-1 border-t border-zinc-100 dark:border-zinc-800/80 space-y-2">
          <button 
           onClick={() => {
            setIsMobileMenuOpen(false);
@@ -357,6 +360,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
          >
           Hubungi Saya
          </button>
+         <PWAInstallButton className="w-full justify-center py-2.5" />
        </div>
       </motion.div>
      )}

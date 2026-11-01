@@ -27,6 +27,8 @@ import {
 } from './lib/contentStorage';
 import { defaultSettings } from './data/settings';
 import { resolveImageUrl } from './lib/imageResolver';
+import { syncFirestoreSnapshotToSW, getCachedFirestoreSnapshot } from './lib/firestoreSnapshotCache';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 const skeletonGradient = "animate-shimmer";
 const skeletonCard = "bg-white/80 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800/60";
@@ -552,6 +554,7 @@ export default function App() {
                 });
                 const merged = { ...defaultSettings, ...cleaned, heroImage: finalHero };
                 setLocalSettings(merged);
+                syncFirestoreSnapshotToSW('settings', [merged]);
                 window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: merged }));
                 const extraImgs: Promise<void>[] = [];
                 if (merged?.heroImage) extraImgs.push(preloadImage(merged.heroImage));
@@ -571,6 +574,7 @@ export default function App() {
                 const cleanedProjs = cleanProjects(projs);
                 cleanedProjs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
                 saveStoredProjects(cleanedProjs);
+                syncFirestoreSnapshotToSW('projects', cleanedProjs);
                 // Hanya preload 2 proyek teratas agar hemat bandwidth dan sesuai dengan lazy loading IntersectionObserver
                 await Promise.all(cleanedProjs.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
               }
@@ -583,6 +587,7 @@ export default function App() {
                 snap.forEach(d => { if(!d.data().isArchived) posts.push({ id: d.id, ...d.data() }) });
                 const cleanedPosts = cleanBlogs(posts);
                 saveStoredBlogs(cleanedPosts);
+                syncFirestoreSnapshotToSW('blogPosts', cleanedPosts);
                 window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: cleanedPosts }));
                 await Promise.all(cleanedPosts.slice(0, 2).map(b => {
                   const img = b.image || (b as any).coverImage;
@@ -602,13 +607,37 @@ export default function App() {
                   return dB - dA;
                 });
                 saveStoredExperiences(exps);
+                syncFirestoreSnapshotToSW('experiences', exps);
                 window.dispatchEvent(new CustomEvent('user_experiences_updated', { detail: exps }));
               }
             }).catch(e => console.warn("Cloud exp sync fallback:", e));
 
             await Promise.all([settingsPromise, projectsPromise, blogsPromise, expPromise]);
           } catch (err) {
-            console.warn("Cloud sync skipped:", err);
+            console.warn("Cloud sync offline fallback, reading SW snapshot cache:", err);
+            try {
+              const [cSet, cProj, cBlog, cExp] = await Promise.all([
+                getCachedFirestoreSnapshot<any>('settings'),
+                getCachedFirestoreSnapshot<any>('projects'),
+                getCachedFirestoreSnapshot<any>('blogPosts'),
+                getCachedFirestoreSnapshot<any>('experiences')
+              ]);
+              if (cSet && cSet[0]) {
+                setLocalSettings(cSet[0]);
+                window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: cSet[0] }));
+              }
+              if (cProj && cProj.length > 0) saveStoredProjects(cProj);
+              if (cBlog && cBlog.length > 0) {
+                saveStoredBlogs(cBlog);
+                window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: cBlog }));
+              }
+              if (cExp && cExp.length > 0) {
+                saveStoredExperiences(cExp);
+                window.dispatchEvent(new CustomEvent('user_experiences_updated', { detail: cExp }));
+              }
+            } catch (cacheErr) {
+              console.warn("Offline snapshot recovery notice:", cacheErr);
+            }
           }
         };
 
@@ -847,6 +876,7 @@ export default function App() {
         </main>
         
         <Footer />
+        <OfflineIndicator />
       </div>
     </ThemeProvider>
   );

@@ -138,6 +138,86 @@ app.get('/sw.js', (_req: Request, res: Response) => {
   res.sendFile(swPath);
 });
 
+const mediaRegistryPath = path.resolve(__dirname, 'uploads-registry.json');
+
+// Auto-recovery & self-healing untuk file upload: jika file hilang dari disk lokal (misal setelah restart instance),
+// ambil dataUrl dari Firestore uploadedMedia atau uploads-registry.json, tulis kembali ke disk, dan sajikan langsung!
+app.get('/uploads/:filename', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const filename = path.basename(req.params.filename);
+  const filePath = path.join(uploadsDir, filename);
+
+  if (fs.existsSync(filePath)) {
+    return next();
+  }
+
+  try {
+    let base64Data = '';
+    let mimeType = 'image/webp';
+    if (filename.endsWith('.svg')) mimeType = 'image/svg+xml';
+    else if (filename.endsWith('.pdf')) mimeType = 'application/pdf';
+    else if (filename.endsWith('.png')) mimeType = 'image/png';
+    else if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) mimeType = 'image/jpeg';
+
+    // 1. Cek uploads-registry.json
+    if (fs.existsSync(mediaRegistryPath)) {
+      try {
+        const list = JSON.parse(fs.readFileSync(mediaRegistryPath, 'utf-8'));
+        if (Array.isArray(list)) {
+          const match = list.find((item: any) => item.filename === filename || (item.url && item.url.endsWith(filename)));
+          if (match && match.dataUrl && typeof match.dataUrl === 'string') {
+            base64Data = match.dataUrl;
+            if (match.mimeType) mimeType = match.mimeType;
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Jika belum ditemukan di registry lokal, tarik dari Cloud Firestore uploadedMedia
+    if (!base64Data) {
+      const safeDocId = `media_${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+      const safeFilename = filename.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const candidates = [safeDocId, safeFilename];
+
+      for (const docId of candidates) {
+        try {
+          const firestoreUrl = `https://firestore.googleapis.com/v1/projects/portofolio-c368b/databases/ai-studio-portofoliodesain-16b96d08-efff-4e76-af75-1c33dc5adab7/documents/uploadedMedia/${encodeURIComponent(docId)}?key=AIzaSyDHmxUYsvRc5DKy8M1pwqO-zz_Wtq_09us`;
+          const resp = await fetch(firestoreUrl, { method: 'GET' });
+          if (resp.ok) {
+            const docJson: any = await resp.json();
+            const fields = docJson?.fields;
+            if (fields?.dataUrl?.stringValue) {
+              base64Data = fields.dataUrl.stringValue;
+              if (fields?.mimeType?.stringValue) {
+                mimeType = fields.mimeType.stringValue;
+              }
+              break;
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // 3. Rekonstruksi file ke disk dan layani ke client
+    if (base64Data) {
+      const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
+      const buffer = Buffer.from(cleanBase64, 'base64');
+      if (buffer.length > 0) {
+        fs.writeFileSync(filePath, buffer);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.status(200).send(buffer);
+        return;
+      }
+    }
+  } catch (recoverErr) {
+    console.warn('Upload auto-recovery notice:', recoverErr);
+  }
+
+  next();
+});
+
 // Static serving for user uploads
 app.use('/uploads', express.static(uploadsDir, {
   maxAge: '1y',
@@ -165,6 +245,31 @@ app.use('/images', express.static(path.join(publicDir, 'images'), {
 // Body parser
 app.use(express.json({ limit: '35mb' }));
 app.use(express.urlencoded({ extended: true, limit: '35mb' }));
+
+// Dedicated Service Worker endpoint with zero-cache & root scope header
+app.get('/sw.js', (_req: Request, res: Response) => {
+  const swPath = path.join(publicDir, 'sw.js');
+  if (fs.existsSync(swPath)) {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(swPath);
+  } else {
+    res.status(404).end();
+  }
+});
+
+// Dedicated PWA Manifest endpoint
+app.get('/manifest.json', (_req: Request, res: Response) => {
+  const manifestPath = path.join(publicDir, 'manifest.json');
+  if (fs.existsSync(manifestPath)) {
+    res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.sendFile(manifestPath);
+  } else {
+    res.status(404).end();
+  }
+});
 
 app.use(express.static(publicDir, {
   setHeaders: (res, filePath) => {
@@ -361,9 +466,7 @@ const FORBIDDEN_EXTENSIONS = new Set([
   '.pl', '.cgi', '.asp', '.aspx', '.jsp', '.jar'
 ]);
 
-const mediaRegistryPath = path.resolve(__dirname, 'uploads-registry.json');
-
-function registerUploadedMedia(record: { url: string; filename: string; size: number; mimeType?: string; uploadedAt: string }): void {
+function registerUploadedMedia(record: { url: string; filename: string; size: number; mimeType?: string; uploadedAt: string; dataUrl?: string }): void {
   try {
     let list: any[] = [];
     if (fs.existsSync(mediaRegistryPath)) {
@@ -380,6 +483,44 @@ function registerUploadedMedia(record: { url: string; filename: string; size: nu
     fs.writeFileSync(mediaRegistryPath, JSON.stringify(list, null, 2), 'utf-8');
   } catch (e) {
     console.warn('Notice: Failed writing media registry:', e);
+  }
+
+  // Non-blocking background sync to Cloud Firestore uploadedMedia
+  if (record.dataUrl && typeof record.dataUrl === 'string') {
+    const safeDocId = `media_${record.filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const safeFilename = record.filename.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/portofolio-c368b/databases/ai-studio-portofoliodesain-16b96d08-efff-4e76-af75-1c33dc5adab7/documents/uploadedMedia/${encodeURIComponent(safeDocId)}?key=AIzaSyDHmxUYsvRc5DKy8M1pwqO-zz_Wtq_09us`;
+
+    const body = {
+      fields: {
+        id: { stringValue: safeDocId },
+        filename: { stringValue: record.filename },
+        url: { stringValue: record.url },
+        size: { integerValue: String(record.size || 0) },
+        mimeType: { stringValue: record.mimeType || 'image/webp' },
+        dataUrl: { stringValue: record.dataUrl },
+        uploadedAt: { stringValue: record.uploadedAt || new Date().toISOString() },
+        _adminAuth: { stringValue: 'alfreelnc_admin_auth_verified' },
+        updatedByAdmin: { booleanValue: true }
+      }
+    };
+
+    fetch(firestoreUrl, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(async (res) => {
+      if (res.ok && safeFilename !== safeDocId) {
+        const aliasUrl = `https://firestore.googleapis.com/v1/projects/portofolio-c368b/databases/ai-studio-portofoliodesain-16b96d08-efff-4e76-af75-1c33dc5adab7/documents/uploadedMedia/${encodeURIComponent(safeFilename)}?key=AIzaSyDHmxUYsvRc5DKy8M1pwqO-zz_Wtq_09us`;
+        fetch(aliasUrl, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }).catch(() => {});
+      }
+    }).catch((err) => {
+      console.warn("Notice: Firestore REST upload sync:", err?.message || err);
+    });
   }
 }
 
@@ -403,7 +544,8 @@ app.post('/api/media-registry', requireAdminAuth, (req: Request, res: Response):
         filename: item.filename || path.basename(item.url),
         size: item.size || 0,
         mimeType: item.mimeType || 'image/webp',
-        uploadedAt: item.uploadedAt || new Date().toISOString()
+        uploadedAt: item.uploadedAt || new Date().toISOString(),
+        dataUrl: item.dataUrl || undefined
       });
       res.status(200).json({ success: true });
       return;
@@ -502,12 +644,16 @@ app.post('/api/upload', (req: Request, res: Response): void => {
       fs.writeFileSync(filePath, fileBuffer);
       const publicUrl = `/uploads/${safeName}`;
 
+      const mime = cleanExt === '.svg' ? 'image/svg+xml' : cleanExt === '.pdf' ? 'application/pdf' : 'image/webp';
+      const effectiveDataUrl = rawData.startsWith('data:') ? rawData : `data:${mime};base64,${base64Data}`;
+
       registerUploadedMedia({
         url: publicUrl,
         filename: safeName,
         size: fileBuffer.length,
-        mimeType: cleanExt === '.svg' ? 'image/svg+xml' : cleanExt === '.pdf' ? 'application/pdf' : 'image/webp',
-        uploadedAt: new Date().toISOString()
+        mimeType: mime,
+        uploadedAt: new Date().toISOString(),
+        dataUrl: effectiveDataUrl
       });
 
       res.status(200).json({ url: publicUrl });
@@ -594,12 +740,16 @@ app.post('/api/upload', (req: Request, res: Response): void => {
       fs.writeFileSync(filePath, fileBuffer);
       const publicUrl = `/uploads/${safeName}`;
 
+      const mime = cleanExt === '.svg' ? 'image/svg+xml' : cleanExt === '.pdf' ? 'application/pdf' : 'image/webp';
+      const effectiveDataUrl = `data:${mime};base64,${fileBuffer.toString('base64')}`;
+
       registerUploadedMedia({
         url: publicUrl,
         filename: safeName,
         size: fileBuffer.length,
-        mimeType: cleanExt === '.svg' ? 'image/svg+xml' : cleanExt === '.pdf' ? 'application/pdf' : 'image/webp',
-        uploadedAt: new Date().toISOString()
+        mimeType: mime,
+        uploadedAt: new Date().toISOString(),
+        dataUrl: effectiveDataUrl
       });
 
       res.status(200).json({ url: publicUrl });

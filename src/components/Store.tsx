@@ -58,7 +58,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
     const unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (data.posters && Array.isArray(data.posters) && data.posters.length > 0) {
+        if (data.posters && Array.isArray(data.posters)) {
           setPromoPosters(deduplicatePosters(data.posters));
         }
       }
@@ -70,7 +70,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
     const unsub = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (data.promoPosters && Array.isArray(data.promoPosters) && data.promoPosters.length > 0) {
+        if (data.promoPosters && Array.isArray(data.promoPosters)) {
           setPromoPosters(deduplicatePosters(data.promoPosters));
         }
         if (data.contactPhone) {
@@ -1490,7 +1490,7 @@ Terima kasih.`;
         {/* PAKET SPESIAL PILIHAN */}
         {(() => {
           const validActivePosters = promoPosters.filter(
-            p => p && p.active !== false && p.image && typeof p.image === 'string' && p.image.trim().length > 0 && !p.title?.includes('Diskon 30% Paket Branding') && !p.title?.includes('Konsultasi Desain & Audit Portofolio')
+            p => p && p.active !== false && p.image && typeof p.image === 'string' && p.image.trim().length > 0
           );
 
           if (validActivePosters.length === 0) return null;

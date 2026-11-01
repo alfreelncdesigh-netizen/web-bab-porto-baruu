@@ -1,4 +1,6 @@
 import { getOptimizedImageUrl } from './cloudinary';
+import { db } from './firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 /**
  * Placeholder SVG modern dan elegan sebagai fallback ketika gambar gagal dimuat (404/broken link)
@@ -94,10 +96,72 @@ export function resolveImageUrl(url?: string | null): string {
 
 /**
  * Event handler onError untuk elemen <img />
- * Mengganti sumber gambar ke FALLBACK_IMAGE saat 404 atau link rusak tanpa loop
+ * Mekanisme Self-Healing: Jika gambar 404 pada URL lokal, secara otomatis pulihkan
+ * file gambar asli dari Firebase Firestore (uploadedMedia) atau media registry browser.
  */
 export function handleImageError(e: React.SyntheticEvent<HTMLImageElement, Event>) {
   const target = e.currentTarget;
+  if (target.dataset.triedFallback === 'true') {
+    return;
+  }
+  target.dataset.triedFallback = 'true';
+
+  const rawSrc = target.src || '';
+  const filename = rawSrc.split('/').pop()?.split('?')[0];
+
+  // 1. Coba pulihkan seketika dari LocalStorage media cache
+  if (filename) {
+    try {
+      const cached = localStorage.getItem('uploaded_media_links');
+      if (cached) {
+        const list = JSON.parse(cached);
+        if (Array.isArray(list)) {
+          const match = list.find((m: any) => m.filename === filename || (m.url && m.url.includes(filename)));
+          if (match && match.dataUrl && typeof match.dataUrl === 'string' && match.dataUrl.startsWith('data:image/')) {
+            target.src = match.dataUrl;
+            return;
+          }
+        }
+      }
+    } catch {}
+
+    // 2. Pulihkan dari Cloud Firestore koleksi uploadedMedia
+    const safeDocId = filename.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const mediaDocId = safeDocId.startsWith('media_') ? safeDocId : `media_${safeDocId}`;
+
+    const tryRestore = async () => {
+      try {
+        let snap = await getDoc(doc(db, 'uploadedMedia', safeDocId));
+        if (!snap.exists() && mediaDocId !== safeDocId) {
+          snap = await getDoc(doc(db, 'uploadedMedia', mediaDocId));
+        }
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data && data.dataUrl && typeof data.dataUrl === 'string' && data.dataUrl.startsWith('data:image/')) {
+            target.src = data.dataUrl;
+            try {
+              const existing = localStorage.getItem('uploaded_media_links');
+              let list = existing ? JSON.parse(existing) : [];
+              if (!Array.isArray(list)) list = [];
+              list = [{ id: safeDocId, url: rawSrc, filename, dataUrl: data.dataUrl, savedPermanently: true }, ...list];
+              localStorage.setItem('uploaded_media_links', JSON.stringify(list.slice(0, 500)));
+            } catch {}
+            return true;
+          }
+        }
+      } catch {}
+      return false;
+    };
+
+    tryRestore().then((restored) => {
+      if (!restored && target.src !== FALLBACK_IMAGE) {
+        target.onerror = null;
+        target.src = FALLBACK_IMAGE;
+      }
+    });
+    return;
+  }
+
   if (target.src !== FALLBACK_IMAGE) {
     target.onerror = null;
     target.src = FALLBACK_IMAGE;

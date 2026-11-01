@@ -3,7 +3,7 @@ import { Sparkles, Check, Loader2, Upload, Image as ImageIcon, Eye, EyeOff, Rota
 import { SiteSettings, defaultSettings, PromoPosterItem } from '../data/settings';
 import { getStoredSettings, saveStoredSettings, cleanForFirestore } from '../lib/contentStorage';
 import { NAMA_COOKIE_RIWAYAT, setCookie, deleteCookie, getCookie } from './PromoPosterWidget';
-import { uploadImageToStorage, base64ToBlob } from '../lib/storageUploader';
+import { uploadImageToStorage, base64ToBlob, recordMediaPermanently } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
@@ -67,7 +67,7 @@ export default function PromoAdmin() {
     const unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (Array.isArray(data.posters) && data.posters.length > 0) {
+        if (Array.isArray(data.posters)) {
           setPosters(normalizeSlots(data.posters));
         }
         if (data.active !== undefined) {
@@ -81,7 +81,7 @@ export default function PromoAdmin() {
       if (snap.exists()) {
         const data = snap.data() as SiteSettings;
         setSettings(prev => ({ ...prev, ...data }));
-        if (Array.isArray(data.promoPosters) && data.promoPosters.length > 0) {
+        if (Array.isArray(data.promoPosters)) {
           setPosters(normalizeSlots(data.promoPosters));
         }
         if (data.promoWidgetActive !== undefined) {
@@ -177,6 +177,9 @@ export default function PromoAdmin() {
       }
 
       const finalUrl = uploadedUrl || dataUrl;
+
+      // Pastikan data gambar selalu ditanam dan tersimpan di Cloud Firestore uploadedMedia
+      recordMediaPermanently(finalUrl, cleanFileName, dataUrl.length, 'promos', dataUrl).catch(() => {});
 
       // 3. Simpan ke local state
       const updated = [...posters];

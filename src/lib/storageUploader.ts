@@ -10,35 +10,39 @@ export interface StoredMediaRecord {
   filename: string;
   folder: string;
   size: number;
+  dataUrl?: string;
   uploadedAt: string;
   timestamp: number;
   savedPermanently: boolean;
 }
 
 /**
- * Menyimpan tautan dan metadata gambar yang diunggah secara aman dan permanen:
- * 1. Database Cloud Firestore (collection: uploadedMedia)
+ * Menyimpan tautan, file data base64, dan metadata gambar secara aman dan permanen:
+ * 1. Database Cloud Firestore (collection: uploadedMedia) dengan ID filename
  * 2. Server Disk Registry (/api/media-registry)
  * 3. LocalStorage browser (uploaded_media_links)
+ * Menjamin link gambar tertanam dan tersimpan di Firebase tanpa pernah hilang.
  */
 export async function recordMediaPermanently(
   url: string, 
   filename?: string, 
   size = 0, 
-  folder = 'general'
+  folder = 'general',
+  dataUrl?: string
 ): Promise<void> {
   if (!url || typeof url !== 'string') return;
   const cleanUrl = url.trim();
   if (!cleanUrl) return;
 
   const safeFilename = filename || cleanUrl.split('/').pop() || `img_${Date.now()}`;
-  const mediaId = `media_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const safeDocId = safeFilename.replace(/[^a-zA-Z0-9_-]/g, '_');
   const record: StoredMediaRecord = {
-    id: mediaId,
+    id: safeDocId,
     url: cleanUrl,
     filename: safeFilename,
     folder,
     size,
+    dataUrl: dataUrl || '',
     uploadedAt: new Date().toISOString(),
     timestamp: Date.now(),
     savedPermanently: true
@@ -50,7 +54,7 @@ export async function recordMediaPermanently(
     let list = existing ? JSON.parse(existing) : [];
     if (!Array.isArray(list)) list = [];
     // Cegah duplikasi URL yang sama
-    list = [record, ...list.filter((m: any) => m?.url !== cleanUrl)];
+    list = [record, ...list.filter((m: any) => m?.url !== cleanUrl && m?.filename !== safeFilename)];
     if (list.length > 500) list = list.slice(0, 500);
     localStorage.setItem('uploaded_media_links', JSON.stringify(list));
   } catch {}
@@ -67,16 +71,20 @@ export async function recordMediaPermanently(
     }).catch(() => {});
   } catch {}
 
-  // 3. Simpan di Cloud Firestore (uploadedMedia)
+  // 3. Simpan di Cloud Firestore (uploadedMedia) dengan fallback ID bersih
   try {
-    setDoc(doc(db, 'uploadedMedia', mediaId), {
+    const firestoreData: Record<string, any> = {
       ...record,
       _adminAuth: 'alfreelnc_admin_auth_verified',
       updatedByAdmin: true
-    }, { merge: true }).catch((err) => {
-      console.warn("Firestore media record background notice:", err);
-    });
-  } catch {}
+    };
+    await setDoc(doc(db, 'uploadedMedia', safeDocId), firestoreData, { merge: true });
+    if (safeFilename !== safeDocId) {
+      await setDoc(doc(db, 'uploadedMedia', safeFilename), firestoreData, { merge: true }).catch(() => {});
+    }
+  } catch (err) {
+    console.warn("Firestore media record notice:", err);
+  }
 }
 
 export function getStoredUploadedMedia(): StoredMediaRecord[] {
@@ -253,6 +261,19 @@ export async function uploadImageToStorage(
     throw new Error("Gagal mengunggah gambar, silakan coba lagi");
   };
 
+  // Pastikan dataUrl selalu tersedia untuk ditanam ke Firebase Firestore
+  let effectiveDataUrl = fallbackBase64;
+  if (!effectiveDataUrl && typeof window !== 'undefined') {
+    try {
+      effectiveDataUrl = await new Promise<string>((res) => {
+        const reader = new FileReader();
+        reader.onload = () => res((reader.result as string) || '');
+        reader.onerror = () => res('');
+        reader.readAsDataURL(fileOrBlob);
+      });
+    } catch {}
+  }
+
   try {
     const finalResultUrl = await withTimeout(
       doUpload(),
@@ -260,14 +281,14 @@ export async function uploadImageToStorage(
       "Gagal mengunggah gambar, silakan coba lagi"
     );
     if (finalResultUrl) {
-      recordMediaPermanently(finalResultUrl, cleanName, fileOrBlob.size, folder).catch(() => {});
+      recordMediaPermanently(finalResultUrl, cleanName, fileOrBlob.size, folder, effectiveDataUrl).catch(() => {});
     }
     return finalResultUrl;
   } catch (err: any) {
     abortController.abort();
-    if (fallbackBase64) {
-      recordMediaPermanently(fallbackBase64, cleanName, fileOrBlob.size, folder).catch(() => {});
-      return fallbackBase64;
+    if (effectiveDataUrl) {
+      recordMediaPermanently(effectiveDataUrl, cleanName, fileOrBlob.size, folder, effectiveDataUrl).catch(() => {});
+      return effectiveDataUrl;
     }
     throw new Error("Gagal mengunggah gambar, silakan coba lagi");
   }
