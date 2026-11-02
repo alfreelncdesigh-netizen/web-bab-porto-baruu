@@ -7,6 +7,7 @@ import { SiteSettings } from '../data/settings';
 import { getStoredSettings } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { PWAInstallButton } from './PWAInstallButton';
+import GoogleSearchModal, { GoogleLogo } from './GoogleSearchModal';
 
 interface HeaderProps {
  setView: (view: string) => void;
@@ -18,6 +19,19 @@ export default function Header({ setView, currentView }: HeaderProps) {
  const [isScrolled, setIsScrolled] = useState(false);
  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
  const [isThemeDropdownOpen, setIsThemeDropdownOpen] = useState(false);
+ const [isGoogleSearchOpen, setIsGoogleSearchOpen] = useState(false);
+ const [googleSearchQuery, setGoogleSearchQuery] = useState('');
+
+ useEffect(() => {
+   const handleOpenGoogle = (e: any) => {
+     setIsGoogleSearchOpen(true);
+     if (e.detail?.query) {
+       setGoogleSearchQuery(e.detail.query);
+     }
+   };
+   window.addEventListener('open_google_search', handleOpenGoogle);
+   return () => window.removeEventListener('open_google_search', handleOpenGoogle);
+ }, []);
 
  useEffect(() => {
    const handleSettingsUpdate = (e: any) => {
@@ -158,7 +172,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
     )}
    </AnimatePresence>
 
-   <header className="fixed top-0 left-0 right-0 z-50 pt-2.5 sm:pt-3.5 md:pt-4 px-3 sm:px-5 md:px-8 pointer-events-none flex justify-center max-w-[1340px] mx-auto">
+   <header className="fixed top-0 left-0 right-0 z-50 pt-2.5 sm:pt-3.5 md:pt-4 px-3 sm:px-5 md:px-8 pointer-events-none flex justify-center max-w-[1540px] xl:max-w-[1720px] 2xl:max-w-[1840px] mx-auto">
     <motion.div 
      initial={{ y: -100, opacity: 0 }}
      animate={{ y: 0, opacity: 1 }}

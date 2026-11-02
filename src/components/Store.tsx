@@ -468,7 +468,7 @@ Terima kasih.`;
   const inputClassDesktop = "w-full pl-11 lg:pl-12 pr-4 py-3.5 bg-white/70 dark:bg-black/40 backdrop-blur-xs hover:bg-white/90 dark:hover:bg-black/60 focus:bg-white dark:focus:bg-black/80 border border-zinc-200/80 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-black dark:focus:ring-white outline-none transition-all dark:text-white text-sm font-medium placeholder:text-zinc-400 dark:placeholder:text-zinc-500";
 
   return (
-    <section id="store" className={`pt-5 md:pt-8 ${isOrderView ? 'pb-16 min-h-screen' : 'pb-2 md:pb-3 min-h-0'} bg-white dark:bg-[#0A0A0A] relative scroll-mt-24 md:scroll-mt-32`}>
+    <section id="store" className={`pt-5 md:pt-8 ${isOrderView ? 'pb-16 min-h-screen' : 'pb-4 md:pb-6 min-h-0'} bg-white dark:bg-[#0A0A0A] relative scroll-mt-24 md:scroll-mt-32`}>
       <AnimatePresence>
         {toastMsg && (
           <motion.div
@@ -1496,7 +1496,7 @@ Terima kasih.`;
           if (validActivePosters.length === 0) return null;
 
           return (
-            <div id="promo-posters-section" className="mt-10 md:mt-16 pt-8 md:pt-12 border-t border-zinc-200/80 dark:border-zinc-800/80">
+            <div id="promo-posters-section" className="mt-8 md:mt-12 pt-4 md:pt-6">
               {/* Header Bagian Promo */}
               <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-6 md:mb-8 gap-3">
                 <div>
@@ -1771,32 +1771,6 @@ Terima kasih.`;
         }}
       />
       
-      {/* Direct Order WhatsApp Banner */}
-      <div className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 mt-6 sm:mt-8 md:mt-10 mb-1 sm:mb-2 md:mb-3">
-        <div className="bg-gradient-to-r from-green-500/10 to-emerald-500/10 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800/50 rounded-2xl md:rounded-[2.5rem] p-6 md:p-12 lg:p-20 flex flex-col lg:flex-row items-center justify-between gap-6 md:gap-12 lg:gap-16 text-center lg:text-left relative overflow-hidden">
-          <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-green-500/20 dark:bg-green-500/10 blur-[50px] rounded-full pointer-events-none"></div>
-          <div className="absolute bottom-0 left-0 -mb-10 -ml-10 w-40 h-40 bg-emerald-500/20 dark:bg-emerald-500/10 blur-[50px] rounded-full pointer-events-none"></div>
-          
-          <div className="relative z-10 flex-1">
-            <h3 className="text-xl md:text-4xl lg:text-5xl font-extrabold text-black dark:text-white mb-2 md:mb-4 tracking-tight">Lebih Suka Langsung Ngobrol?</h3>
-            <p className="text-xs md:text-base lg:text-lg text-zinc-600 dark:text-zinc-400 max-w-2xl lg:max-w-3xl mx-auto lg:mx-0 lg:leading-relaxed">
-              Lewati formulir dan langsung hubungi kami via WhatsApp. Ceritakan kebutuhan desain Anda, dan kami akan segera memberikan estimasi serta penawaran terbaik.
-            </p>
-          </div>
-          <div className="relative z-10 shrink-0">
-            <a 
-              href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent("Halo, saya ingin order desain grafis dan berdiskusi langsung.")}`}
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-3 bg-[#25D366] text-black px-8 md:px-10 lg:px-14 py-4 md:py-5 lg:py-6 rounded-full text-sm md:text-base lg:text-xl font-extrabold hover:scale-105 active:scale-95 transition-transform shadow-xl shadow-[#25D366]/20"
-            >
-              <Send className="w-5 h-5 md:w-6 md:h-6" /> Pesan via WhatsApp
-            </a>
-          </div>
-        </div>
-      </div>
-      
-    
       {/* Cancel Order Popup */}
       <AnimatePresence>
         {showCancelPopup && (

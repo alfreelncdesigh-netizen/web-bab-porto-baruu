@@ -115,7 +115,7 @@ export default function About() {
    variants={sectionStaggerContainer}
    className="pt-5 sm:pt-7 md:py-10 mt-2 sm:mt-4 md:mt-0 pb-6 md:pb-10 bg-[var(--bg-main,#ffffff)] dark:bg-[#0a0a0a] scroll-mt-24 md:scroll-mt-32"
   >
-   <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18">
+   <div className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-6 sm:px-8 md:px-10 lg:px-12 xl:px-16 2xl:px-20">
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 xl:gap-16 items-center">
      
      <motion.div 

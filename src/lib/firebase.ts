@@ -7,11 +7,19 @@ import {
   memoryLocalCache,
   doc,
   getDoc,
-  getDocFromServer
+  getDocFromServer,
+  setLogLevel
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAuth, initializeAuth, browserLocalPersistence, inMemoryPersistence, browserPopupRedirectResolver, signInWithPopup, signInWithCredential, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
+
+// Matikan log warning non-fatal (seperti timeout 10 detik saat switching transport) agar konsol bersih
+if (typeof window !== 'undefined') {
+  try {
+    setLogLevel('error');
+  } catch (e) {}
+}
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
@@ -24,15 +32,16 @@ try {
     ? persistentLocalCache({ tabManager: persistentMultipleTabManager() })
     : memoryLocalCache();
 
+  // Gunakan experimentalAutoDetectLongPolling: true agar Firestore memilih WebSockets terlebih dahulu
+  // dan hanya fallback ke long polling jika koneksi WebSockets diblokir oleh jaringan
+  const firestoreSettings = { 
+    localCache: cacheSettings,
+    experimentalAutoDetectLongPolling: true
+  };
+
   dbInstance = dbId 
-    ? initializeFirestore(app, { 
-        localCache: cacheSettings,
-        experimentalForceLongPolling: true 
-      }, dbId) 
-    : initializeFirestore(app, { 
-        localCache: cacheSettings,
-        experimentalForceLongPolling: true 
-      });
+    ? initializeFirestore(app, firestoreSettings, dbId) 
+    : initializeFirestore(app, firestoreSettings);
 } catch (e) {
   try {
     dbInstance = dbId ? getFirestore(app, dbId) : getFirestore(app);
@@ -49,8 +58,8 @@ export async function testConnection(): Promise<boolean> {
   try {
     if (typeof window !== 'undefined') {
       const snap = await Promise.race([
-        getDoc(doc(db, 'stats', 'views')),
-        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500))
+        getDoc(doc(db, 'settings', 'global')),
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
       ]);
       return snap ? snap.exists() : false;
     }

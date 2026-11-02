@@ -43,7 +43,7 @@ const AppSkeleton = () => (
     className="fixed inset-0 z-[99999] bg-[#F0EEEE] dark:bg-[#0A0A0A] overflow-y-auto overflow-x-hidden flex flex-col pointer-events-auto [scrollbar-width:none]"
   >
     {/* Header Skeleton Bar */}
-    <div className="w-full pt-1.5 sm:pt-2 md:pt-2.5 px-3 sm:px-5 md:px-8 flex justify-center shrink-0 max-w-[1280px] mx-auto">
+    <div className="w-full pt-1.5 sm:pt-2 md:pt-2.5 px-3 sm:px-5 md:px-8 flex justify-center shrink-0 max-w-[1540px] xl:max-w-[1720px] 2xl:max-w-[1840px] mx-auto">
       <div className={`w-full h-[44px] md:h-[48px] rounded-full px-3.5 sm:px-4 md:px-5 flex items-center justify-between ${skeletonCard} shadow-sm backdrop-blur-md`}>
         {/* Brand / Logo */}
         <div className="flex items-center gap-2.5">
@@ -70,7 +70,7 @@ const AppSkeleton = () => (
     </div>
 
     {/* Hero Section Skeleton */}
-    <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-12 lg:px-16 xl:px-20 pt-8 sm:pt-12 md:pt-18 pb-6 md:pb-10">
+    <div className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-6 sm:px-8 md:px-10 lg:px-12 xl:px-16 2xl:px-20 pt-8 sm:pt-12 md:pt-18 pb-6 md:pb-10">
       {/* Mobile Skeleton Layout: Top to bottom stacking (Text -> CTA -> Photo) */}
       <div className="flex md:hidden flex-col items-center w-full">
         {/* Sub-heading */}
@@ -121,7 +121,7 @@ const AppSkeleton = () => (
     </div>
 
     {/* Showcase / Portfolio Section Skeleton */}
-    <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-12 lg:px-16 xl:px-20 py-8 border-t border-zinc-200/50 dark:border-zinc-800/50">
+    <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-12 lg:px-16 xl:px-20 py-8">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
         <div>
           <div className={`h-8 sm:h-10 w-52 sm:w-64 rounded-xl mb-2 ${skeletonGradient}`} />
@@ -234,18 +234,9 @@ const BackToTop = () => {
   );
 };
 
-// Komponen pemisah horizontal halus antar section utama
+// Komponen jarak antar section (tanpa garis pembatas)
 const SectionDivider = () => (
-  <motion.div 
-    initial={{ opacity: 0, scaleX: 0.9 }}
-    whileInView={{ opacity: 1, scaleX: 1 }}
-    viewport={{ once: true, margin: "-20px" }}
-    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-    className="w-full px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 py-1 sm:py-2 select-none pointer-events-none" 
-    aria-hidden="true"
-  >
-    <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-zinc-300/70 dark:via-zinc-800/80 to-transparent" />
-  </motion.div>
+  <div className="w-full h-4 sm:h-6 md:h-8 select-none pointer-events-none" aria-hidden="true" />
 );
 
 export default function App() {
@@ -732,6 +723,7 @@ export default function App() {
                       - Store / Pesanan
                       ======================================================== */}
                   <Hero />
+                  <SectionDivider />
                   <About />
                   <SectionDivider />
                   <Portfolio 
@@ -772,7 +764,7 @@ export default function App() {
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
-                        className="-mt-5 sm:-mt-8 md:-mt-10 lg:-mt-12"
+                        className="w-full"
                       >
                         <SectionDivider />
                         <Blog isSecondHalfLoaded={true} />

@@ -547,7 +547,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       variants={sectionStaggerContainer}
       className="py-6 md:py-8 scroll-mt-24 md:scroll-mt-32 relative overflow-hidden bg-white dark:bg-[#0A0A0A]"
     >
-      <div className="w-full px-6 sm:px-8 md:px-10 lg:px-12 xl:px-16 2xl:px-20 max-w-[1600px] mx-auto relative z-10">
+      <div className="w-full px-6 sm:px-8 md:px-10 lg:px-12 xl:px-16 2xl:px-20 max-w-[1800px] 2xl:max-w-[1920px] mx-auto relative z-10">
         <div className="mb-6 md:mb-8">
           <motion.div variants={sectionHeaderItem} className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4 md:mb-6">
             <div>
@@ -610,22 +610,23 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
 
             {/* Pilihan Kisi di Sebelah Kanan */}
             <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-100/90 dark:bg-[#141414] border border-zinc-200/80 dark:border-zinc-800 shadow-2xs">
-              {/* Tombol 1: Kisi Dua Gambar Kanan dan Kiri */}
+              {/* Tombol 1: Kisi 3 Karya Kanan dan Kiri */}
               <button
                 type="button"
                 onClick={() => handleSetLayoutMode('grid-2')}
-                title="Tampilan Kisi Dua (Kanan & Kiri)"
-                aria-label="Tampilan Kisi Dua (Kanan & Kiri)"
+                title="Tampilan Kisi 3 Karya (Desktop)"
+                aria-label="Tampilan Kisi 3 Karya (Desktop)"
                 className={`p-1.5 sm:p-2 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
                   layoutMode === 'grid-2'
                     ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-xs'
                     : 'text-zinc-400 dark:text-zinc-500 hover:text-black dark:hover:text-white'
                 }`}
               >
-                {/* Logo sederhana kisi dua kanan dan kiri */}
+                {/* Logo kisi 3 kolom menyebar rapi */}
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                  <rect x="2.5" y="3" width="6.5" height="14" rx="1.5" />
-                  <rect x="11" y="3" width="6.5" height="14" rx="1.5" />
+                  <rect x="2" y="3" width="4.5" height="14" rx="1.2" />
+                  <rect x="7.75" y="3" width="4.5" height="14" rx="1.2" />
+                  <rect x="13.5" y="3" width="4.5" height="14" rx="1.2" />
                 </svg>
               </button>
 
@@ -654,18 +655,16 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
         {loading ? (
           <div className={
             layoutMode === 'single'
-              ? 'columns-1 gap-6 sm:gap-8 space-y-6 sm:space-y-8 max-w-2xl sm:max-w-3xl mx-auto'
-              : 'columns-2 gap-3.5 sm:gap-6 md:gap-8 lg:gap-8 xl:gap-10 space-y-3.5 sm:space-y-6 md:space-y-8 lg:space-y-8 xl:space-y-10'
+              ? 'grid grid-cols-1 gap-8 md:gap-10 max-w-4xl xl:max-w-5xl mx-auto'
+              : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-7 lg:gap-8 xl:gap-9'
           }>
-            {[1, 2, 3, 4, 5, 6].map((n, i) => (
+            {[1, 2, 3, 4, 5, 6].map((n) => (
               <div 
                 key={n} 
-                className={`w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden animate-shimmer ${
+                className={`w-full rounded-2xl overflow-hidden animate-shimmer ${
                   layoutMode === 'single'
                     ? 'aspect-[16/10] min-h-[300px] sm:min-h-[420px]'
-                    : i % 2 === 0 
-                    ? 'aspect-[3/4] min-h-[240px] sm:min-h-[380px]' 
-                    : 'aspect-[4/5] min-h-[220px] sm:min-h-[340px]'
+                    : 'aspect-[4/5] min-h-[260px] sm:min-h-[340px] lg:min-h-[440px]'
                 }`}
               />
             ))}
@@ -678,8 +677,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
             animate="visible"
             className={
               layoutMode === 'single'
-                ? 'columns-1 gap-6 sm:gap-8 space-y-6 sm:space-y-8 max-w-2xl sm:max-w-3xl mx-auto'
-                : 'columns-2 gap-3.5 sm:gap-6 md:gap-8 lg:gap-8 xl:gap-10 space-y-3.5 sm:space-y-6 md:space-y-8 lg:space-y-8 xl:space-y-10'
+                ? 'grid grid-cols-1 gap-8 md:gap-10 max-w-4xl xl:max-w-5xl mx-auto'
+                : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-7 lg:gap-8 xl:gap-9'
             }
           >
             {/* Tampilan 50% awal dan sisa dimuat otomatis saat scroll/ganti menu */}
@@ -701,45 +700,45 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           layout
                           variants={cardItemVariants}
                           key={project.id ? `project-${project.id}-${index}` : `project-idx-${index}`} 
-                          className={`group relative h-auto w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden cursor-pointer border hover:shadow-2xl transition-all ${cinematicCardClass}`} 
-                          style={{ display: 'inline-block', width: '100%' }}
+                          className={`group relative h-full w-full rounded-2xl overflow-hidden cursor-pointer border hover:shadow-2xl transition-all ${cinematicCardClass}`} 
                           onClick={() => handleOpenArticle(project)}
                         >
                           {project.image ? (
                             <PortfolioLazyImage 
                               src={project.image} 
                               alt={project.title} 
-                              priority={index < 2}
-                              className={`w-full h-auto ${
-                                layoutMode === 'single'
-                                  ? 'min-h-[280px] sm:min-h-[420px] md:min-h-[520px]'
-                                  : 'min-h-[190px] sm:min-h-[300px] md:min-h-[400px]'
-                              } object-cover transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100`} 
-                              skeletonClassName="rounded-xl sm:rounded-2xl"
+                              priority={index < 3}
+                              className={`w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100`} 
+                              skeletonClassName="rounded-2xl"
                               aspectClass={
                                 layoutMode === 'single'
-                                  ? 'min-h-[280px] sm:min-h-[420px] md:min-h-[520px]'
-                                  : 'min-h-[190px] sm:min-h-[300px] md:min-h-[400px]'
+                                  ? 'aspect-[16/10] min-h-[300px] sm:min-h-[420px] md:min-h-[520px]'
+                                  : 'aspect-[4/5] min-h-[260px] sm:min-h-[340px] lg:min-h-[440px] xl:min-h-[500px]'
+                              }
+                              containerClassName={
+                                layoutMode === 'single'
+                                  ? 'aspect-[16/10]'
+                                  : 'aspect-[4/5]'
                               }
                             />
                           ) : (
-                            <div className="w-full aspect-[4/5] min-h-[320px] sm:min-h-[420px] lg:min-h-[600px] transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800 animate-shimmer rounded-xl sm:rounded-2xl"></div>
+                            <div className="w-full aspect-[4/5] min-h-[320px] sm:min-h-[420px] lg:min-h-[500px] transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800 animate-shimmer rounded-2xl"></div>
                           )}
-                          <div className="absolute inset-0 opacity-60 group-hover:opacity-80 transition-opacity duration-500 bg-gradient-to-t from-[#0A0A0A]/90 via-[#0A0A0A]/30 to-transparent"></div>
+                          <div className="absolute inset-0 opacity-60 group-hover:opacity-85 transition-opacity duration-500 bg-gradient-to-t from-[#0A0A0A]/95 via-[#0A0A0A]/40 to-transparent"></div>
                           
-                          <div className="absolute inset-0 p-4 sm:p-5 md:p-6 flex flex-col justify-end items-start text-white">
+                          <div className="absolute inset-0 p-4 sm:p-5 md:p-6 lg:p-7 flex flex-col justify-end items-start text-white">
                             <motion.div 
                               initial={{ y: 20, opacity: 0 }} 
                               whileInView={{ y: 0, opacity: 1 }} 
                               transition={{ duration: 0.5 }} 
                               className="transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500 ease-out w-full"
                             >
-                              <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                                <span className="inline-block px-2.5 py-1 bg-white/20 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase border border-white/10 shadow-sm">
+                              <div className="flex flex-wrap items-center gap-2 mb-2">
+                                <span className="inline-block px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-[10px] md:text-xs font-bold tracking-wider uppercase border border-white/10 shadow-sm">
                                   {project.category}
                                 </span>
                                 {Boolean(project.isCollaboration) && (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-600/90 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase border border-indigo-400/30 text-white shadow-sm">
+                                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-600/90 backdrop-blur-md rounded-full text-[10px] md:text-xs font-bold tracking-wider uppercase border border-indigo-400/30 text-white shadow-sm">
                                     {project.collaborationLogo ? (
                                       <img 
                                         src={resolveImageUrl(project.collaborationLogo)} 
@@ -748,26 +747,26 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                         onError={handleImageError}
                                       />
                                     ) : (
-                                      <Handshake size={11} />
+                                      <Handshake size={12} />
                                     )}
                                     <span>{project.collaborationPartner || 'Kolaborasi'}</span>
                                   </span>
                                 )}
                               </div>
-                              <h3 className="text-sm sm:text-base md:text-lg font-bold tracking-tight mb-0 leading-[1.2]">
+                              <h3 className="text-base sm:text-lg md:text-xl lg:text-2xl font-bold tracking-tight mb-0 leading-[1.25] line-clamp-2">
                                 {project.title}
                               </h3>
-                              <div className="mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100 flex items-center gap-2">
-                                <div className="flex items-center text-[9px] md:text-[11px] font-semibold gap-1.5 bg-white text-black px-3.5 py-1.5 rounded-full w-fit shadow-xl shadow-black/20">
-                                  <Eye size={14} /> Quick View
+                              <div className="mt-3 opacity-0 group-hover:opacity-100 transition-opacity duration-500 delay-100 flex items-center gap-2.5">
+                                <div className="flex items-center text-[10px] md:text-xs font-semibold gap-2 bg-white text-black px-4 py-2 rounded-full w-fit shadow-xl shadow-black/20">
+                                  <Eye size={15} /> Quick View
                                 </div>
                                 <button
                                   type="button"
                                   onClick={(e) => handleShareProject(project, e)}
-                                  className="flex items-center text-[9px] md:text-[11px] font-semibold gap-1.5 bg-white/20 hover:bg-white/35 backdrop-blur-md text-white px-3 py-1.5 rounded-full border border-white/20 shadow-xl transition-all active:scale-95 cursor-pointer"
+                                  className="flex items-center text-[10px] md:text-xs font-semibold gap-1.5 bg-white/20 hover:bg-white/35 backdrop-blur-md text-white px-3.5 py-2 rounded-full border border-white/20 shadow-xl transition-all active:scale-95 cursor-pointer"
                                   title="Bagikan Karya"
                                 >
-                                  <Share2 size={13} /> Bagikan
+                                  <Share2 size={14} /> Bagikan
                                 </button>
                               </div>
                             </motion.div>

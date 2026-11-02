@@ -213,31 +213,31 @@ export default function Hero() {
 
       {/* ========================================================
           2. TAMPILAN DESKTOP (>= 768px): REDESIGN HERO SECTION
-          - Layout 2 kolom Grid: Teks di KIRI (55%), Foto Profil di KANAN (45%)
-          - Judul diperbesar: WELCOME (64–72px), My Portfolio Design (52–60px)
-          - Foto profil diperbesar ~1.3–1.5x, seimbang, proporsional, dominan & elegan
-          - Komposisi terpusat vertikal & horizontal, tanpa ruang kosong berlebih
-          - Max-width 1280px, pas di layar 1366x768 dan 1920x1080
+          - Lebar konten dimaksimalkan memenuhi kanan & kiri layar (max-w-[1800px] 2xl:max-w-[1920px])
+          - Layout 2 kolom Grid: Teks di KIRI, Foto Profil di KANAN
+          - Judul diperbesar proporsional, rapat, bold, tegas
+          - Foto profil diperbesar ~1.3–1.5x, seimbang, dominan & elegan
+          - Komposisi terpusat dengan padding tepi layar yang aman & konsisten
           ======================================================== */}
-      <div className="hidden md:flex flex-col justify-center w-full max-w-[1280px] mx-auto px-6 sm:px-8 lg:px-12 xl:px-16 pt-20 md:pt-24 lg:pt-26 pb-4 md:pb-6 min-h-[calc(86vh-70px)]">
-        <div className="grid grid-cols-1 md:grid-cols-[55%_45%] gap-8 lg:gap-12 xl:gap-14 items-center w-full">
+      <div className="hidden md:flex flex-col justify-center w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-6 sm:px-8 md:px-10 lg:px-12 xl:px-16 2xl:px-20 pt-20 md:pt-24 lg:pt-28 pb-6 md:pb-8 min-h-[calc(88vh-70px)]">
+        <div className="grid grid-cols-1 md:grid-cols-[54%_46%] xl:grid-cols-[52%_48%] 2xl:grid-cols-[50%_50%] gap-8 lg:gap-12 xl:gap-16 2xl:gap-20 items-center w-full">
           
-          {/* Kolom Kiri: Teks & Tombol CTA (55% Proporsi Luas, Tidak Terpotong) */}
+          {/* Kolom Kiri: Teks & Tombol CTA (Proporsi Luas, Tidak Terpotong) */}
           <motion.div 
-            className="flex flex-col justify-center items-start text-left z-10 w-full min-w-0 pr-2 lg:pr-4"
+            className="flex flex-col justify-center items-start text-left z-10 w-full min-w-0 pr-2 lg:pr-6"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: "easeOut" }}
           >
             {/* Sub-Judul Desktop: Teks bersih dengan dot aksen biru */}
-            <div className="flex items-center gap-2.5 mb-3.5 select-none">
+            <div className="flex items-center gap-2.5 mb-3.5 md:mb-4 select-none">
               <span className="w-2.5 h-2.5 rounded-full bg-blue-600 dark:bg-blue-400"></span>
-              <p className="text-xs sm:text-[13px] font-bold tracking-[0.18em] uppercase text-zinc-600 dark:text-zinc-400">
+              <p className="text-xs sm:text-[13px] md:text-sm font-bold tracking-[0.2em] uppercase text-zinc-600 dark:text-zinc-400">
                 {badgeText}
               </p>
             </div>
 
-            {/* Judul Utama Desktop: WELCOME (64–72px) & My Portfolio Design (52–60px), rapat, bold, tegas */}
+            {/* Judul Utama Desktop: WELCOME & My Portfolio Design, diperbesar elegan & memenuhi layar */}
             <h1 
               style={{
                 fontFamily: "'Many Years Ago', 'Plus Jakarta Sans', 'Outfit', sans-serif",
@@ -245,48 +245,48 @@ export default function Hero() {
               }}
               className="font-extrabold text-black dark:text-white select-none w-full"
             >
-              <span className="block text-[clamp(62px,5.2vw,72px)] leading-[1.02] text-black dark:text-white font-black tracking-tight whitespace-nowrap">
+              <span className="block text-[clamp(66px,5.8vw,88px)] 2xl:text-[96px] leading-[1.01] text-black dark:text-white font-black tracking-tight whitespace-nowrap">
                 {title1Text}
               </span>
-              <span className="block text-[clamp(50px,4.1vw,60px)] leading-[1.06] text-black dark:text-white font-bold md:font-extrabold tracking-tight mt-1.5 sm:mt-2">
+              <span className="block text-[clamp(52px,4.6vw,72px)] 2xl:text-[78px] leading-[1.04] text-black dark:text-white font-bold md:font-extrabold tracking-tight mt-2 sm:mt-2.5">
                 {title2Text}
               </span>
             </h1>
 
-            {/* Group Tombol CTA Desktop: Diperkecil & diposisikan sedikit ke atas, dekat dengan text judul */}
-            <div className="flex flex-row items-center gap-2.5 w-fit font-semibold mt-2 md:mt-2.5">
+            {/* Group Tombol CTA Desktop: Proporsional, tegas, dekat dengan text judul */}
+            <div className="flex flex-row items-center gap-3 w-fit font-semibold mt-4 md:mt-5">
               <button 
                 onClick={() => scrollTo('portfolio')}
-                className="h-[31px] md:h-[33px] px-3.5 md:px-4 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-full text-[11px] md:text-xs font-bold shadow-xs hover:shadow-sm hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
+                className="h-[36px] md:h-[40px] px-5 md:px-6 inline-flex items-center justify-center gap-2 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-full text-xs md:text-sm font-bold shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
               >
-                Lihat Karya <ArrowRight className="w-3 h-3 shrink-0" />
+                Lihat Karya <ArrowRight className="w-3.5 h-3.5 shrink-0" />
               </button>
 
               <button 
                 onClick={() => scrollTo('contact')}
-                className="h-[31px] md:h-[33px] px-3.5 md:px-4 inline-flex items-center justify-center gap-1 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 border border-zinc-200/80 dark:bg-zinc-900 dark:text-white dark:border-zinc-800 dark:hover:bg-zinc-800 rounded-full text-[11px] md:text-xs font-bold shadow-xs hover:shadow-sm hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
+                className="h-[36px] md:h-[40px] px-5 md:px-6 inline-flex items-center justify-center gap-1.5 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 border border-zinc-200/80 dark:bg-zinc-900 dark:text-white dark:border-zinc-800 dark:hover:bg-zinc-800 rounded-full text-xs md:text-sm font-bold shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
               >
                 Kontak
               </button>
             </div>
           </motion.div>
 
-          {/* Kolom Kanan: Foto Profil Diperbesar 1,3–1,5x, Bersih, Transparan Tanpa Garis Bingkai (45%) */}
+          {/* Kolom Kanan: Foto Profil Diperbesar Memenuhi Area Kanan, Bersih, Transparan Tanpa Garis Bingkai */}
           <motion.div 
             className="w-full flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none"
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.7, delay: 0.08, ease: "easeOut" }}
           >
-            <div className="relative w-full max-w-[520px] lg:max-w-[580px] xl:max-w-[620px] aspect-[4/5] max-h-[640px] lg:max-h-[700px] xl:max-h-[740px] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
+            <div className="relative w-full max-w-[580px] lg:max-w-[680px] xl:max-w-[760px] 2xl:max-w-[840px] aspect-[4/5] max-h-[700px] lg:max-h-[780px] xl:max-h-[840px] 2xl:max-h-[900px] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
               {/* Ambient subtle glow tanpa garis bingkai apapun */}
-              <div className="absolute w-[360px] h-[360px] lg:w-[440px] lg:h-[440px] xl:w-[480px] xl:h-[480px] rounded-full bg-blue-500/12 dark:bg-blue-600/15 blur-3xl pointer-events-none -z-10" />
+              <div className="absolute w-[420px] h-[420px] lg:w-[520px] lg:h-[520px] xl:w-[620px] xl:h-[620px] 2xl:w-[700px] 2xl:h-[700px] rounded-full bg-blue-500/12 dark:bg-blue-600/15 blur-3xl pointer-events-none -z-10" />
 
               {/* Foto Profil Asli (Transparan, Jernih, Tanpa Garis Bingkai) */}
               <img 
                 src={resolveImageUrl(currentHeroImg)} 
                 alt="Muhammad Albiansyah - Creative Designer"
-                className="w-full h-full object-contain object-bottom select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-md transition-transform duration-500 hover:scale-[1.01]"
+                className="w-full h-full object-contain object-bottom select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-xl transition-transform duration-500 hover:scale-[1.01]"
                 fetchPriority="high"
                 loading="eager"
                 onError={handleHeroImgError}
@@ -297,8 +297,8 @@ export default function Hero() {
         </div>
       </div>
 
-      {/* Banner Promosi Carousel (Tampil di desktop dengan padding proporsional dalam batas max-w-1280px) */}
-      <div className="hidden md:block w-full max-w-[1280px] mx-auto px-6 sm:px-8 lg:px-12 xl:px-16 pt-2 md:pt-4 pb-4 md:pb-6 relative z-10">
+      {/* Banner Promosi Carousel (Tampil di desktop dengan padding proporsional dalam batas max-w-[1800px] 2xl:max-w-[1920px]) */}
+      <div className="hidden md:block w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-6 sm:px-8 md:px-10 lg:px-12 xl:px-16 2xl:px-20 pt-2 md:pt-4 pb-4 md:pb-6 relative z-10">
         <HeroBannerCarousel banners={settings.heroBanners} />
       </div>
     </section>

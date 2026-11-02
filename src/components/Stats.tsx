@@ -457,7 +457,7 @@ export default function Stats({
       whileInView="visible"
       viewport={{ once: true, amount: 0 }}
       variants={sectionStaggerContainer}
-      className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 scroll-mt-24 md:scroll-mt-32"
+      className="w-full mx-auto px-4 sm:px-6 md:px-8 lg:px-12 xl:px-16 py-4 sm:py-6 md:py-8 scroll-mt-24 md:scroll-mt-32"
     >
       <div ref={statsRef} className="p-3.5 sm:p-5 md:p-6 rounded-3xl bg-[#F0EEEE] dark:bg-[#0A0A0A] relative">
         <div id="stats-watermark" style={{ display: 'none' }} className="flex justify-between items-center w-full pb-4 border-b border-zinc-200 dark:border-zinc-800 mb-4">
