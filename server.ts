@@ -142,6 +142,25 @@ app.get('/sw.js', (_req: Request, res: Response) => {
 
 const mediaRegistryPath = path.resolve(__dirname, 'uploads-registry.json');
 
+// Dynamic Cloud Firestore configuration from firebase-applet-config.json
+let firebaseAppConfig: any = {};
+try {
+  const cfgPath = path.resolve(__dirname, 'firebase-applet-config.json');
+  if (fs.existsSync(cfgPath)) {
+    firebaseAppConfig = JSON.parse(fs.readFileSync(cfgPath, 'utf-8'));
+  }
+} catch (e) {
+  console.warn('Notice: Failed loading firebase-applet-config.json in server:', e);
+}
+
+const FIREBASE_PROJECT_ID = firebaseAppConfig.projectId || 'portofolio-c368b';
+const FIRESTORE_DATABASE_ID = firebaseAppConfig.firestoreDatabaseId || 'ai-studio-portofoliodesain-16b96d08-efff-4e76-af75-1c33dc5adab7';
+const FIREBASE_API_KEY = firebaseAppConfig.apiKey || 'AIzaSyDHmxUYsvRc5DKy8M1pwqO-zz_Wtq_09us';
+
+const getFirestoreRestDocUrl = (collection: string, docId: string): string => {
+  return `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${FIRESTORE_DATABASE_ID}/documents/${encodeURIComponent(collection)}/${encodeURIComponent(docId)}?key=${FIREBASE_API_KEY}`;
+};
+
 // Auto-recovery & self-healing untuk file upload: jika file hilang dari disk lokal (misal setelah restart instance),
 // ambil dataUrl dari Firestore uploadedMedia atau uploads-registry.json, tulis kembali ke disk, dan sajikan langsung!
 app.get('/uploads/:filename', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -182,7 +201,7 @@ app.get('/uploads/:filename', async (req: Request, res: Response, next: NextFunc
 
       for (const docId of candidates) {
         try {
-          const firestoreUrl = `https://firestore.googleapis.com/v1/projects/portofolio-c368b/databases/ai-studio-portofoliodesain-16b96d08-efff-4e76-af75-1c33dc5adab7/documents/uploadedMedia/${encodeURIComponent(docId)}?key=AIzaSyDHmxUYsvRc5DKy8M1pwqO-zz_Wtq_09us`;
+          const firestoreUrl = getFirestoreRestDocUrl('uploadedMedia', docId);
           const resp = await fetch(firestoreUrl, { method: 'GET' });
           if (resp.ok) {
             const docJson: any = await resp.json();
@@ -491,7 +510,7 @@ function registerUploadedMedia(record: { url: string; filename: string; size: nu
   if (record.dataUrl && typeof record.dataUrl === 'string') {
     const safeDocId = `media_${record.filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
     const safeFilename = record.filename.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/portofolio-c368b/databases/ai-studio-portofoliodesain-16b96d08-efff-4e76-af75-1c33dc5adab7/documents/uploadedMedia/${encodeURIComponent(safeDocId)}?key=AIzaSyDHmxUYsvRc5DKy8M1pwqO-zz_Wtq_09us`;
+    const firestoreUrl = getFirestoreRestDocUrl('uploadedMedia', safeDocId);
 
     const body = {
       fields: {
@@ -513,7 +532,7 @@ function registerUploadedMedia(record: { url: string; filename: string; size: nu
       body: JSON.stringify(body)
     }).then(async (res) => {
       if (res.ok && safeFilename !== safeDocId) {
-        const aliasUrl = `https://firestore.googleapis.com/v1/projects/portofolio-c368b/databases/ai-studio-portofoliodesain-16b96d08-efff-4e76-af75-1c33dc5adab7/documents/uploadedMedia/${encodeURIComponent(safeFilename)}?key=AIzaSyDHmxUYsvRc5DKy8M1pwqO-zz_Wtq_09us`;
+        const aliasUrl = getFirestoreRestDocUrl('uploadedMedia', safeFilename);
         fetch(aliasUrl, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -678,9 +697,16 @@ Tulis dalam bahasa Indonesia yang profesional, ramah, dan ringkas namun komprehe
     });
   } catch (err: any) {
     console.error('Google search grounding endpoint error:', err);
-    res.status(500).json({
-      error: err?.message || 'Gagal mengambil data dari Google Search',
-      details: String(err)
+    let userFriendlyMsg = 'Gagal mengambil data dari Google Search.';
+    const rawMsg = err?.message || String(err);
+    if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED') || rawMsg.includes('quota')) {
+      userFriendlyMsg = 'Batas kuota pencarian Google Search sementara sedang padat. Silakan tunggu 1 menit lalu coba klik kembali.';
+    } else if (rawMsg.includes('API_KEY')) {
+      userFriendlyMsg = 'Kunci API Gemini Google Search belum terpasang atau tidak valid.';
+    }
+    res.status(rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED') ? 429 : 500).json({
+      error: userFriendlyMsg,
+      details: rawMsg
     });
   }
 });

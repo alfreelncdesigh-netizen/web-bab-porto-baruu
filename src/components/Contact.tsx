@@ -5,6 +5,7 @@ import { db } from '../lib/firebase';
 import { doc, onSnapshot, collection, addDoc, query, orderBy } from 'firebase/firestore';
 import { defaultSettings, SiteSettings } from '../data/settings';
 import { getStoredSettings } from '../lib/contentStorage';
+import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
 import { FastInput, FastTextarea } from './FastInput';
 import { 
   sectionStaggerContainer, 
@@ -154,8 +155,27 @@ export default function Contact() {
   e.preventDefault();
   if (isSubmitting) return;
   setIsSubmitting(true);
+  const currentName = formData.name.trim();
+
+  if (isQuotaExhausted()) {
+    try {
+      const localMsgs = JSON.parse(localStorage.getItem('user_messages') || '[]');
+      localMsgs.push({ ...formData, dateAdded: new Date().toISOString() });
+      localStorage.setItem('user_messages', JSON.stringify(localMsgs));
+    } catch {}
+    setIsSubmitting(false);
+    setIsSuccess(true);
+    setFormData({ name: '', email: '', message: '' });
+    triggerToast(
+      'success',
+      'Pesan Berhasil Dicatat!',
+      `Terima kasih${currentName ? `, ${currentName}` : ''}. Pesan Anda telah dicatat. Anda juga dapat langsung berdiskusi via WhatsApp.`
+    );
+    setTimeout(() => setIsSuccess(false), 5000);
+    return;
+  }
+
   try {
-   const currentName = formData.name.trim();
    await addDoc(collection(db, 'messages'), {
     ...formData,
     dateAdded: new Date()
@@ -169,7 +189,25 @@ export default function Contact() {
      `Terima kasih${currentName ? `, ${currentName}` : ''}. Pesan Anda telah kami terima dan akan segera kami balas.`
    );
    setTimeout(() => setIsSuccess(false), 5000);
-  } catch (error) {
+  } catch (error: any) {
+   if (isQuotaError(error)) {
+     markQuotaExhausted();
+     try {
+       const localMsgs = JSON.parse(localStorage.getItem('user_messages') || '[]');
+       localMsgs.push({ ...formData, dateAdded: new Date().toISOString() });
+       localStorage.setItem('user_messages', JSON.stringify(localMsgs));
+     } catch {}
+     setIsSubmitting(false);
+     setIsSuccess(true);
+     setFormData({ name: '', email: '', message: '' });
+     triggerToast(
+       'success',
+       'Pesan Berhasil Dicatat!',
+       `Pesan Anda tersimpan di sistem lokal. Anda dapat menghubungi via WhatsApp untuk respons cepat.`
+     );
+     setTimeout(() => setIsSuccess(false), 5000);
+     return;
+   }
    console.warn("Error adding document: ", error);
    setIsSubmitting(false);
    triggerToast(

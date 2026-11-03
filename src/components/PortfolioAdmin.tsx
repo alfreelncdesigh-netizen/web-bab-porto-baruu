@@ -12,6 +12,7 @@ import { getOptimizedImageUrl } from "../lib/cloudinary";
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
+import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
 
 export default function PortfolioAdmin() {
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
@@ -146,35 +147,40 @@ export default function PortfolioAdmin() {
       }
     } catch {}
 
-    try {
-      const projectRef = doc(db, 'projects', docId);
-      await withTimeout(
-        setDoc(projectRef, {
-          title: savedProj.title,
-          category: savedProj.category,
-          image: savedProj.image,
-          images: savedProj.images || [],
-          description: savedProj.description,
-          date: savedProj.date || new Date().toISOString().split('T')[0],
-          role: savedProj.role || '',
-          aspectRatio: savedProj.aspectRatio || '1:1',
-          draft: savedProj.draft || false,
-          totalHoursSpent: savedProj.totalHoursSpent || '',
-          toolsUsed: savedProj.toolsUsed || '',
-          completionDate: savedProj.completionDate || '',
-          isCollaboration: savedProj.isCollaboration || false,
-          collaborationPartner: savedProj.collaborationPartner || '',
-          collaborationLogo: savedProj.collaborationLogo || '',
-          collaborationText: savedProj.collaborationText || '',
-          _adminAuth: 'alfreelnc_admin_auth_verified',
-          updatedByAdmin: true,
-          updatedAt: new Date().toISOString()
-        }, { merge: true }),
-        4000,
-        "Database cloud disinkronkan di latar belakang."
-      );
-    } catch (err: any) {
-      console.warn("Save Project Cloud background sync notice:", err);
+    if (!isQuotaExhausted()) {
+      try {
+        const projectRef = doc(db, 'projects', docId);
+        await withTimeout(
+          setDoc(projectRef, {
+            title: savedProj.title,
+            category: savedProj.category,
+            image: savedProj.image,
+            images: savedProj.images || [],
+            description: savedProj.description,
+            date: savedProj.date || new Date().toISOString().split('T')[0],
+            role: savedProj.role || '',
+            aspectRatio: savedProj.aspectRatio || '1:1',
+            draft: savedProj.draft || false,
+            totalHoursSpent: savedProj.totalHoursSpent || '',
+            toolsUsed: savedProj.toolsUsed || '',
+            completionDate: savedProj.completionDate || '',
+            isCollaboration: savedProj.isCollaboration || false,
+            collaborationPartner: savedProj.collaborationPartner || '',
+            collaborationLogo: savedProj.collaborationLogo || '',
+            collaborationText: savedProj.collaborationText || '',
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true,
+            updatedAt: new Date().toISOString()
+          }, { merge: true }),
+          4000,
+          "Database cloud disinkronkan di latar belakang."
+        );
+      } catch (err: any) {
+        if (isQuotaError(err)) {
+          markQuotaExhausted();
+        }
+        console.warn("Save Project Cloud background sync notice:", err);
+      }
     }
   };
 

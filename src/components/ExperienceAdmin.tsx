@@ -9,6 +9,7 @@ import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive
 import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
+import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
 
 export default function ExperienceAdmin() {
   const [experiences, setExperiences] = useState<any[]>(() => getStoredExperiences());
@@ -226,14 +227,19 @@ export default function ExperienceAdmin() {
       }
     } catch {}
 
-    try {
-      await withTimeout(
-        setDoc(doc(db, 'experiences', docId), toFirestore, { merge: true }),
-        4000,
-        "Database cloud disinkronkan di latar belakang."
-      );
-    } catch (err: any) {
-      console.warn("Firestore save experience background notice:", err);
+    if (!isQuotaExhausted()) {
+      try {
+        await withTimeout(
+          setDoc(doc(db, 'experiences', docId), toFirestore, { merge: true }),
+          4000,
+          "Database cloud disinkronkan di latar belakang."
+        );
+      } catch (err: any) {
+        if (isQuotaError(err)) {
+          markQuotaExhausted();
+        }
+        console.warn("Firestore save experience background notice:", err);
+      }
     }
   };
 

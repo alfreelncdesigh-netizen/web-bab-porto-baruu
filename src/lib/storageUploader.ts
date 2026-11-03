@@ -3,6 +3,7 @@ import { storage, ensureFreshAuthToken, db } from './firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { compressImageToWebP } from './imageCompressor';
 import { renderPdfFirstPageToImage } from './pdfHelper';
+import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from './firestoreErrorHandler';
 
 export interface StoredMediaRecord {
   id: string;
@@ -71,8 +72,9 @@ export async function recordMediaPermanently(
     }).catch(() => {});
   } catch {}
 
-  // 3. Simpan di Cloud Firestore (uploadedMedia) dengan fallback ID bersih
+  // 3. Simpan di Cloud Firestore (uploadedMedia) dengan fallback ID bersih jika kuota tersedia
   try {
+    if (isQuotaExhausted()) return;
     const firestoreData: Record<string, any> = {
       ...record,
       _adminAuth: 'alfreelnc_admin_auth_verified',
@@ -82,8 +84,11 @@ export async function recordMediaPermanently(
     if (safeFilename !== safeDocId) {
       await setDoc(doc(db, 'uploadedMedia', safeFilename), firestoreData, { merge: true }).catch(() => {});
     }
-  } catch (err) {
-    console.warn("Firestore media record notice:", err);
+  } catch (err: any) {
+    if (isQuotaError(err)) {
+      markQuotaExhausted();
+    }
+    console.warn("Firestore media record notice:", err?.message || err);
   }
 }
 

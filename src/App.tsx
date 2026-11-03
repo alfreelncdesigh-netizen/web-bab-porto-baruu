@@ -19,6 +19,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { ArrowLeft } from 'lucide-react';
 import { db } from './lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, increment, collection, getDocs } from 'firebase/firestore';
+import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from './lib/firestoreErrorHandler';
 import { 
   getStoredSettings, setLocalSettings, saveStoredSettings, cleanSettings,
   getStoredProjects, saveStoredProjects, cleanProjects,
@@ -417,6 +418,12 @@ export default function App() {
 
   useEffect(() => {
     const recordView = async () => {
+      // Jika kuota harian write Firestore sedang habis, hindari request berulang ke backend
+      if (isQuotaExhausted()) return;
+
+      const sessionRecorded = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('session_view_recorded');
+      if (sessionRecorded) return;
+
       try {
         const statsRef = doc(db, 'stats', 'views');
         const snap = await getDoc(statsRef);
@@ -425,13 +432,20 @@ export default function App() {
         } else {
           await setDoc(statsRef, { count: 1 });
         }
-      } catch (e) {
-        console.warn("View count error", e);
+        if (typeof sessionStorage !== 'undefined') {
+          sessionStorage.setItem('session_view_recorded', 'true');
+        }
+      } catch (e: any) {
+        if (isQuotaError(e)) {
+          markQuotaExhausted();
+        }
+        console.warn("Notice: Stats view recording handled safely:", e?.message || e);
       }
     };
+
     if (!window.hasRecordedView) {
-      recordView();
       window.hasRecordedView = true;
+      recordView();
     }
 
     const prefetchData = async () => {

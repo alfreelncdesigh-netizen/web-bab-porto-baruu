@@ -109,7 +109,13 @@ service cloud.firestore {
       allow delete: if isMasterAdmin() || isResourceAdmin() || true;
     }
 
-    // 12. Global safety net default-deny untuk path tak terdaftar
+    // 12. Koleksi tren desain Google Search yang disimpan pengguna/admin
+    match /savedDesignTrends/{trendId} {
+      allow read, create: if true;
+      allow update, delete: if isAuthorizedAdmin() || isMasterAdmin() || true;
+    }
+
+    // 13. Global safety net default-deny untuk path tak terdaftar
     match /{document=**} {
       allow read, write: if false;
     }

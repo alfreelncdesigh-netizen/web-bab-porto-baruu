@@ -10,6 +10,9 @@ import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { defaultPromoPosters, PromoPosterItem } from '../data/settings';
 import { PAYMENT_METHODS, BriLogo, BrimoLogo, DanaLogo, GopayLogo, OvoLogo, ShopeePayLogo, LinkAjaLogo } from './PaymentLogos';
 import { getCookie, setCookie, deleteCookie } from '../lib/cookies';
+import { GoogleLogo } from './GoogleSearchModal';
+import { compressAndUpload } from '../lib/storageUploader';
+import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
 
 interface StoreProps {
   isOrderView?: boolean;
@@ -239,33 +242,19 @@ export default function Store({ isOrderView = false }: StoreProps) {
 
     setIsUploading(true);
     try {
-      const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-      const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
-      
-      if (!cloudName || !uploadPreset || cloudName === 'your_cloud_name') {
-        showToast("Penyimpanan cloud belum terkonfigurasi. Anda dapat mengirim gambar referensi via WhatsApp.");
-        setIsUploading(false);
-        return;
-      }
-
-      const uploadData = new FormData();
-      uploadData.append("file", file);
-      uploadData.append("upload_preset", uploadPreset);
-
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-        method: "POST",
-        body: uploadData,
-      });
-
-      const data = await res.json();
-      if (data.secure_url) {
-        setFormData(prev => ({ ...prev, referensiUrl: data.secure_url }));
+      const url = await compressAndUpload(file, 'orders');
+      if (url) {
+        setFormData(prev => ({ ...prev, referensiUrl: url }));
+        showToast("Gambar referensi berhasil diunggah!");
+      } else {
+        throw new Error("URL upload kosong");
       }
     } catch (error) {
       console.warn("Upload error:", error);
       showToast("Gagal mengunggah file. Anda dapat mengirimnya langsung via WhatsApp.");
     } finally {
       setIsUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -381,6 +370,9 @@ export default function Store({ isOrderView = false }: StoreProps) {
         jumlah: formData.jumlah || '',
         deadline: formData.deadline || '',
         budget: formData.budget || '',
+        referensiUrl: formData.referensiUrl || '',
+        materi: formData.materi || '',
+        catatan: formData.catatan || '',
         totalEstimasi: total,
         createdAt: new Date().toISOString()
       };
@@ -389,23 +381,31 @@ export default function Store({ isOrderView = false }: StoreProps) {
       localStorage.setItem('orders', JSON.stringify(existing));
     } catch (e) {}
 
-    try {
-      await addDoc(collection(db, 'orders'), {
-        nama: formData.nama,
-        whatsapp: formData.whatsapp,
-        sosmed: formData.sosmed || '',
-        layanan,
-        tujuan: formData.tujuan || '',
-        gaya: formData.gaya || '',
-        format: formData.format || '',
-        jumlah: formData.jumlah || '',
-        deadline: formData.deadline || '',
-        budget: formData.budget || '',
-        totalEstimasi: total,
-        createdAt: serverTimestamp(),
-      });
-    } catch (error) {
-      console.warn("Gagal mencatat order:", error);
+    if (!isQuotaExhausted()) {
+      try {
+        await addDoc(collection(db, 'orders'), {
+          nama: formData.nama,
+          whatsapp: formData.whatsapp,
+          sosmed: formData.sosmed || '',
+          layanan,
+          tujuan: formData.tujuan || '',
+          gaya: formData.gaya || '',
+          format: formData.format || '',
+          jumlah: formData.jumlah || '',
+          deadline: formData.deadline || '',
+          budget: formData.budget || '',
+          referensiUrl: formData.referensiUrl || '',
+          materi: formData.materi || '',
+          catatan: formData.catatan || '',
+          totalEstimasi: total,
+          createdAt: serverTimestamp(),
+        });
+      } catch (error: any) {
+        if (isQuotaError(error)) {
+          markQuotaExhausted();
+        }
+        console.warn("Notice: Firestore order logging handled safely:", error?.message || error);
+      }
     }
     
     const message = `Halo, saya ingin melakukan pemesanan custom desain dengan detail berikut:
@@ -507,6 +507,20 @@ Terima kasih.`;
           <p className="text-[11px] md:text-lg text-zinc-500 dark:text-zinc-400 max-w-2xl mx-auto leading-relaxed">
             Ceritakan konsep atau kebutuhan desainmu di sini, nanti kita diskusikan bersama sampai cocok.
           </p>
+          <div className="mt-2.5 sm:mt-3 flex justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('open_google_search', {
+                  detail: { query: 'Inspirasi dan tren desain grafis untuk branding bisnis terkini' }
+                }));
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/60 dark:border-blue-800/60 text-[11px] sm:text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition-colors shadow-2xs active:scale-95 cursor-pointer"
+            >
+              <GoogleLogo className="w-3.5 h-3.5" />
+              <span>Butuh ide? Cek Tren Desain Terkini via Google Search</span>
+            </button>
+          </div>
         </motion.div>
 
 

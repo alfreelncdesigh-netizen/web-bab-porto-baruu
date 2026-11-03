@@ -8,6 +8,7 @@ import { getStoredProjects, saveStoredProjects, cleanProjects } from '../lib/con
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import ShareProjectModal from './ShareProjectModal';
+import { GoogleLogo } from './GoogleSearchModal';
 import { 
   sectionStaggerContainer, 
   sectionHeaderItem, 
@@ -559,27 +560,43 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               </p>
             </div>
 
-            {/* Fitur Pencarian Proyek (Search Bar) */}
-            <div className="w-full lg:w-72 xl:w-80 relative">
-              <div className="relative flex items-center">
-                <Search className="w-4 h-4 absolute left-3.5 text-zinc-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari karya atau kata kunci..."
-                  className="w-full pl-9 pr-8 py-2 md:py-2.5 text-xs md:text-sm rounded-full bg-zinc-50 dark:bg-[#111111] border border-zinc-200/80 dark:border-zinc-800 text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all shadow-xs"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-3 p-0.5 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
-                    title="Hapus pencarian"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+            {/* Fitur Pencarian Proyek (Search Bar) & Riset Google Search Grounding */}
+            <div className="flex items-center gap-2 w-full lg:w-auto">
+              <div className="w-full lg:w-72 xl:w-80 relative">
+                <div className="relative flex items-center">
+                  <Search className="w-4 h-4 absolute left-3.5 text-zinc-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Cari karya atau kata kunci..."
+                    className="w-full pl-9 pr-8 py-2 md:py-2.5 text-xs md:text-sm rounded-full bg-zinc-50 dark:bg-[#111111] border border-zinc-200/80 dark:border-zinc-800 text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all shadow-xs"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 p-0.5 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+                      title="Hapus pencarian"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('open_google_search', {
+                    detail: { query: searchQuery ? `Tren desain grafis: ${searchQuery}` : 'Tren desain visual dan poster 2026' }
+                  }));
+                }}
+                className="px-3.5 py-2 md:py-2.5 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-blue-500 text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5 shrink-0 shadow-xs active:scale-95 transition-all cursor-pointer"
+                title="Riset Tren Google Search dengan Gemini 3.8 Flash"
+              >
+                <GoogleLogo className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Riset Tren Google</span>
+              </button>
             </div>
           </motion.div>
           

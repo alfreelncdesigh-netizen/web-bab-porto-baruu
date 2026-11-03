@@ -18,6 +18,9 @@ interface OrderItem {
   deadline?: string;
   budget?: string;
   totalEstimasi?: number;
+  referensiUrl?: string;
+  materi?: string;
+  catatan?: string;
   status?: 'pending' | 'proses' | 'selesai';
   createdAt?: any;
 }
@@ -242,6 +245,20 @@ export default function StoreAdmin() {
                     <p className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
                       {[order.tujuan, order.gaya, order.format].filter(Boolean).join(' • ')}
                     </p>
+                  )}
+
+                  {order.referensiUrl && (
+                    <div className="pt-1">
+                      <a
+                        href={order.referensiUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-lg border border-blue-200/50 dark:border-blue-900/50"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Lihat Gambar Referensi
+                      </a>
+                    </div>
                   )}
                 </div>
 

@@ -5,7 +5,7 @@ import { defaultBlogPosts } from '../data/blogs';
 import { TemplateProduct, defaultTemplates } from '../data/templates';
 import { db, auth } from './firebase';
 import { doc, setDoc } from 'firebase/firestore';
-import { logFirestoreError, OperationType } from './firestoreErrorHandler';
+import { logFirestoreError, OperationType, isQuotaExhausted } from './firestoreErrorHandler';
 
 const DUMMY_PROJECT_IDS = new Set(['2', '3', '4', '5', '6', '7', 'poster-lks-smkn1-sinjai', 'branding-kemasan-teh-hijau', 'poster-promosi-diskon-kreatif', 'showcase-visual-3d-minimalis', 'banner-informasi-bca-finansial', 'visual-sosial-media-konten-kreatif', 'workspace-editing-tools-3d']);
 
@@ -319,6 +319,11 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
   } catch {}
 
   // 3. Simpan ke Cloud Firestore (sanitasi undefined value agar tidak ditolak Firestore SDK)
+  if (isQuotaExhausted()) {
+    // Mode ketahanan kuota aktif: data telah tersimpan aman di disk server & localStorage
+    return true;
+  }
+
   try {
     const firestoreTasks: Promise<any>[] = [];
 
