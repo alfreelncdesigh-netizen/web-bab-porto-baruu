@@ -407,7 +407,7 @@ export default function CvDetail() {
                 <Phone className="w-4 h-4 text-emerald-500 dark:text-emerald-400 shrink-0" />
                 <span className="text-zinc-400 dark:text-zinc-500 text-xs hidden sm:inline">WhatsApp:</span>
                 <a 
-                  href={`https://wa.me/${(settings.contactPhone || '6282394549268').replace(/\D/g, '')}`}
+                  href="https://wa.me/qr/UDCAZ44OXWLGM1"
                   target="_blank" 
                   rel="noreferrer"
                   className="font-medium text-zinc-800 dark:text-zinc-200 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors truncate"
@@ -416,7 +416,7 @@ export default function CvDetail() {
                 </a>
               </div>
               <a 
-                href={`https://wa.me/${(settings.contactPhone || '6282394549268').replace(/\D/g, '')}`}
+                href="https://wa.me/qr/UDCAZ44OXWLGM1"
                 target="_blank" 
                 rel="noreferrer"
                 className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium hover:underline shrink-0 ml-2"

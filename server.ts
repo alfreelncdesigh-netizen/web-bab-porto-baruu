@@ -6,7 +6,6 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -631,83 +630,6 @@ app.delete('/api/collaborator-logs', requireAdminAuth, (_req: Request, res: Resp
     res.status(200).json({ success: true });
   } catch {
     res.status(500).json({ error: 'Gagal membersihkan log kolaborator' });
-  }
-});
-
-// ============================================================================
-// GOOGLE SEARCH GROUNDING (GEMINI 3.8 FLASH + GOOGLE SEARCH TOOL)
-// ============================================================================
-app.post('/api/google-search-trends', async (req: Request, res: Response): Promise<void> => {
-  try {
-    const { query, category } = req.body || {};
-    const searchQuery = (query || '').trim() || 'Tren desain grafis dan visual branding 2026';
-
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      res.status(503).json({
-        error: 'Layanan Google Search AI membutuhkan GEMINI_API_KEY di environment.',
-        code: 'MISSING_API_KEY'
-      });
-      return;
-    }
-
-    const aiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build'
-        }
-      }
-    });
-
-    const prompt = `Sebagai konsultan desain grafis & visual branding profesional, lakukan pencarian web Google secara mendalam tentang: "${searchQuery}".
-Konteks: ${category || 'Tren Desain Kreatif, Visual, dan Branding'}.
-
-Berikan ulasan tren yang faktual, segar, dan sangat berguna untuk desainer & klien dalam format Markdown terstruktur:
-1. **Ringkasan Tren Terkini**: Ringkasan gaya visual, tema, dan estetika yang sedang ramai digunakan dan diminati pasar saat ini berdasarkan hasil pencarian web.
-2. **Palet Warna & Nuansa Populer**: Sebutkan nama warna dan perkiraan kode HEX yang sedang tren untuk kombinasi visual ini.
-3. **Pilihan Tipografi & Huruf**: Karakter font dan kombinasi tipografi yang selaras dengan tren ini.
-4. **Rekomendasi Praktis**: Langkah konkret penerapan ide ini pada poster, feed Instagram, logo, atau materi branding.
-
-Tulis dalam bahasa Indonesia yang profesional, ramah, dan ringkas namun komprehensif.`;
-
-    const response = await aiClient.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }]
-      }
-    });
-
-    const text = response.text || '';
-    const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-    const webSources = chunks
-      .filter((c: any) => c.web?.uri && c.web?.title)
-      .map((c: any) => ({
-        title: c.web.title,
-        uri: c.web.uri
-      }));
-
-    res.status(200).json({
-      success: true,
-      query: searchQuery,
-      summary: text,
-      sources: webSources,
-      searchQueries: response.candidates?.[0]?.groundingMetadata?.webSearchQueries || []
-    });
-  } catch (err: any) {
-    console.error('Google search grounding endpoint error:', err);
-    let userFriendlyMsg = 'Gagal mengambil data dari Google Search.';
-    const rawMsg = err?.message || String(err);
-    if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED') || rawMsg.includes('quota')) {
-      userFriendlyMsg = 'Batas kuota pencarian Google Search sementara sedang padat. Silakan tunggu 1 menit lalu coba klik kembali.';
-    } else if (rawMsg.includes('API_KEY')) {
-      userFriendlyMsg = 'Kunci API Gemini Google Search belum terpasang atau tidak valid.';
-    }
-    res.status(rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED') ? 429 : 500).json({
-      error: userFriendlyMsg,
-      details: rawMsg
-    });
   }
 });
 

@@ -2,8 +2,6 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getFirestore, 
   initializeFirestore, 
-  persistentLocalCache, 
-  persistentMultipleTabManager,
   memoryLocalCache,
   doc,
   getDoc,
@@ -21,21 +19,38 @@ if (typeof window !== 'undefined') {
   } catch (e) {}
 }
 
+// Bersihkan antrean mutasi lama di IndexedDB yang tersangkut akibat kuota habis
+if (typeof window !== 'undefined' && 'indexedDB' in window) {
+  try {
+    const firestoreDbNames = [
+      'firestore/[DEFAULT]/portofolio-c368b/ai-studio-portofoliodesain-16b96d08-efff-4e76-af75-1c33dc5adab7',
+      'firestore/[DEFAULT]/portofolio-c368b/(default)'
+    ];
+    firestoreDbNames.forEach((name) => {
+      try { window.indexedDB.deleteDatabase(name); } catch {}
+    });
+    if (window.indexedDB.databases) {
+      window.indexedDB.databases().then((dbs) => {
+        dbs.forEach((d) => {
+          if (d.name && d.name.includes('firestore')) {
+            try { window.indexedDB.deleteDatabase(d.name); } catch {}
+          }
+        });
+      }).catch(() => {});
+    }
+  } catch {}
+}
+
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 const dbId = (firebaseConfig as any).firestoreDatabaseId;
 
 let dbInstance;
 try {
-  // Utamakan persistent local cache (IndexedDB) untuk pemuatan data instan tanpa delay jaringan
-  const cacheSettings = typeof window !== 'undefined'
-    ? persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-    : memoryLocalCache();
-
-  // Gunakan experimentalAutoDetectLongPolling: true agar Firestore memilih WebSockets terlebih dahulu
-  // dan hanya fallback ke long polling jika koneksi WebSockets diblokir oleh jaringan
+  // Gunakan memoryLocalCache agar mutasi gagal/tertunda tidak disimpan permanen di IndexedDB
+  // untuk mencegah looping retry backoff tak berujung saat kuota harian habis
   const firestoreSettings = { 
-    localCache: cacheSettings,
+    localCache: memoryLocalCache(),
     experimentalAutoDetectLongPolling: true
   };
 

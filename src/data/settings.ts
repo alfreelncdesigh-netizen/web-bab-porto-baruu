@@ -169,7 +169,7 @@ export const defaultSettings: SiteSettings = {
   portfolioLink: "https://alfreelnc.com",
   promoWidgetActive: true,
   promoWidgetImage: "",
-  promoWidgetLink: "https://wa.me/6282394549268?text=Halo%20saya%20tertarik%20dengan%20promo%20diskon%20desain%20grafis",
+  promoWidgetLink: "https://wa.me/qr/UDCAZ44OXWLGM1",
   promoWidgetCtaText: "Ambil Diskon",
   deletedMessageIds: [],
   promoPosters: [],

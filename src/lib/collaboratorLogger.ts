@@ -1,5 +1,6 @@
 import { db } from './firebase';
 import { doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from './firestoreErrorHandler';
 
 export interface CollaboratorActivityLog {
   id: string;
@@ -148,15 +149,20 @@ export async function recordCollaboratorActivity(
   } catch {}
 
   // 3. Simpan ke Cloud Firestore (realtime sinkronisasi ke menu kolaborator)
-  try {
-    setDoc(doc(db, 'collaboratorLogs', logId), {
-      ...logRecord,
-      _adminAuth: 'alfreelnc_admin_auth_verified',
-      updatedByAdmin: true
-    }, { merge: true }).catch((err) => {
-      console.warn("Notice: Firestore collaborator log error:", err);
-    });
-  } catch {}
+  if (!isQuotaExhausted()) {
+    try {
+      setDoc(doc(db, 'collaboratorLogs', logId), {
+        ...logRecord,
+        _adminAuth: 'alfreelnc_admin_auth_verified',
+        updatedByAdmin: true
+      }, { merge: true }).catch((err) => {
+        if (isQuotaError(err)) {
+          markQuotaExhausted();
+        }
+        console.warn("Notice: Firestore collaborator log skipped/offline:", err?.message || err);
+      });
+    } catch {}
+  }
 
   // 4. Siarkan event ke aplikasi agar UI langsung terupdate seketika tanpa refresh
   try {

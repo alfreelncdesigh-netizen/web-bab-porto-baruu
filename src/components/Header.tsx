@@ -7,7 +7,6 @@ import { SiteSettings } from '../data/settings';
 import { getStoredSettings } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { PWAInstallButton } from './PWAInstallButton';
-import GoogleSearchModal, { GoogleLogo } from './GoogleSearchModal';
 
 interface HeaderProps {
  setView: (view: string) => void;
@@ -19,19 +18,6 @@ export default function Header({ setView, currentView }: HeaderProps) {
  const [isScrolled, setIsScrolled] = useState(false);
  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
  const [isThemeDropdownOpen, setIsThemeDropdownOpen] = useState(false);
- const [isGoogleSearchOpen, setIsGoogleSearchOpen] = useState(false);
- const [googleSearchQuery, setGoogleSearchQuery] = useState('');
-
- useEffect(() => {
-   const handleOpenGoogle = (e: any) => {
-     setIsGoogleSearchOpen(true);
-     if (e.detail?.query) {
-       setGoogleSearchQuery(e.detail.query);
-     }
-   };
-   window.addEventListener('open_google_search', handleOpenGoogle);
-   return () => window.removeEventListener('open_google_search', handleOpenGoogle);
- }, []);
 
  useEffect(() => {
    const handleSettingsUpdate = (e: any) => {
@@ -269,16 +255,6 @@ export default function Header({ setView, currentView }: HeaderProps) {
       <PWAInstallButton />
 
       <button 
-       onClick={() => setIsGoogleSearchOpen(true)}
-       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:hover:bg-zinc-700 border border-zinc-200/80 dark:border-zinc-700/80 text-xs font-bold text-zinc-800 dark:text-zinc-200 transition-all hover:scale-[1.02] active:scale-95 duration-200 shadow-2xs cursor-pointer"
-       title="Riset & Tren Desain Terkini dengan Google Search Grounding"
-       aria-label="Riset Google"
-      >
-       <GoogleLogo className="w-3.5 h-3.5 shrink-0" />
-       <span className="hidden xl:inline">Riset Google</span>
-      </button>
-
-      <button 
        onClick={() => {
         setIsMobileMenuOpen(false);
         setIsThemeDropdownOpen(false);
@@ -384,44 +360,12 @@ export default function Header({ setView, currentView }: HeaderProps) {
          >
           Hubungi Saya
          </button>
-         <button 
-           type="button"
-           onClick={() => {
-             setIsMobileMenuOpen(false);
-             setIsGoogleSearchOpen(true);
-           }}
-           className="w-full flex items-center justify-between text-left text-[13px] sm:text-[14px] font-bold py-3 px-3.5 rounded-2xl bg-blue-50/90 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200/70 dark:border-blue-800/60 transition-all cursor-pointer shadow-2xs"
-         >
-           <div className="flex items-center gap-2.5">
-             <GoogleLogo className="w-4 h-4 shrink-0" />
-             <span>Riset Tren Google</span>
-           </div>
-           <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 font-extrabold">
-             Baru
-           </span>
-         </button>
          <PWAInstallButton className="w-full justify-center py-2.5" />
        </div>
       </motion.div>
      )}
     </AnimatePresence>
    </header>
-
-   <GoogleSearchModal 
-     isOpen={isGoogleSearchOpen}
-     onClose={() => setIsGoogleSearchOpen(false)}
-     initialQuery={googleSearchQuery}
-     onApplyConcept={(concept) => {
-       setIsGoogleSearchOpen(false);
-       setView('store');
-       setTimeout(() => {
-         const storeElement = document.getElementById('store');
-         if (storeElement) {
-           storeElement.scrollIntoView({ behavior: 'smooth' });
-         }
-       }, 150);
-     }}
-   />
   </>
  );
 }

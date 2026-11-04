@@ -174,7 +174,7 @@ export default function About() {
                )}
              </button>
              <a
-               href={`https://wa.me/${cleanPhone}`}
+               href="https://wa.me/qr/UDCAZ44OXWLGM1"
                target="_blank"
                rel="noreferrer"
                title="Buka Chat WhatsApp"

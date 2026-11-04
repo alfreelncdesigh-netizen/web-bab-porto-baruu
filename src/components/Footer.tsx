@@ -105,7 +105,7 @@ export default function Footer() {
             <div className="flex items-center gap-2.5 pt-1">
               {/* WhatsApp */}
               <a 
-                href="https://wa.me/6282394549268"
+                href="https://wa.me/qr/UDCAZ44OXWLGM1"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-7 h-7 rounded-md bg-zinc-400 hover:bg-zinc-500 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-white flex items-center justify-center transition-all hover:scale-105 shadow-xs"

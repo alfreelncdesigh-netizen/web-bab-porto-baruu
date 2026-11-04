@@ -22,6 +22,8 @@ export const MASTER_ADMINS = [
   'alfreelnc.desigh@gmail.com'
 ];
 
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
+
 export default function AdminAccessAdmin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [newIdentifier, setNewIdentifier] = useState('');
@@ -32,8 +34,9 @@ export default function AdminAccessAdmin() {
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
 
   useEffect(() => {
-    // Pastikan dokumen bawaan master 'albian' tersimpan di Firestore
+    // Pastikan dokumen bawaan master 'albian' tersimpan di Firestore (jika kuota tersedia)
     const seedMaster = async () => {
+      if (isQuotaExhausted()) return;
       try {
         await setDoc(doc(db, 'adminUsers', 'albian'), {
           username: 'albian',
@@ -41,7 +44,11 @@ export default function AdminAccessAdmin() {
           status: 'allowed',
           addedAt: '2025-01-01T00:00:00.000Z'
         }, { merge: true });
-      } catch {}
+      } catch (err) {
+        if (isQuotaError(err)) {
+          markQuotaExhausted();
+        }
+      }
     };
     seedMaster();
 

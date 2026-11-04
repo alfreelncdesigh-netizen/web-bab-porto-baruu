@@ -418,11 +418,15 @@ export default function App() {
 
   useEffect(() => {
     const recordView = async () => {
-      // Jika kuota harian write Firestore sedang habis, hindari request berulang ke backend
+      // Jika kuota harian write Firestore sedang habis, lewati penulisan statistik ke cloud
       if (isQuotaExhausted()) return;
 
       const sessionRecorded = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('session_view_recorded');
       if (sessionRecorded) return;
+
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem('session_view_recorded', 'true');
+      }
 
       try {
         const statsRef = doc(db, 'stats', 'views');
@@ -432,14 +436,11 @@ export default function App() {
         } else {
           await setDoc(statsRef, { count: 1 });
         }
-        if (typeof sessionStorage !== 'undefined') {
-          sessionStorage.setItem('session_view_recorded', 'true');
-        }
       } catch (e: any) {
         if (isQuotaError(e)) {
           markQuotaExhausted();
         }
-        console.warn("Notice: Stats view recording handled safely:", e?.message || e);
+        console.warn("Notice: Stats view recording handled safely (offline / quota resilient mode):", e?.message || e);
       }
     };
 

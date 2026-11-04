@@ -23,6 +23,7 @@ import PromoAdmin from './PromoAdmin';
 import AdminAccessAdmin from './AdminAccessAdmin';
 import CollaborationAdmin from './CollaborationAdmin';
 import { getStoredSettings } from '../lib/contentStorage';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 import { Handshake } from 'lucide-react';
 
@@ -135,15 +136,21 @@ export default function AdminDashboard() {
         setWebPassword('');
         setIsLoggingIn(false);
 
-        // Pastikan record admin tersimpan di Firestore
-        try {
-          await setDoc(doc(db, 'adminUsers', 'albian'), {
-            username: 'albian',
-            status: 'allowed',
-            role: 'master',
-            lastLogin: new Date().toISOString()
-          }, { merge: true });
-        } catch {}
+        // Pastikan record admin tersimpan di Firestore (jika kuota tersedia)
+        if (!isQuotaExhausted()) {
+          try {
+            await setDoc(doc(db, 'adminUsers', 'albian'), {
+              username: 'albian',
+              status: 'allowed',
+              role: 'master',
+              lastLogin: new Date().toISOString()
+            }, { merge: true });
+          } catch (err) {
+            if (isQuotaError(err)) {
+              markQuotaExhausted();
+            }
+          }
+        }
 
         return;
       }

@@ -544,7 +544,7 @@ export default function Experience() {
                   {/* Tombol Aksi: Diskusi via WhatsApp */}
                   <div className="grid grid-cols-1 gap-2.5 mb-6 pt-4">
                     <a
-                      href={`https://wa.me/6282394549268?text=${encodeURIComponent(`Halo Albiansyah, saya melihat pengalaman "${selectedExp.header}" di portofolio Anda. Bisakah kita berdiskusi lebih lanjut?`)}`}
+                      href={`https://wa.me/qr/UDCAZ44OXWLGM1?text=${encodeURIComponent(`Halo Albiansyah, saya melihat pengalaman "${selectedExp.header}" di portofolio Anda. Bisakah kita berdiskusi lebih lanjut?`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="py-2.5 px-4 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"

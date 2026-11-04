@@ -8,7 +8,6 @@ import { getStoredProjects, saveStoredProjects, cleanProjects } from '../lib/con
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import ShareProjectModal from './ShareProjectModal';
-import { GoogleLogo } from './GoogleSearchModal';
 import { 
   sectionStaggerContainer, 
   sectionHeaderItem, 
@@ -583,20 +582,6 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                   )}
                 </div>
               </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent('open_google_search', {
-                    detail: { query: searchQuery ? `Tren desain grafis: ${searchQuery}` : 'Tren desain visual dan poster 2026' }
-                  }));
-                }}
-                className="px-3.5 py-2 md:py-2.5 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-blue-500 text-xs font-bold text-zinc-800 dark:text-zinc-200 flex items-center gap-1.5 shrink-0 shadow-xs active:scale-95 transition-all cursor-pointer"
-                title="Riset Tren Google Search dengan Gemini 3.8 Flash"
-              >
-                <GoogleLogo className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">Riset Tren Google</span>
-              </button>
             </div>
           </motion.div>
           
@@ -1224,7 +1209,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-6 pt-2">
                     {/* Tombol Diskusi Proyek via WhatsApp */}
                     <a
-                      href={`https://wa.me/6282394549268?text=${encodeURIComponent(`Halo Albiansyah, saya tertarik dengan proyek portofolio "${selectedProject.title}". Bisakah kita mendiskusikan kerja sama serupa?`)}`}
+                      href={`https://wa.me/qr/UDCAZ44OXWLGM1?text=${encodeURIComponent(`Halo Albiansyah, saya tertarik dengan proyek portofolio "${selectedProject.title}". Bisakah kita mendiskusikan kerja sama serupa?`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="py-2.5 px-4 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"

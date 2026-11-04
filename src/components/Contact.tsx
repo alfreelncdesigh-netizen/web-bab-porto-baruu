@@ -218,9 +218,7 @@ export default function Contact() {
   }
  };
 
- const rawPhone = (settings.contactPhone || '628112345678').replace(/[^0-9]/g, '');
- const waNumber = rawPhone.startsWith('0') ? '62' + rawPhone.slice(1) : rawPhone || '628112345678';
- const waLink = `https://wa.me/${waNumber}?text=${encodeURIComponent('Halo, saya ingin memesan jasa desain / berdiskusi mengenai proyek visual.')}`;
+ const waLink = "https://wa.me/qr/UDCAZ44OXWLGM1";
 
  return (
   <motion.section 

@@ -29,6 +29,8 @@ export interface FirestoreErrorInfo {
 export function markQuotaExhausted(): void {
   if (typeof window !== 'undefined') {
     try {
+      localStorage.setItem('firestore_quota_exhausted', 'true');
+      localStorage.setItem('firestore_quota_exhausted_time', String(Date.now()));
       sessionStorage.setItem('firestore_quota_exhausted', 'true');
       sessionStorage.setItem('firestore_quota_exhausted_time', String(Date.now()));
       window.dispatchEvent(new CustomEvent('firestore_quota_exceeded'));
@@ -39,11 +41,13 @@ export function markQuotaExhausted(): void {
 export function isQuotaExhausted(): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    const val = sessionStorage.getItem('firestore_quota_exhausted');
+    const val = localStorage.getItem('firestore_quota_exhausted') || sessionStorage.getItem('firestore_quota_exhausted');
     if (!val) return false;
-    const time = Number(sessionStorage.getItem('firestore_quota_exhausted_time') || 0);
-    // Reset status setelah 30 menit untuk mengecek kembali secara berkala
-    if (Date.now() - time > 1800000) {
+    const time = Number(localStorage.getItem('firestore_quota_exhausted_time') || sessionStorage.getItem('firestore_quota_exhausted_time') || 0);
+    // Quota resets daily (~12 to 24 jam)
+    if (Date.now() - time > 12 * 3600 * 1000) {
+      localStorage.removeItem('firestore_quota_exhausted');
+      localStorage.removeItem('firestore_quota_exhausted_time');
       sessionStorage.removeItem('firestore_quota_exhausted');
       sessionStorage.removeItem('firestore_quota_exhausted_time');
       return false;
@@ -61,7 +65,9 @@ export function isQuotaError(error: unknown): boolean {
     msg.includes('Quota limit exceeded') ||
     msg.includes('Free daily write units') ||
     msg.includes('Free daily read units') ||
-    msg.includes('quota metric')
+    msg.includes('quota metric') ||
+    msg.includes('RESOURCE_EXHAUSTED') ||
+    (error as any)?.code === 'resource-exhausted'
   );
 }
 

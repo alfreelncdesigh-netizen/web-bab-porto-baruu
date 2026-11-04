@@ -10,7 +10,6 @@ import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { defaultPromoPosters, PromoPosterItem } from '../data/settings';
 import { PAYMENT_METHODS, BriLogo, BrimoLogo, DanaLogo, GopayLogo, OvoLogo, ShopeePayLogo, LinkAjaLogo } from './PaymentLogos';
 import { getCookie, setCookie, deleteCookie } from '../lib/cookies';
-import { GoogleLogo } from './GoogleSearchModal';
 import { compressAndUpload } from '../lib/storageUploader';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
 
@@ -441,14 +440,17 @@ ${formData.catatan ? formData.catatan : '-'}
 Terima kasih.`;
 
     const encodedMessage = encodeURIComponent(message);
-    const waUrl = `https://wa.me/${whatsappNumber}?text=${encodedMessage}`;
+    const waUrl = `https://wa.me/qr/UDCAZ44OXWLGM1?text=${encodedMessage}`;
     try {
-      const opened = window.open(waUrl, '_blank');
-      if (!opened) {
-        window.location.href = waUrl;
-      }
+      const a = document.createElement('a');
+      a.href = waUrl;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     } catch {
-      window.location.href = waUrl;
+      window.open(waUrl, '_blank') || (window.location.href = waUrl);
     }
   };
 
@@ -508,18 +510,15 @@ Terima kasih.`;
             Ceritakan konsep atau kebutuhan desainmu di sini, nanti kita diskusikan bersama sampai cocok.
           </p>
           <div className="mt-2.5 sm:mt-3 flex justify-center">
-            <button
-              type="button"
-              onClick={() => {
-                window.dispatchEvent(new CustomEvent('open_google_search', {
-                  detail: { query: 'Inspirasi dan tren desain grafis untuk branding bisnis terkini' }
-                }));
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/60 dark:border-blue-800/60 text-[11px] sm:text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition-colors shadow-2xs active:scale-95 cursor-pointer"
+            <a
+              href="https://wa.me/qr/UDCAZ44OXWLGM1"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer"
             >
-              <GoogleLogo className="w-3.5 h-3.5" />
-              <span>Butuh ide? Cek Tren Desain Terkini via Google Search</span>
-            </button>
+              <Phone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Butuh Konsultasi Cepat? Chat WhatsApp Kami</span>
+            </a>
           </div>
         </motion.div>
 
