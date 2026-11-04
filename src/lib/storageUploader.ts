@@ -75,14 +75,35 @@ export async function recordMediaPermanently(
   // 3. Simpan di Cloud Firestore (uploadedMedia) dengan fallback ID bersih jika kuota tersedia
   try {
     if (isQuotaExhausted()) return;
+    
+    // Firestore memiliki batas dokumen 1 MiB (~1.048.576 byte).
+    // Pastikan dataUrl yang ditanam ke dokumen Firestore aman di bawah 800 KB.
+    const safeDataUrl = (dataUrl && dataUrl.length <= 800000) ? dataUrl : '';
+
     const firestoreData: Record<string, any> = {
       ...record,
+      dataUrl: safeDataUrl,
       _adminAuth: 'alfreelnc_admin_auth_verified',
       updatedByAdmin: true
     };
     await setDoc(doc(db, 'uploadedMedia', safeDocId), firestoreData, { merge: true });
     if (safeFilename !== safeDocId) {
       await setDoc(doc(db, 'uploadedMedia', safeFilename), firestoreData, { merge: true }).catch(() => {});
+    }
+
+    // Jika file ini adalah foto cover beranda utama, tanam langsung ke doc settings/hero
+    if (folder === 'hero' || safeFilename.includes('cover_web') || safeFilename.includes('hero_main')) {
+      const heroPayload: Record<string, any> = {
+        heroImage: cleanUrl,
+        savedAt: Date.now(),
+        updatedAt: new Date().toISOString(),
+        _adminAuth: 'alfreelnc_admin_auth_verified',
+        updatedByAdmin: true
+      };
+      if (safeDataUrl) {
+        heroPayload.heroImageDataUrl = safeDataUrl;
+      }
+      await setDoc(doc(db, 'settings', 'hero'), heroPayload, { merge: true }).catch(() => {});
     }
   } catch (err: any) {
     if (isQuotaError(err)) {

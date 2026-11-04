@@ -1503,7 +1503,7 @@ Terima kasih.`;
         {/* PAKET SPESIAL PILIHAN */}
         {(() => {
           const validActivePosters = promoPosters.filter(
-            p => p && p.active !== false && p.image && typeof p.image === 'string' && p.image.trim().length > 0
+            p => p && p.active !== false && ((p.image && typeof p.image === 'string' && p.image.trim().length > 0) || (p.dataUrl && typeof p.dataUrl === 'string' && p.dataUrl.trim().length > 0))
           );
 
           if (validActivePosters.length === 0) return null;
@@ -1533,7 +1533,7 @@ Terima kasih.`;
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6 lg:gap-8">
                 {validActivePosters.map((poster, index) => {
                   const isStoreLink = poster.link === '#store' || poster.link === 'store' || !poster.link;
-                  const posterImgUrl = resolveImageUrl(poster.image);
+                  const posterImgUrl = resolveImageUrl(poster.image || poster.dataUrl || '');
                   return (
                     <div
                       key={poster.id ? `${poster.id}-${index}` : `promo-poster-${index}`}
@@ -1547,7 +1547,13 @@ Terima kasih.`;
                             alt={poster.title || `Poster Promosi #${index + 1}`}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
                             loading="lazy"
-                            onError={handleImageError}
+                            onError={(e) => {
+                              if (poster.dataUrl && e.currentTarget.src !== poster.dataUrl) {
+                                e.currentTarget.src = poster.dataUrl;
+                                return;
+                              }
+                              handleImageError(e);
+                            }}
                           />
 
                           {/* Badge Nomor Slot Promosi */}

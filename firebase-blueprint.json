@@ -104,6 +104,20 @@
         "name": { "type": "string", "maxLength": 200 }
       },
       "required": ["name"]
+    },
+    "UploadedMedia": {
+      "title": "UploadedMedia",
+      "description": "Stores uploaded media files with backup dataUrl and metadata.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "url": { "type": "string" },
+        "filename": { "type": "string" },
+        "size": { "type": "number" },
+        "dataUrl": { "type": "string" },
+        "uploadedAt": { "type": "string" }
+      },
+      "required": ["id", "url"]
     }
   },
   "firestore": {
@@ -142,6 +156,10 @@
     "archiveFolders": {
       "schema": { "$ref": "#/entities/ArchiveFolder" },
       "description": "Stores archive folders."
+    },
+    "uploadedMedia": {
+      "schema": { "$ref": "#/entities/UploadedMedia" },
+      "description": "Stores permanently preserved uploaded media files and dataUrls."
     }
   }
 }

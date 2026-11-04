@@ -186,7 +186,7 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
   if (Array.isArray(cleaned.promoPosters)) {
     const seenPosterIds = new Set<string>();
     cleaned.promoPosters = cleaned.promoPosters
-      .filter((p: any) => p && !p.title?.toLowerCase().includes('template'))
+      .filter((p: any) => p && typeof p === 'object')
       .map((p: any, pIdx: number) => {
         let posterId = (p.id || '').toString().trim();
         if (!posterId || seenPosterIds.has(posterId)) {
@@ -352,14 +352,20 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
         }
       } catch {}
 
+      const heroBackup = merged.heroImageDataUrl || (typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image_backup') || '') : '');
+      const heroPayload: Record<string, any> = {
+        heroImage: merged.heroImage.trim(),
+        savedAt: merged.savedAt || Date.now(),
+        updatedAt: new Date().toISOString(),
+        _adminAuth: 'alfreelnc_admin_auth_verified',
+        updatedByAdmin: true
+      };
+      if (heroBackup && heroBackup.length <= 800000) {
+        heroPayload.heroImageDataUrl = heroBackup;
+      }
+
       firestoreTasks.push(
-        setDoc(doc(db, 'settings', 'hero'), cleanForFirestore({
-          heroImage: merged.heroImage.trim(),
-          savedAt: merged.savedAt || Date.now(),
-          updatedAt: new Date().toISOString(),
-          _adminAuth: 'alfreelnc_admin_auth_verified',
-          updatedByAdmin: true
-        }), { merge: true })
+        setDoc(doc(db, 'settings', 'hero'), cleanForFirestore(heroPayload), { merge: true })
       );
 
       // Sinkronkan ke server endpoint /api/hero-image
@@ -367,7 +373,7 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
         fetch('/api/hero-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ heroImage: merged.heroImage.trim() })
+          body: JSON.stringify({ heroImage: merged.heroImage.trim(), imageBase64: heroBackup || '' })
         }).catch(() => {});
       } catch {}
     }
@@ -387,9 +393,17 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
     }
 
     if (Array.isArray(merged.promoPosters)) {
+      const safePosters = merged.promoPosters.map((p: any) => {
+        const item = { ...p };
+        // Batasi ukuran dataUrl individu agar muat dalam batas dokumen Firestore
+        if (item.dataUrl && item.dataUrl.length > 500000) {
+          delete item.dataUrl;
+        }
+        return item;
+      });
       firestoreTasks.push(
         setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
-          posters: merged.promoPosters,
+          posters: safePosters,
           active: merged.promoWidgetActive !== false,
           updatedAt: new Date().toISOString(),
           savedAt: Date.now(),
@@ -399,12 +413,17 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
       );
     }
 
+    const safeGlobalPayload: Record<string, any> = {
+      ...merged,
+      _adminAuth: 'alfreelnc_admin_auth_verified',
+      updatedByAdmin: true
+    };
+    if (safeGlobalPayload.heroImageDataUrl && safeGlobalPayload.heroImageDataUrl.length > 500000) {
+      delete safeGlobalPayload.heroImageDataUrl;
+    }
+
     firestoreTasks.push(
-      setDoc(doc(db, 'settings', 'global'), cleanForFirestore({
-        ...merged,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
-      }), { merge: true })
+      setDoc(doc(db, 'settings', 'global'), cleanForFirestore(safeGlobalPayload), { merge: true })
     );
 
     // Menunggu operasi Firestore selesai dengan timeout aman

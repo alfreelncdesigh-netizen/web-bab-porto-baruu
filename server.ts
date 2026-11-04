@@ -217,7 +217,87 @@ app.get('/uploads/:filename', async (req: Request, res: Response, next: NextFunc
       }
     }
 
-    // 3. Rekonstruksi file ke disk dan layani ke client
+    // 3. Khusus foto hero: periksa settings/hero dan settings/global di Firestore
+    if (!base64Data && (filename.includes('cover_web') || filename.includes('hero'))) {
+      try {
+        const heroUrl = getFirestoreRestDocUrl('settings', 'hero');
+        const heroRes = await fetch(heroUrl);
+        if (heroRes.ok) {
+          const heroJson: any = await heroRes.json();
+          if (heroJson?.fields?.heroImageDataUrl?.stringValue) {
+            base64Data = heroJson.fields.heroImageDataUrl.stringValue;
+          }
+        }
+      } catch {}
+
+      if (!base64Data) {
+        try {
+          const globalUrl = getFirestoreRestDocUrl('settings', 'global');
+          const globalRes = await fetch(globalUrl);
+          if (globalRes.ok) {
+            const globalJson: any = await globalRes.json();
+            if (globalJson?.fields?.heroImageDataUrl?.stringValue) {
+              base64Data = globalJson.fields.heroImageDataUrl.stringValue;
+            }
+          }
+        } catch {}
+      }
+
+      // Jika belum ditemukan di database, gunakan file cover_web yang ada di disk lokal
+      if (!base64Data) {
+        const existingCover = ['cover_web_dejwax_1792936005852_d33cf44f.webp', 'cover_web_1792581846511.png'].find(f => fs.existsSync(path.join(uploadsDir, f)));
+        if (existingCover) {
+          try {
+            const srcBuf = fs.readFileSync(path.join(uploadsDir, existingCover));
+            fs.writeFileSync(filePath, srcBuf);
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            res.setHeader('Content-Type', existingCover.endsWith('.png') ? 'image/png' : 'image/webp');
+            res.status(200).send(srcBuf);
+            return;
+          } catch {}
+        }
+      }
+    }
+
+    // 4. Khusus poster promosi: periksa settings/promoPosters di Firestore
+    if (!base64Data && filename.includes('promo_poster')) {
+      try {
+        const promoUrl = getFirestoreRestDocUrl('settings', 'promoPosters');
+        const promoRes = await fetch(promoUrl);
+        if (promoRes.ok) {
+          const promoJson: any = await promoRes.json();
+          const posterVals = promoJson?.fields?.posters?.arrayValue?.values || [];
+          for (const pv of posterVals) {
+            const pFields = pv.mapValue?.fields;
+            const pImg = pFields?.image?.stringValue || '';
+            const pData = pFields?.dataUrl?.stringValue || '';
+            if (pData && (pImg.includes(filename) || pData.startsWith('data:'))) {
+              base64Data = pData;
+              break;
+            }
+          }
+        }
+      } catch {}
+
+      // Cadangan fallback dari gambar promo bawaan jika tersedia
+      if (!base64Data) {
+        const fallbackPromo = path.resolve(publicDir, 'images/promo_poster_1789471291192.jpg');
+        if (fs.existsSync(fallbackPromo)) {
+          try {
+            const pBuf = fs.readFileSync(fallbackPromo);
+            fs.writeFileSync(filePath, pBuf);
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.status(200).send(pBuf);
+            return;
+          } catch {}
+        }
+      }
+    }
+
+    // 5. Rekonstruksi file ke disk dan layani ke client
     if (base64Data) {
       const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, '');
       const buffer = Buffer.from(cleanBase64, 'base64');
@@ -511,19 +591,22 @@ function registerUploadedMedia(record: { url: string; filename: string; size: nu
     const safeFilename = record.filename.replace(/[^a-zA-Z0-9_-]/g, '_');
     const firestoreUrl = getFirestoreRestDocUrl('uploadedMedia', safeDocId);
 
-    const body = {
-      fields: {
-        id: { stringValue: safeDocId },
-        filename: { stringValue: record.filename },
-        url: { stringValue: record.url },
-        size: { integerValue: String(record.size || 0) },
-        mimeType: { stringValue: record.mimeType || 'image/webp' },
-        dataUrl: { stringValue: record.dataUrl },
-        uploadedAt: { stringValue: record.uploadedAt || new Date().toISOString() },
-        _adminAuth: { stringValue: 'alfreelnc_admin_auth_verified' },
-        updatedByAdmin: { booleanValue: true }
-      }
+    const fieldsObj: Record<string, any> = {
+      id: { stringValue: safeDocId },
+      filename: { stringValue: record.filename },
+      url: { stringValue: record.url },
+      size: { integerValue: String(record.size || 0) },
+      mimeType: { stringValue: record.mimeType || 'image/webp' },
+      uploadedAt: { stringValue: record.uploadedAt || new Date().toISOString() },
+      _adminAuth: { stringValue: 'alfreelnc_admin_auth_verified' },
+      updatedByAdmin: { booleanValue: true }
     };
+
+    if (record.dataUrl.length <= 800000) {
+      fieldsObj.dataUrl = { stringValue: record.dataUrl };
+    }
+
+    const body = { fields: fieldsObj };
 
     fetch(firestoreUrl, {
       method: 'PATCH',

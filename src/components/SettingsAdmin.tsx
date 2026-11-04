@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { SiteSettings, defaultSettings, HeroBanner } from '../data/settings';
 import { getStoredSettings, saveStoredSettings, cleanSettings } from '../lib/contentStorage';
 import { uploadImageToStorage } from '../lib/storageUploader';
@@ -163,31 +163,58 @@ export default function SettingsAdmin() {
         finalUrl = await uploadImageToStorage(fileToUpload, fileToUpload.name, undefined, 'settings');
       }
 
+      let compressedHeroDataUrl = '';
       // Khusus foto hero utama: simpan cadangan kompresi WebP & link permanen
       if (field === 'heroImage') {
         try {
-          const compressedDataUrl = await compressImage(fileToUpload);
-          if (compressedDataUrl) {
-            localStorage.setItem('app_custom_hero_image_backup', compressedDataUrl);
+          compressedHeroDataUrl = await compressImage(fileToUpload);
+          if (compressedHeroDataUrl) {
+            localStorage.setItem('app_custom_hero_image_backup', compressedHeroDataUrl);
           }
           localStorage.setItem('app_custom_hero_image', finalUrl);
           // Simpan ke disk cadangan server
           fetch('/api/hero-image', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ heroImage: finalUrl, dataUrl: compressedDataUrl || finalUrl }),
+            body: JSON.stringify({ heroImage: finalUrl, imageBase64: compressedHeroDataUrl || '' }),
           }).catch(() => {});
         } catch (e) {
           console.warn('Backup hero image error:', e);
         }
       }
 
-      const updated = { ...settings, [field]: finalUrl, savedAt: Date.now() };
+      const updated: SiteSettings = {
+        ...settings,
+        [field]: finalUrl,
+        heroImageDataUrl: field === 'heroImage' ? (compressedHeroDataUrl || settings.heroImageDataUrl) : settings.heroImageDataUrl,
+        savedAt: Date.now()
+      };
       setSettings(updated);
+      
       // Auto-save instan dan aman ke database Firestore, server, dan local storage
       await saveStoredSettings(updated);
+
+      // Tanam langsung ke doc settings/hero di Firestore agar gambar tidak pernah hilang
+      if (field === 'heroImage') {
+        try {
+          const heroPayload: Record<string, any> = {
+            heroImage: finalUrl,
+            savedAt: Date.now(),
+            updatedAt: new Date().toISOString(),
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true
+          };
+          if (compressedHeroDataUrl && compressedHeroDataUrl.length <= 800000) {
+            heroPayload.heroImageDataUrl = compressedHeroDataUrl;
+          }
+          await setDoc(doc(db, 'settings', 'hero'), heroPayload, { merge: true });
+        } catch (hErr) {
+          console.warn("Direct hero doc sync notice:", hErr);
+        }
+      }
+
       window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-      showToast("Foto utama beranda berhasil diunggah & tersimpan permanen di Firebase!");
+      showToast("Foto utama beranda berhasil diunggah & tertanam permanen di Firebase!");
     } catch (err: any) {
       try {
         const compressed = await compressImage(fileToUpload);
@@ -197,10 +224,15 @@ export default function SettingsAdmin() {
           fetch('/api/hero-image', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ heroImage: compressed, dataUrl: compressed }),
+            body: JSON.stringify({ heroImage: compressed, imageBase64: compressed }),
           }).catch(() => {});
         }
-        const updated = { ...settings, [field]: compressed, savedAt: Date.now() };
+        const updated: SiteSettings = {
+          ...settings,
+          [field]: compressed,
+          heroImageDataUrl: field === 'heroImage' ? compressed : settings.heroImageDataUrl,
+          savedAt: Date.now()
+        };
         setSettings(updated);
         await saveStoredSettings(updated);
         window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));

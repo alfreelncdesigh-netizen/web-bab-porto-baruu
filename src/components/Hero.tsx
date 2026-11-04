@@ -54,15 +54,26 @@ export default function Hero() {
       (heroSnap) => {
         if (heroSnap.exists()) {
           const hData = heroSnap.data();
-          if (hData?.heroImage && typeof hData.heroImage === 'string' && hData.heroImage.trim().length > 0) {
-            const h = hData.heroImage.trim();
-            setSettings(prev => ({ ...prev, heroImage: h }));
+          const hImg = hData?.heroImage && typeof hData.heroImage === 'string' ? hData.heroImage.trim() : '';
+          const hDataUrl = hData?.heroImageDataUrl && typeof hData.heroImageDataUrl === 'string' ? hData.heroImageDataUrl.trim() : '';
+          
+          if (hImg || hDataUrl) {
+            setSettings(prev => ({
+              ...prev,
+              ...(hImg ? { heroImage: hImg } : {}),
+              ...(hDataUrl ? { heroImageDataUrl: hDataUrl } : {})
+            }));
             if (typeof window !== 'undefined') {
               try {
-                localStorage.setItem('app_custom_hero_image', h);
-                const cur = JSON.parse(localStorage.getItem('app_settings') || '{}');
-                cur.heroImage = h;
-                localStorage.setItem('app_settings', JSON.stringify(cur));
+                if (hImg) {
+                  localStorage.setItem('app_custom_hero_image', hImg);
+                  const cur = JSON.parse(localStorage.getItem('app_settings') || '{}');
+                  cur.heroImage = hImg;
+                  localStorage.setItem('app_settings', JSON.stringify(cur));
+                }
+                if (hDataUrl) {
+                  localStorage.setItem('app_custom_hero_image_backup', hDataUrl);
+                }
               } catch {}
             }
           }
@@ -86,26 +97,35 @@ export default function Hero() {
   const handleHeroImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     const target = e.currentTarget;
     const customHero = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image') || '') : '';
-    const backupDataUrl = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image_backup') || '') : '';
+    const backupDataUrl = settings.heroImageDataUrl || (typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image_backup') || '') : '');
 
+    // 1. Coba cadangan dataUrl WebP dari Firestore / LocalStorage
     if (backupDataUrl && target.src !== backupDataUrl) {
       target.src = backupDataUrl;
       return;
     }
 
+    // 2. Coba customHero resolved
     if (customHero) {
       const resolvedCustom = resolveImageUrl(customHero);
-      if (target.src !== resolvedCustom) {
+      if (target.src !== resolvedCustom && !target.src.endsWith(customHero)) {
         target.src = resolvedCustom;
         return;
       }
+    }
+
+    // 3. Cadangan file cover lokal asli
+    const fallbackCover = '/uploads/cover_web_dejwax_1792936005852_d33cf44f.webp';
+    if (!target.src.includes(fallbackCover)) {
+      target.src = fallbackCover;
+      return;
     }
 
     handleImageError(e);
   };
 
   const userHero = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image') || '') : '';
-  const currentHeroImg = settings.heroImage || userHero || defaultSettings.heroImage;
+  const currentHeroImg = settings.heroImage || userHero || '/uploads/cover_web_dejwax_1792936005852_d33cf44f.webp';
 
   // Helper to ensure clean, correct typography (correcting misspelled phrases)
   const sanitizeTypography = (text?: string, fallback: string = '') => {

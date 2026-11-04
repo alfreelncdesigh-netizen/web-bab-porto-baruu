@@ -22,7 +22,8 @@ const normalizeSlots = (rawList?: PromoPosterItem[]): PromoPosterItem[] => {
         slots[idx] = {
           id: p.id || `poster-${idx + 1}`,
           title: p.title || '',
-          image: p.image || '',
+          image: p.image || p.dataUrl || '',
+          dataUrl: p.dataUrl || (p.image?.startsWith('data:') ? p.image : undefined),
           ctaText: p.ctaText || 'Ambil Diskon',
           link: p.link || '#store',
           active: p.active !== false,
@@ -181,9 +182,9 @@ export default function PromoAdmin() {
       // Pastikan data gambar selalu ditanam dan tersimpan di Cloud Firestore uploadedMedia
       recordMediaPermanently(finalUrl, cleanFileName, dataUrl.length, 'promos', dataUrl).catch(() => {});
 
-      // 3. Simpan ke local state
+      // 3. Simpan ke local state bersama dataUrl cadangan permanen
       const updated = [...posters];
-      updated[index] = { ...updated[index], image: finalUrl };
+      updated[index] = { ...updated[index], image: finalUrl, dataUrl };
       setPosters(updated);
 
       // 4. Sinkronisasi instan ke Firestore dan LocalStorage
@@ -202,8 +203,16 @@ export default function PromoAdmin() {
 
       // Simpan langsung ke koleksi terpisah settings/promoPosters agar selalu tersimpan di Firebase
       try {
+        const safeCloudPosters = updated.map(p => {
+          const item = { ...p };
+          if (item.dataUrl && item.dataUrl.length > 500000) {
+            delete item.dataUrl;
+          }
+          return item;
+        });
+
         await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
-          posters: updated,
+          posters: safeCloudPosters,
           active: isGlobalActive,
           updatedAt: new Date().toISOString(),
           savedAt: Date.now(),
@@ -235,10 +244,11 @@ export default function PromoAdmin() {
   const handleSaveAll = async () => {
     setSaving(true);
     try {
-      // Pastikan semua poster yang berformat Base64 diunggah menjadi URL bersih
+      // Pastikan semua poster yang berformat Base64 diunggah menjadi URL bersih namun tetap simpan dataUrl
       const cleanedPosters = await Promise.all(
         posters.map(async (p, idx) => {
           if (p.image && p.image.startsWith('data:image/')) {
+            const rawBase64 = p.image;
             try {
               const cleanFileName = `promo_poster_${Date.now()}_slot${idx + 1}.webp`;
               const res = await fetch('/api/upload', {
@@ -247,17 +257,20 @@ export default function PromoAdmin() {
                   'Content-Type': 'application/json',
                   'x-admin-token': 'alfreelnc_admin_auth_verified'
                 },
-                body: JSON.stringify({ file: p.image, filename: cleanFileName })
+                body: JSON.stringify({ file: rawBase64, filename: cleanFileName })
               });
               if (res.ok) {
                 const j = await res.json();
-                if (j.url) return { ...p, image: j.url };
+                if (j.url) {
+                  recordMediaPermanently(j.url, cleanFileName, rawBase64.length, 'promos', rawBase64).catch(() => {});
+                  return { ...p, image: j.url, dataUrl: rawBase64 };
+                }
               }
-              const blob = base64ToBlob(p.image);
-              const url = await uploadImageToStorage(blob, cleanFileName, p.image, 'promos');
-              return { ...p, image: url };
+              const blob = base64ToBlob(rawBase64);
+              const url = await uploadImageToStorage(blob, cleanFileName, rawBase64, 'promos');
+              return { ...p, image: url, dataUrl: rawBase64 };
             } catch {
-              return p;
+              return { ...p, dataUrl: rawBase64 };
             }
           }
           return p;
@@ -280,8 +293,16 @@ export default function PromoAdmin() {
 
       // Simpan langsung ke dokumen terpisah settings/promoPosters di Firestore
       try {
+        const safeCloudPosters = cleanedPosters.map(p => {
+          const item = { ...p };
+          if (item.dataUrl && item.dataUrl.length > 250000) {
+            delete item.dataUrl;
+          }
+          return item;
+        });
+
         await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
-          posters: cleanedPosters,
+          posters: safeCloudPosters,
           active: isGlobalActive,
           updatedAt: new Date().toISOString(),
           savedAt: Date.now(),
