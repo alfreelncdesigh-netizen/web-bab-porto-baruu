@@ -394,12 +394,9 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
 
     if (Array.isArray(merged.promoPosters)) {
       const safePosters = merged.promoPosters.map((p: any) => {
-        const item = { ...p };
-        // Batasi ukuran dataUrl individu agar muat dalam batas dokumen Firestore
-        if (item.dataUrl && item.dataUrl.length > 500000) {
-          delete item.dataUrl;
-        }
-        return item;
+        // Hapus dataUrl raksasa agar ukuran dokumen Firestore sangat ringan (~500 byte)
+        const { dataUrl, ...rest } = p;
+        return rest;
       });
       firestoreTasks.push(
         setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
@@ -418,6 +415,12 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
       _adminAuth: 'alfreelnc_admin_auth_verified',
       updatedByAdmin: true
     };
+    if (Array.isArray(safeGlobalPayload.promoPosters)) {
+      safeGlobalPayload.promoPosters = safeGlobalPayload.promoPosters.map((p: any) => {
+        const { dataUrl, ...rest } = p;
+        return rest;
+      });
+    }
     if (safeGlobalPayload.heroImageDataUrl && safeGlobalPayload.heroImageDataUrl.length > 500000) {
       delete safeGlobalPayload.heroImageDataUrl;
     }

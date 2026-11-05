@@ -12,33 +12,11 @@ import { getStorage } from 'firebase/storage';
 import { getAuth, initializeAuth, browserLocalPersistence, inMemoryPersistence, browserPopupRedirectResolver, signInWithPopup, signInWithCredential, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-// Matikan log warning non-fatal (seperti timeout 10 detik saat switching transport) agar konsol bersih
+// Matikan log warning non-fatal agar konsol bersih
 if (typeof window !== 'undefined') {
   try {
     setLogLevel('error');
   } catch (e) {}
-}
-
-// Bersihkan antrean mutasi lama di IndexedDB yang tersangkut akibat kuota habis
-if (typeof window !== 'undefined' && 'indexedDB' in window) {
-  try {
-    const firestoreDbNames = [
-      'firestore/[DEFAULT]/portofolio-c368b/ai-studio-portofoliodesain-16b96d08-efff-4e76-af75-1c33dc5adab7',
-      'firestore/[DEFAULT]/portofolio-c368b/(default)'
-    ];
-    firestoreDbNames.forEach((name) => {
-      try { window.indexedDB.deleteDatabase(name); } catch {}
-    });
-    if (window.indexedDB.databases) {
-      window.indexedDB.databases().then((dbs) => {
-        dbs.forEach((d) => {
-          if (d.name && d.name.includes('firestore')) {
-            try { window.indexedDB.deleteDatabase(d.name); } catch {}
-          }
-        });
-      }).catch(() => {});
-    }
-  } catch {}
 }
 
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -47,8 +25,7 @@ const dbId = (firebaseConfig as any).firestoreDatabaseId;
 
 let dbInstance;
 try {
-  // Gunakan memoryLocalCache agar mutasi gagal/tertunda tidak disimpan permanen di IndexedDB
-  // untuk mencegah looping retry backoff tak berujung saat kuota harian habis
+  // Gunakan memoryLocalCache agar mutasi tidak menumpuk di storage lokal
   const firestoreSettings = { 
     localCache: memoryLocalCache(),
     experimentalAutoDetectLongPolling: true
@@ -67,22 +44,31 @@ try {
 export const db = dbInstance;
 
 /**
- * Validasi dan uji koneksi Firestore ke server cloud dengan timeout aman
+ * Validasi dan uji koneksi Firestore ke server cloud sesuai pedoman Firebase Skill
  */
 export async function testConnection(): Promise<boolean> {
   try {
     if (typeof window !== 'undefined') {
-      const snap = await Promise.race([
-        getDoc(doc(db, 'settings', 'global')),
-        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+      await Promise.race([
+        getDocFromServer(doc(db, 'test', 'connection')),
+        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
       ]);
-      return snap ? snap.exists() : false;
+      return true;
     }
   } catch (error) {
-    // Berjalan aman dengan local cache tanpa melempar error unhandled
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.warn('Firebase status: running in resilient offline/local cache mode.');
+    }
     return false;
   }
   return false;
+}
+
+// Uji koneksi saat startup tanpa memblokir thread
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    testConnection().catch(() => {});
+  }, 1000);
 }
 
 let authInstance;

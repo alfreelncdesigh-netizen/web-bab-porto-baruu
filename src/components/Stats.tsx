@@ -70,7 +70,7 @@ export default function Stats({
 }) {
   const statsRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
-  const [showCharts, setShowCharts] = useState(true);
+  const [showCharts, setShowCharts] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
 
   // Status autentikasi hak akses Admin
@@ -573,9 +573,9 @@ export default function Stats({
                 aria-expanded={showCharts}
               >
                 <BarChart3 className="w-4 h-4 text-blue-500 shrink-0" />
-                <span>{showCharts ? 'Sembunyikan Detail Diagram' : 'Lihat Detail Diagram'}</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 ml-1">
-                  {showCharts ? 'Tutup' : 'Diagram Lengkap'}
+                <span>{showCharts ? 'Sembunyikan Rincian Diagram' : 'Lihat Detail Diagram / Statistik'}</span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900 ml-1">
+                  {showCharts ? 'Tutup' : 'Buka Diagram'}
                 </span>
               </button>
             </motion.div>

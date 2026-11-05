@@ -115,7 +115,12 @@ service cloud.firestore {
       allow update, delete: if isAuthorizedAdmin() || isMasterAdmin() || true;
     }
 
-    // 13. Global safety net default-deny untuk path tak terdaftar
+    // 13. Koneksi test ping untuk validasi SDK Firebase
+    match /test/{docId} {
+      allow read: if true;
+    }
+
+    // 14. Global safety net default-deny untuk path tak terdaftar
     match /{document=**} {
       allow read, write: if false;
     }

@@ -5,8 +5,8 @@ import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { getStoredExperiences, saveStoredExperiences, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { SiteSettings } from '../data/settings';
-import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake, Upload } from 'lucide-react';
-import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
+import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake, Upload, ChevronLeft, ChevronRight, Star, Link as LinkIcon } from 'lucide-react';
+import { withTimeout, compressAndUpload } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
@@ -21,6 +21,7 @@ export default function ExperienceAdmin() {
   const [archiveItemId, setArchiveItemId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgressText, setUploadProgressText] = useState<string>('');
+  const [imageUrlInput, setImageUrlInput] = useState<string>('');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -244,10 +245,10 @@ export default function ExperienceAdmin() {
   };
 
   /**
-   * 1. Upload Langsung Saat File Dipilih (File Picker)
-   * 2. Kompresi Otomatis di Client Menggunakan HTML5 Canvas (max 1000px, WebP, quality 0.78 < 150 KB)
-   * 3. Multiple Upload via Promise.all jika memilih lebih dari 1 file
-   * 4. Error Handling & Timeout 10 detik
+   * 1. Upload Langsung Saat File Dipilih (Bisa 1 atau banyak gambar sekaligus, atau tambah gambar berikutnya)
+   * 2. Kompresi Otomatis Cepat di Client Menggunakan HTML5 Canvas (max 1200px, WebP, quality 0.8)
+   * 3. Pemrosesan Tangguh (Resilient): gambar berhasil langsung ditambahkan tanpa menggagalkan seluruh batch
+   * 4. Dukungan Menambah Foto ke-2, ke-3 dst secara berulang tanpa menimpa foto yang sudah ada
    */
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -255,44 +256,74 @@ export default function ExperienceAdmin() {
 
     setUploading(true);
     const fileList = Array.from(files);
+    let successCount = 0;
+    const newUrls: string[] = [];
 
-    try {
-      if (fileList.length === 1) {
-        setUploadProgressText("Mengompres & Mengunggah Gambar...");
-        const cleanUrl = await compressAndUpload(fileList[0], 'experiences');
-        setEditingItem((prev: any) => ({
-          ...prev,
-          images: [...(prev?.images || []), cleanUrl]
-        }));
-        showToast("Gambar berhasil diunggah!");
-      } else {
-        setUploadProgressText(`Mengunggah Gambar (0/${fileList.length})...`);
-        const cleanUrls = await uploadMultipleImagesInParallel(
-          fileList,
-          'experiences',
-          (done, total) => setUploadProgressText(`Mengunggah Gambar (${done}/${total})...`)
-        );
-        if (cleanUrls.length > 0) {
-          setEditingItem((prev: any) => ({
-            ...prev,
-            images: [...(prev?.images || []), ...cleanUrls]
-          }));
-          showToast(`${cleanUrls.length} gambar berhasil diunggah!`);
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      setUploadProgressText(`Mengompres & Mengunggah Gambar (${i + 1}/${fileList.length})...`);
+      try {
+        const url = await compressAndUpload(file, 'experiences', 1200, 0.8, 12000);
+        if (url && typeof url === 'string') {
+          newUrls.push(url.trim());
+          successCount++;
         }
+      } catch (err: any) {
+        console.warn(`Gagal mengunggah file ${file.name}:`, err);
       }
-    } catch (err: any) {
-      console.error("Upload experience images error:", err);
-      showToast(err?.message || "Gagal mengunggah gambar. Batas waktu 10 detik terlampaui.", "error");
-    } finally {
-      setUploading(false);
-      setUploadProgressText('');
-      e.target.value = '';
     }
+
+    if (newUrls.length > 0) {
+      setEditingItem((prev: any) => ({
+        ...prev,
+        images: [...(prev?.images || []), ...newUrls]
+      }));
+      showToast(`${successCount} gambar berhasil ditambahkan!`);
+    } else {
+      showToast("Gagal mengunggah gambar, silakan coba lagi.", "error");
+    }
+
+    setUploading(false);
+    setUploadProgressText('');
+    e.target.value = '';
+  };
+
+  const handleAddImageUrl = () => {
+    if (!imageUrlInput.trim() || !editingItem) return;
+    const url = imageUrlInput.trim();
+    setEditingItem((prev: any) => ({
+      ...prev,
+      images: [...(prev?.images || []), url]
+    }));
+    setImageUrlInput('');
+    showToast("Gambar berhasil ditambahkan dari tautan URL!");
   };
 
   const removeImage = (idx: number) => {
+    if (!editingItem?.images) return;
     const newImages = [...editingItem.images];
     newImages.splice(idx, 1);
+    setEditingItem({ ...editingItem, images: newImages });
+    showToast("Gambar dihapus dari daftar.");
+  };
+
+  const setPrimaryImage = (idx: number) => {
+    if (!editingItem?.images || idx <= 0) return;
+    const newImages = [...editingItem.images];
+    const [selected] = newImages.splice(idx, 1);
+    newImages.unshift(selected);
+    setEditingItem({ ...editingItem, images: newImages });
+    showToast("Foto utama berhasil diperbarui!");
+  };
+
+  const moveImage = (idx: number, direction: 'left' | 'right') => {
+    if (!editingItem?.images) return;
+    const newImages = [...editingItem.images];
+    const targetIdx = direction === 'left' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= newImages.length) return;
+    const temp = newImages[idx];
+    newImages[idx] = newImages[targetIdx];
+    newImages[targetIdx] = temp;
     setEditingItem({ ...editingItem, images: newImages });
   };
 
@@ -503,37 +534,133 @@ export default function ExperienceAdmin() {
               )}
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">
-                Gambar Bukti Prestasi / Sertifikat (Otomatis Kompres &lt; 150 KB)
-              </label>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                {editingItem.images?.map((img: string, idx: number) => (
-                  <div key={idx} className="relative aspect-video rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 group">
-                    <img src={img} alt="" className="w-full h-full object-cover" />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(idx)}
-                      className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-                <label className="aspect-video rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-black dark:hover:border-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-all flex flex-col items-center justify-center gap-2 cursor-pointer relative text-center p-2">
+            <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 dark:bg-[#101012] border border-zinc-200/80 dark:border-zinc-800/80 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-black dark:text-white uppercase tracking-wider">
+                    Foto Dokumentasi & Sertifikat ({editingItem.images?.length || 0} Foto)
+                  </label>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    Foto pertama (Foto 1) otomatis menjadi sampul utama. Anda dapat menambah foto ke-2, ke-3, dst.
+                  </p>
+                </div>
+                {editingItem.images?.length > 1 && (
+                  <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 self-start sm:self-auto">
+                    {editingItem.images.length} Foto Siap Tampil di Website
+                  </span>
+                )}
+              </div>
+
+              {/* Grid Preview Foto yang Sudah Ada */}
+              {editingItem.images && editingItem.images.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5">
+                  {editingItem.images.map((img: string, idx: number) => {
+                    const isPrimary = idx === 0;
+                    return (
+                      <div 
+                        key={idx} 
+                        className={`relative rounded-xl overflow-hidden border-2 bg-white dark:bg-zinc-900 group shadow-xs transition-all ${
+                          isPrimary 
+                            ? 'border-indigo-500 ring-2 ring-indigo-500/20' 
+                            : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600'
+                        }`}
+                      >
+                        <div className="aspect-video w-full relative bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden">
+                          <img 
+                            src={resolveImageUrl(img)} 
+                            alt={`Dokumentasi ${idx + 1}`} 
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            onError={handleImageError}
+                          />
+                          {/* Badge Posisi Foto */}
+                          <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-md shadow-xs bg-black/75 text-white">
+                            {isPrimary ? (
+                              <>
+                                <Star size={10} className="text-amber-400 fill-amber-400" />
+                                <span>Foto 1 (Utama)</span>
+                              </>
+                            ) : (
+                              <span>Foto {idx + 1}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Control Bar Per Gambar */}
+                        <div className="p-2 bg-zinc-50 dark:bg-zinc-900/90 border-t border-zinc-200/80 dark:border-zinc-800 flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-1">
+                            {!isPrimary && (
+                              <button
+                                type="button"
+                                onClick={() => setPrimaryImage(idx)}
+                                className="px-2 py-1 rounded-lg text-[9px] font-bold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 transition-colors"
+                                title="Jadikan Sampul Utama"
+                              >
+                                Set Utama
+                              </button>
+                            )}
+                            {idx > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => moveImage(idx, 'left')}
+                                className="p-1 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                                title="Geser ke kiri"
+                              >
+                                <ChevronLeft size={12} />
+                              </button>
+                            )}
+                            {idx < editingItem.images.length - 1 && (
+                              <button
+                                type="button"
+                                onClick={() => moveImage(idx, 'right')}
+                                className="p-1 rounded-lg bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                                title="Geser ke kanan"
+                              >
+                                <ChevronRight size={12} />
+                              </button>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => removeImage(idx)}
+                            className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-950/50 dark:hover:bg-red-900 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-900/50 transition-colors cursor-pointer"
+                            title="Hapus foto ini"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Area Upload File Baru & Tambah Gambar Berikutnya */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                {/* Tombol Upload File */}
+                <label className="md:col-span-2 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-black dark:hover:border-zinc-500 hover:bg-white dark:hover:bg-zinc-900 transition-all flex items-center justify-center gap-3 cursor-pointer p-4 text-center">
                   {uploading ? (
-                    <div className="flex flex-col items-center gap-1.5">
-                      <Loader2 className="w-6 h-6 animate-spin text-orange-500" />
-                      <span className="text-[10px] font-semibold text-zinc-600 dark:text-zinc-400">
-                        {uploadProgressText || "Mengunggah..."}
-                      </span>
+                    <div className="flex items-center gap-2.5">
+                      <Loader2 className="w-5 h-5 animate-spin text-indigo-600 dark:text-indigo-400" />
+                      <div className="text-left">
+                        <span className="text-xs font-bold text-black dark:text-white block">
+                          {uploadProgressText || "Mengunggah..."}
+                        </span>
+                        <span className="text-[10px] text-zinc-500">Kompresi otomatis WebP cepat &lt; 150 KB</span>
+                      </div>
                     </div>
                   ) : (
-                    <>
-                      <UploadCloud className="w-6 h-6 text-zinc-400" />
-                      <span className="text-xs font-semibold text-zinc-500">Upload Foto/Sertifikat</span>
-                      <span className="text-[9px] text-zinc-400">Bisa pilih multiple file</span>
-                    </>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400">
+                        <UploadCloud className="w-5 h-5" />
+                      </div>
+                      <div className="text-left">
+                        <span className="text-xs font-bold text-black dark:text-white block">
+                          {editingItem.images?.length > 0 ? '+ Tambah Foto Dokumentasi Lagi' : '+ Upload Foto / Sertifikat'}
+                        </span>
+                        <span className="text-[10px] text-zinc-500">Pilih 1 file atau banyak file sekaligus (JPG, PNG, WebP)</span>
+                      </div>
+                    </div>
                   )}
                   <input
                     type="file"
@@ -544,6 +671,36 @@ export default function ExperienceAdmin() {
                     disabled={uploading}
                   />
                 </label>
+
+                {/* Tambah via URL Gambar */}
+                <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2.5 flex flex-col justify-center gap-1.5">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-1">
+                    <LinkIcon size={11} /> Tambah via URL
+                  </span>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={imageUrlInput}
+                      onChange={(e) => setImageUrlInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddImageUrl();
+                        }
+                      }}
+                      placeholder="https://... atau /uploads/..."
+                      className="flex-1 min-w-0 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddImageUrl}
+                      disabled={!imageUrlInput.trim()}
+                      className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-black text-white dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-xs font-semibold disabled:opacity-40 cursor-pointer transition-colors shrink-0"
+                    >
+                      + Tambah
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 

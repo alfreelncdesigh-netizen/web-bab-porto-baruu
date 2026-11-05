@@ -13,7 +13,9 @@ import {
   MessageCircle, 
   Share2, 
   Layers, 
-  Check 
+  Check,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { 
@@ -61,6 +63,51 @@ export default function Experience() {
   if (allExpImages.length === 0 && selectedExp?.image) {
     allExpImages.push(selectedExp.image);
   }
+
+  const currentPhotoIndex = Math.max(0, allExpImages.indexOf(activePhotoUrl));
+
+  const handleNextPhoto = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (allExpImages.length <= 1) return;
+    const nextIdx = (currentPhotoIndex + 1) % allExpImages.length;
+    setActivePhotoUrl(allExpImages[nextIdx]);
+    setImageAspectRatio(null);
+  };
+
+  const handlePrevPhoto = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (allExpImages.length <= 1) return;
+    const prevIdx = (currentPhotoIndex - 1 + allExpImages.length) % allExpImages.length;
+    setActivePhotoUrl(allExpImages[prevIdx]);
+    setImageAspectRatio(null);
+  };
+
+  useEffect(() => {
+    if (!selectedExp) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowRight') {
+        if (allExpImages.length > 1) {
+          const nextIdx = (currentPhotoIndex + 1) % allExpImages.length;
+          setActivePhotoUrl(allExpImages[nextIdx]);
+          setImageAspectRatio(null);
+        }
+      } else if (e.key === 'ArrowLeft') {
+        if (allExpImages.length > 1) {
+          const prevIdx = (currentPhotoIndex - 1 + allExpImages.length) % allExpImages.length;
+          setActivePhotoUrl(allExpImages[prevIdx]);
+          setImageAspectRatio(null);
+        }
+      } else if (e.key === 'Escape') {
+        if (isFullscreenLightbox) {
+          setIsFullscreenLightbox(false);
+        } else {
+          setSelectedExp(null);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedExp, isFullscreenLightbox, currentPhotoIndex, allExpImages]);
 
   const handleShareExp = (exp: any, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -304,10 +351,16 @@ export default function Experience() {
                           loading="lazy"
                           onError={handleImageError}
                         />
+                        {exp.images.length > 1 && (
+                          <div className="absolute top-2.5 right-2.5 z-10 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-white text-[10px] font-bold flex items-center gap-1.5 shadow-md border border-white/10">
+                            <Camera className="w-3 h-3 text-white" />
+                            <span>{exp.images.length} Foto</span>
+                          </div>
+                        )}
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center rounded-xl md:rounded-2xl pointer-events-none">
                           <div className="opacity-0 group-hover:opacity-100 bg-white/95 dark:bg-black/90 text-black dark:text-white px-4 py-2 rounded-full text-[11px] font-bold transition-all transform translate-y-2 group-hover:translate-y-0 backdrop-blur-sm shadow-md flex items-center gap-1.5 pointer-events-auto">
                             <Maximize2 className="w-3 h-3" />
-                            Buka Detail
+                            Buka Detail ({exp.images.length} foto)
                           </div>
                         </div>
                       </div>
@@ -374,19 +427,19 @@ export default function Experience() {
                   - Pada mobile: Full edge-to-edge flush ke atas layar
                   - Pada desktop: Rasio gambar sesuai dengan bingkai gambar, bingkai polos putih dan mengikuti rasio asli gambar
               */}
-              <div className="w-full md:w-[64%] lg:w-[66%] xl:w-[68%] relative border-b md:border-b-0 md:border-r flex flex-col items-center justify-between h-auto md:h-full shrink-0 bg-white dark:bg-white border-zinc-200/80 dark:border-zinc-800/80 p-0 overflow-hidden select-none">
-                <div className="w-full h-full flex-1 flex items-start md:items-center justify-center relative overflow-hidden bg-white p-0 md:p-3 lg:p-4">
+              <div className="w-full md:w-[64%] lg:w-[66%] xl:w-[68%] relative border-b md:border-b-0 md:border-r flex flex-col items-center justify-between h-auto md:h-full shrink-0 bg-white dark:bg-[#080808] border-zinc-200/80 dark:border-zinc-800/80 p-0 overflow-hidden select-none">
+                <div className="w-full h-full flex-1 flex flex-col items-center justify-center relative overflow-hidden bg-white dark:bg-[#080808] p-0 md:p-3 lg:p-4">
                   {activePhotoUrl ? (
-                    <div className="w-full h-full flex items-start md:items-center justify-center relative overflow-hidden bg-white p-0">
+                    <div className="w-full h-full flex-1 flex items-start md:items-center justify-center relative overflow-hidden bg-white dark:bg-[#080808] p-0">
                       <div 
-                        className="relative flex items-center justify-center bg-white rounded-none md:rounded-3xl p-0 md:p-2 border-0 md:border md:border-zinc-200/70 shadow-none md:shadow-xs w-full md:w-auto max-w-full max-h-full transition-all duration-150 overflow-hidden"
+                        className="relative flex items-center justify-center bg-white dark:bg-[#080808] rounded-none md:rounded-3xl p-0 md:p-2 border-0 md:border md:border-zinc-200/70 dark:md:border-zinc-800/70 shadow-none md:shadow-xs w-full md:w-auto max-w-full max-h-full transition-all duration-150 overflow-hidden"
                         style={{
                           aspectRatio: imageAspectRatio ? `${imageAspectRatio}` : undefined,
                           maxWidth: '100%',
                           maxHeight: '100%',
                         }}
                       >
-                        <div className="absolute inset-0 bg-zinc-50 rounded-none md:rounded-2xl animate-pulse pointer-events-none -z-0" />
+                        <div className="absolute inset-0 bg-zinc-50 dark:bg-zinc-900 rounded-none md:rounded-2xl animate-pulse pointer-events-none -z-0" />
                         <motion.img 
                           key={activePhotoUrl}
                           initial={{ opacity: 0.85 }}
@@ -402,11 +455,37 @@ export default function Experience() {
                             }
                           }}
                           onClick={() => setIsFullscreenLightbox(true)}
-                          className="w-full md:w-auto h-auto max-w-full max-h-none md:max-h-[88vh] object-contain block mx-auto rounded-none md:rounded-2xl relative z-10 bg-white cursor-zoom-in" 
+                          className="w-full md:w-auto h-auto max-w-full max-h-none md:max-h-[82vh] object-contain block mx-auto rounded-none md:rounded-2xl relative z-10 bg-white dark:bg-[#080808] cursor-zoom-in" 
                           onError={handleImageError}
                           title="Klik untuk melihat layar penuh"
                         />
                       </div>
+
+                      {/* Tombol Navigasi Sebelumnya (<) jika ada > 1 gambar */}
+                      {allExpImages.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={handlePrevPhoto}
+                          className="absolute left-3 top-1/2 -translate-y-1/2 z-30 p-2.5 sm:p-3 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all shadow-xl active:scale-90 cursor-pointer flex items-center justify-center hover:scale-105"
+                          title="Foto Sebelumnya (Panah Kiri)"
+                          aria-label="Foto Sebelumnya"
+                        >
+                          <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </button>
+                      )}
+
+                      {/* Tombol Navigasi Selanjutnya (>) jika ada > 1 gambar */}
+                      {allExpImages.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={handleNextPhoto}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 z-30 p-2.5 sm:p-3 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all shadow-xl active:scale-90 cursor-pointer flex items-center justify-center hover:scale-105"
+                          title="Foto Selanjutnya (Panah Kanan)"
+                          aria-label="Foto Selanjutnya"
+                        >
+                          <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </button>
+                      )}
 
                       {/* Tombol Perbesar Layar Penuh */}
                       <button
@@ -422,6 +501,14 @@ export default function Experience() {
                         <span className="text-[10px] font-semibold hidden sm:inline">Layar Penuh</span>
                       </button>
 
+                      {/* Indikator Hitungan Foto jika > 1 */}
+                      {allExpImages.length > 1 && (
+                        <div className="absolute top-3 right-14 sm:right-16 z-20 px-3 py-1.5 rounded-full bg-black/75 backdrop-blur-md border border-white/20 text-white text-[10px] sm:text-xs font-bold flex items-center gap-1.5 shadow-md">
+                          <Camera className="w-3 h-3 text-white" />
+                          <span>Foto {currentPhotoIndex + 1} dari {allExpImages.length}</span>
+                        </div>
+                      )}
+
                       {/* Tombol Bagikan */}
                       <button
                         type="button"
@@ -434,8 +521,43 @@ export default function Experience() {
                       </button>
                     </div>
                   ) : (
-                    <div className="w-full h-48 md:h-full bg-zinc-100 flex items-center justify-center text-zinc-400 text-sm">
+                    <div className="w-full h-48 md:h-full bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 text-sm">
                       Dokumentasi Pengalaman
+                    </div>
+                  )}
+
+                  {/* Strip Thumbnail Foto Dokumentasi Langsung di Bawah Gambar Utama */}
+                  {allExpImages.length > 1 && (
+                    <div className="w-full bg-zinc-50 dark:bg-[#0e0e10] border-t border-zinc-200/80 dark:border-zinc-800/80 p-2.5 flex items-center justify-center gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shrink-0 z-20">
+                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider shrink-0 mr-1 hidden sm:inline">
+                        Galeri ({allExpImages.length}):
+                      </span>
+                      {allExpImages.map((img, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setActivePhotoUrl(img);
+                            setImageAspectRatio(null);
+                          }}
+                          className={`relative w-12 h-12 sm:w-14 sm:h-14 shrink-0 rounded-xl overflow-hidden border-2 transition-all cursor-pointer ${
+                            activePhotoUrl === img 
+                              ? 'border-indigo-600 ring-2 ring-indigo-500/30 scale-105 opacity-100 shadow-md' 
+                              : 'border-zinc-200 dark:border-zinc-800 opacity-60 hover:opacity-100 hover:scale-105'
+                          }`}
+                          title={`Foto ${idx + 1}`}
+                        >
+                          <img
+                            src={resolveImageUrl(img)}
+                            alt={`Dokumentasi ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                            onError={handleImageError}
+                          />
+                          <span className="absolute bottom-0 right-0 bg-black/75 text-white text-[8px] font-bold px-1 rounded-tl">
+                            {idx + 1}
+                          </span>
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -649,32 +771,108 @@ export default function Experience() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
             onClick={() => setIsFullscreenLightbox(false)}
-            className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-md flex items-center justify-center p-0 md:p-4 select-none cursor-zoom-out"
+            className="fixed inset-0 z-[300] bg-black/95 backdrop-blur-md flex flex-col items-center justify-between p-0 md:p-4 select-none cursor-zoom-out"
           >
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsFullscreenLightbox(false);
-              }}
-              className="fixed top-3 right-3 sm:top-4 sm:right-4 z-[310] p-2.5 sm:p-3 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md border border-white/20 transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-xl"
-              aria-label="Tutup Tampilan Layar Penuh"
-            >
-              <X className="w-5 h-5 md:w-6 md:h-6" />
-            </button>
-            <div className="w-full h-full flex items-center justify-center p-1 sm:p-4">
+            {/* Top Bar Lightbox */}
+            <div className="w-full flex items-center justify-between p-3 sm:p-4 z-[320] pointer-events-none">
+              {allExpImages.length > 1 ? (
+                <div className="px-3.5 py-1.5 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg pointer-events-auto">
+                  <Camera className="w-3.5 h-3.5 text-white" />
+                  <span>Foto {currentPhotoIndex + 1} dari {allExpImages.length}</span>
+                </div>
+              ) : (
+                <div />
+              )}
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsFullscreenLightbox(false);
+                }}
+                className="p-2.5 sm:p-3 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-md border border-white/20 transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-xl pointer-events-auto"
+                aria-label="Tutup Tampilan Layar Penuh"
+              >
+                <X className="w-5 h-5 md:w-6 md:h-6" />
+              </button>
+            </div>
+
+            {/* Navigasi Panah Kiri (<) di Layar Penuh */}
+            {allExpImages.length > 1 && (
+              <button
+                type="button"
+                onClick={handlePrevPhoto}
+                className="fixed left-3 sm:left-6 top-1/2 -translate-y-1/2 z-[320] p-3 sm:p-4 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all hover:scale-110 active:scale-95 cursor-pointer shadow-2xl"
+                aria-label="Foto Sebelumnya"
+                title="Foto Sebelumnya"
+              >
+                <ChevronLeft className="w-6 h-6 sm:w-7 sm:h-7" />
+              </button>
+            )}
+
+            {/* Navigasi Panah Kanan (>) di Layar Penuh */}
+            {allExpImages.length > 1 && (
+              <button
+                type="button"
+                onClick={handleNextPhoto}
+                className="fixed right-3 sm:right-6 top-1/2 -translate-y-1/2 z-[320] p-3 sm:p-4 rounded-full bg-black/60 hover:bg-black/90 text-white backdrop-blur-md border border-white/20 transition-all hover:scale-110 active:scale-95 cursor-pointer shadow-2xl"
+                aria-label="Foto Selanjutnya"
+                title="Foto Selanjutnya"
+              >
+                <ChevronRight className="w-6 h-6 sm:w-7 sm:h-7" />
+              </button>
+            )}
+
+            {/* Area Gambar Tengah */}
+            <div className="w-full flex-1 flex items-center justify-center p-2 sm:p-4 overflow-hidden">
               <motion.img
-                initial={{ scale: 0.96 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0.96 }}
+                key={activePhotoUrl}
+                initial={{ scale: 0.96, opacity: 0.8 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.96, opacity: 0.8 }}
                 transition={{ duration: 0.15 }}
                 src={resolveImageUrl(activePhotoUrl)}
                 alt={selectedExp?.header || 'Foto Dokumentasi Pengalaman'}
                 onError={handleImageError}
-                className="w-auto h-auto max-w-full max-h-[96vh] md:max-h-[98vh] object-contain rounded-none md:rounded-lg shadow-2xl block mx-auto"
+                className="w-auto h-auto max-w-full max-h-[82vh] md:max-h-[86vh] object-contain rounded-none md:rounded-lg shadow-2xl block mx-auto cursor-default"
                 onClick={(e) => e.stopPropagation()}
               />
             </div>
+
+            {/* Bottom Thumbnail Bar di Layar Penuh */}
+            {allExpImages.length > 1 && (
+              <div 
+                className="w-full max-w-2xl px-4 py-2 flex items-center justify-center gap-2 overflow-x-auto z-[320] pointer-events-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {allExpImages.map((img, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setActivePhotoUrl(img);
+                      setImageAspectRatio(null);
+                    }}
+                    className={`relative w-12 h-12 sm:w-14 sm:h-14 shrink-0 rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                      activePhotoUrl === img 
+                        ? 'border-white scale-110 ring-2 ring-white/50 opacity-100 shadow-xl' 
+                        : 'border-white/30 opacity-50 hover:opacity-100 hover:scale-105'
+                    }`}
+                    title={`Foto ${idx + 1}`}
+                  >
+                    <img
+                      src={resolveImageUrl(img)}
+                      alt={`Foto ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                      onError={handleImageError}
+                    />
+                    <span className="absolute bottom-0 right-0 bg-black/80 text-white text-[8px] font-bold px-1 rounded-tl">
+                      {idx + 1}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

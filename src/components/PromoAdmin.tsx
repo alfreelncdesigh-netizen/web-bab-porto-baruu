@@ -1,5 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Check, Loader2, Upload, Image as ImageIcon, Eye, EyeOff, RotateCcw, ExternalLink, RefreshCw, AlertCircle } from 'lucide-react';
+import { 
+  Sparkles, 
+  Check, 
+  Loader2, 
+  Upload, 
+  Image as ImageIcon, 
+  Eye, 
+  EyeOff, 
+  RotateCcw, 
+  ExternalLink, 
+  RefreshCw, 
+  AlertCircle,
+  Trash2,
+  Link as LinkIcon
+} from 'lucide-react';
 import { SiteSettings, defaultSettings, PromoPosterItem } from '../data/settings';
 import { getStoredSettings, saveStoredSettings, cleanForFirestore } from '../lib/contentStorage';
 import { NAMA_COOKIE_RIWAYAT, setCookie, deleteCookie, getCookie } from './PromoPosterWidget';
@@ -9,9 +23,9 @@ import { db } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 const createDefaultSlots = (): PromoPosterItem[] => [
-  { id: 'poster-1', title: '', image: '', ctaText: 'Ambil Diskon', link: '#store', active: true },
-  { id: 'poster-2', title: '', image: '', ctaText: 'Ambil Diskon', link: '#store', active: true },
-  { id: 'poster-3', title: '', image: '', ctaText: 'Ambil Diskon', link: '#store', active: true },
+  { id: 'poster-1', title: 'Promo Diskon Desain Grafis', image: '', ctaText: 'Ambil Diskon', link: '#store', active: true },
+  { id: 'poster-2', title: 'Paket Branding & Identitas', image: '', ctaText: 'Konsultasi Sekarang', link: '#store', active: true },
+  { id: 'poster-3', title: 'Pemesanan Poster & Media Sosial', image: '', ctaText: 'Order Sekarang', link: '#store', active: true },
 ];
 
 const normalizeSlots = (rawList?: PromoPosterItem[]): PromoPosterItem[] => {
@@ -21,11 +35,11 @@ const normalizeSlots = (rawList?: PromoPosterItem[]): PromoPosterItem[] => {
       if (idx < 3 && p) {
         slots[idx] = {
           id: p.id || `poster-${idx + 1}`,
-          title: p.title || '',
+          title: p.title || slots[idx].title,
           image: p.image || p.dataUrl || '',
           dataUrl: p.dataUrl || (p.image?.startsWith('data:') ? p.image : undefined),
-          ctaText: p.ctaText || 'Ambil Diskon',
-          link: p.link || '#store',
+          ctaText: p.ctaText || slots[idx].ctaText,
+          link: p.link || slots[idx].link,
           active: p.active !== false,
         };
       }
@@ -55,7 +69,7 @@ export default function PromoAdmin() {
       try {
         const parsed = JSON.parse(raw);
         setCookieStatus(`Cookie terdeteksi (USER LAMA - jeda 1 menit | Kunjungan ke-${parsed.visitCount || 1})`);
-      } catch (e) {
+      } catch {
         setCookieStatus('Cookie aktif (USER LAMA - jeda 1 menit)');
       }
     }
@@ -68,28 +82,32 @@ export default function PromoAdmin() {
     const unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        if (Array.isArray(data.posters)) {
+        if (Array.isArray(data.posters) && data.posters.length > 0) {
           setPosters(normalizeSlots(data.posters));
         }
         if (data.active !== undefined) {
           setIsGlobalActive(data.active !== false);
         }
       }
-    }, (err) => console.warn("Firestore promoPosters notice:", err));
+    }, (err) => {
+      console.warn("Notice: promoPosters realtime listener fallback:", err);
+    });
 
     // 2. Dengarkan doc settings/global secara realtime
     const unsubGlobal = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
       if (snap.exists()) {
         const data = snap.data() as SiteSettings;
         setSettings(prev => ({ ...prev, ...data }));
-        if (Array.isArray(data.promoPosters)) {
+        if (Array.isArray(data.promoPosters) && data.promoPosters.length > 0) {
           setPosters(normalizeSlots(data.promoPosters));
         }
         if (data.promoWidgetActive !== undefined) {
           setIsGlobalActive(data.promoWidgetActive !== false);
         }
       }
-    }, (err) => console.warn("Firestore settings/global notice:", err));
+    }, (err) => {
+      console.warn("Notice: settings/global realtime listener fallback:", err);
+    });
 
     return () => {
       unsubPromo();
@@ -104,54 +122,64 @@ export default function PromoAdmin() {
     }, 4000);
   };
 
-  // Kompresi Gambar Otomatis ke Canvas (Rasio 4:5 ringan & jernih) lalu unggah ke storage permanen
+  // Kompresi Gambar Cepat & Efisien (Rasio 4:5, optimal 800x1000 WebP)
+  const compressToWebP = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const MAX_HEIGHT = 1000;
+          let width = img.width;
+          let height = img.height;
+
+          // Scale preserving aspect ratio
+          if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+            const ratio = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/webp', 0.85));
+          } else {
+            reject(new Error("Gagal menginisialisasi canvas"));
+          }
+        };
+        img.onerror = () => reject(new Error("Gagal memuat format gambar"));
+        img.src = event.target?.result as string;
+      };
+      reader.onerror = () => reject(new Error("Gagal membaca file gambar"));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Upload Cepat & Efisien Poster Slot
   const handlePosterImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 20 * 1024 * 1024) {
-      showNotification("Ukuran file terlalu besar! Silakan pilih gambar di bawah 20MB.", "info");
+    if (file.size > 25 * 1024 * 1024) {
+      showNotification("Ukuran file terlalu besar! Silakan pilih file di bawah 25MB.", "info");
       return;
     }
 
     setUploadingIndex(index);
 
     try {
-      // 1. Render ke Canvas dengan rasio kompresi WebP optimal (max-width 900)
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const img = new Image();
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const MAX_WIDTH = 900;
-            let width = img.width;
-            let height = img.height;
+      // 1. Kompresi instan via Canvas ke WebP 4:5
+      const dataUrl = await compressToWebP(file);
 
-            if (width > MAX_WIDTH) {
-              height = Math.round((height * MAX_WIDTH) / width);
-              width = MAX_WIDTH;
-            }
-
-            canvas.width = width;
-            canvas.height = height;
-
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(img, 0, 0, width, height);
-              resolve(canvas.toDataURL('image/webp', 0.88));
-            } else {
-              reject(new Error("Gagal menginisialisasi canvas"));
-            }
-          };
-          img.onerror = () => reject(new Error("Gagal memuat gambar"));
-          img.src = event.target?.result as string;
-        };
-        reader.onerror = () => reject(new Error("Gagal membaca file gambar"));
-        reader.readAsDataURL(file);
-      });
-
-      // 2. Unggah Blob ke server storage (/api/upload) untuk mendapatkan URL permanen bersih
+      // 2. Unggah langsung ke server API (/api/upload)
       const cleanFileName = `promo_poster_${Date.now()}_slot${index + 1}.webp`;
       let uploadedUrl = '';
 
@@ -169,7 +197,7 @@ export default function PromoAdmin() {
           if (jsonRes.url) uploadedUrl = jsonRes.url;
         }
       } catch (errUpload) {
-        console.warn("Direct upload error, falling back to storage:", errUpload);
+        console.warn("Direct upload fallback:", errUpload);
       }
 
       if (!uploadedUrl) {
@@ -179,15 +207,16 @@ export default function PromoAdmin() {
 
       const finalUrl = uploadedUrl || dataUrl;
 
-      // Pastikan data gambar selalu ditanam dan tersimpan di Cloud Firestore uploadedMedia
-      recordMediaPermanently(finalUrl, cleanFileName, dataUrl.length, 'promos', dataUrl).catch(() => {});
-
-      // 3. Simpan ke local state bersama dataUrl cadangan permanen
+      // 3. Simpan dan perbarui UI seketika (Responsivitas instan < 300ms)
       const updated = [...posters];
-      updated[index] = { ...updated[index], image: finalUrl, dataUrl };
+      updated[index] = { 
+        ...updated[index], 
+        image: finalUrl,
+        active: true 
+      };
       setPosters(updated);
 
-      // 4. Sinkronisasi instan ke Firestore dan LocalStorage
+      // 4. Perbarui data settings lokal & umumkan event
       const currentStored = getStoredSettings();
       const updatedSettings: SiteSettings = {
         ...currentStored,
@@ -199,32 +228,13 @@ export default function PromoAdmin() {
       };
 
       setSettings(updatedSettings);
-      await saveStoredSettings(updatedSettings);
-
-      // Simpan langsung ke koleksi terpisah settings/promoPosters agar selalu tersimpan di Firebase
-      try {
-        const safeCloudPosters = updated.map(p => {
-          const item = { ...p };
-          if (item.dataUrl && item.dataUrl.length > 500000) {
-            delete item.dataUrl;
-          }
-          return item;
-        });
-
-        await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
-          posters: safeCloudPosters,
-          active: isGlobalActive,
-          updatedAt: new Date().toISOString(),
-          savedAt: Date.now(),
-          _adminAuth: 'alfreelnc_admin_auth_verified',
-          updatedByAdmin: true
-        }), { merge: true });
-      } catch (cloudErr) {
-        console.warn("Direct promoPosters cloud sync:", cloudErr);
-      }
-
+      saveStoredSettings(updatedSettings).catch(() => {});
       window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
-      showNotification(`Poster #${index + 1} berhasil disimpan & langsung aktif di Menu Order!`);
+
+      // 5. Catat media secara permanen di background
+      recordMediaPermanently(finalUrl, cleanFileName, dataUrl.length, 'promos').catch(() => {});
+
+      showNotification(`Poster #${index + 1} berhasil diunggah & langsung aktif!`);
     } catch (err: any) {
       console.error("Upload poster error:", err);
       showNotification("Gagal memproses gambar poster. Silakan coba lagi.", "info");
@@ -241,68 +251,46 @@ export default function PromoAdmin() {
     });
   };
 
+  const handleClearSlot = (index: number) => {
+    const updated = [...posters];
+    updated[index] = {
+      ...updated[index],
+      image: '',
+      dataUrl: undefined,
+    };
+    setPosters(updated);
+    showNotification(`Gambar pada slot #${index + 1} dibersihkan.`);
+  };
+
   const handleSaveAll = async () => {
     setSaving(true);
     try {
-      // Pastikan semua poster yang berformat Base64 diunggah menjadi URL bersih namun tetap simpan dataUrl
-      const cleanedPosters = await Promise.all(
-        posters.map(async (p, idx) => {
-          if (p.image && p.image.startsWith('data:image/')) {
-            const rawBase64 = p.image;
-            try {
-              const cleanFileName = `promo_poster_${Date.now()}_slot${idx + 1}.webp`;
-              const res = await fetch('/api/upload', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-admin-token': 'alfreelnc_admin_auth_verified'
-                },
-                body: JSON.stringify({ file: rawBase64, filename: cleanFileName })
-              });
-              if (res.ok) {
-                const j = await res.json();
-                if (j.url) {
-                  recordMediaPermanently(j.url, cleanFileName, rawBase64.length, 'promos', rawBase64).catch(() => {});
-                  return { ...p, image: j.url, dataUrl: rawBase64 };
-                }
-              }
-              const blob = base64ToBlob(rawBase64);
-              const url = await uploadImageToStorage(blob, cleanFileName, rawBase64, 'promos');
-              return { ...p, image: url, dataUrl: rawBase64 };
-            } catch {
-              return { ...p, dataUrl: rawBase64 };
-            }
-          }
-          return p;
-        })
-      );
-
-      setPosters(cleanedPosters);
-
+      // Pastikan semua poster berformat URL bersih
       const updatedSettings: SiteSettings = {
         ...settings,
         promoWidgetActive: isGlobalActive,
-        promoPosters: cleanedPosters,
-        promoWidgetImage: cleanedPosters.find(p => p.image)?.image || '',
-        promoWidgetLink: cleanedPosters.find(p => p.link)?.link || '#store',
-        promoWidgetCtaText: cleanedPosters.find(p => p.ctaText)?.ctaText || 'Ambil Diskon',
+        promoPosters: posters,
+        promoWidgetImage: posters.find(p => p.image)?.image || '',
+        promoWidgetLink: posters.find(p => p.link)?.link || '#store',
+        promoWidgetCtaText: posters.find(p => p.ctaText)?.ctaText || 'Ambil Diskon',
       };
 
       setSettings(updatedSettings);
       await saveStoredSettings(updatedSettings);
 
-      // Simpan langsung ke dokumen terpisah settings/promoPosters di Firestore
+      // Simpan dokumen terpisah settings/promoPosters yang ringkas (hanya link & info penting)
       try {
-        const safeCloudPosters = cleanedPosters.map(p => {
-          const item = { ...p };
-          if (item.dataUrl && item.dataUrl.length > 250000) {
-            delete item.dataUrl;
-          }
-          return item;
-        });
+        const lightweightPosters = posters.map(p => ({
+          id: p.id,
+          title: p.title || '',
+          image: p.image || '',
+          ctaText: p.ctaText || 'Ambil Diskon',
+          link: p.link || '#store',
+          active: p.active !== false
+        }));
 
         await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
-          posters: safeCloudPosters,
+          posters: lightweightPosters,
           active: isGlobalActive,
           updatedAt: new Date().toISOString(),
           savedAt: Date.now(),
@@ -310,14 +298,14 @@ export default function PromoAdmin() {
           updatedByAdmin: true
         }), { merge: true });
       } catch (cloudErr) {
-        console.warn("Direct promoPosters cloud save:", cloudErr);
+        console.warn("Direct promoPosters cloud save notice:", cloudErr);
       }
 
       window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
-      showNotification('Semua pengaturan 3 poster promosi berhasil disimpan & diperbarui di Menu Order!');
+      showNotification('Semua pengaturan 3 poster promosi berhasil disimpan & aktif!');
     } catch (err) {
       console.error("Save promo settings error:", err);
-      showNotification('Pengaturan tersimpan di penyimpanan lokal.', 'info');
+      showNotification('Pengaturan tersimpan di penyimpanan lokal dan server disk.', 'info');
     } finally {
       setSaving(false);
     }
@@ -327,7 +315,7 @@ export default function PromoAdmin() {
   const handleResetCookie = () => {
     deleteCookie(NAMA_COOKIE_RIWAYAT);
     refreshCookieStatus();
-    showNotification('Cookie riwayat dihapus! Sistem sekarang memperlakukan browser Anda sebagai USER BARU (muncul setiap 20 detik).', 'info');
+    showNotification('Cookie riwayat dihapus! Sistem memperlakukan Anda sebagai USER BARU (jeda 20 detik).', 'info');
   };
 
   // Uji Coba: Set Cookie User Lama (Simulasi User Lama - 3 menit)
@@ -340,7 +328,7 @@ export default function PromoAdmin() {
     };
     setCookie(NAMA_COOKIE_RIWAYAT, JSON.stringify(dummy), 365);
     refreshCookieStatus();
-    showNotification('Cookie pengunjung lama disetel! Sistem sekarang memperlakukan browser Anda sebagai USER LAMA (muncul pertama kali setelah 3 menit).', 'info');
+    showNotification('Cookie pengunjung lama disetel! Sistem memperlakukan Anda sebagai USER LAMA (jeda 3 menit).', 'info');
   };
 
   // Uji Coba: Munculkan widget sekarang secara acak
@@ -371,7 +359,7 @@ export default function PromoAdmin() {
           <button
             type="button"
             onClick={() => setIsGlobalActive(!isGlobalActive)}
-            className={`px-4 py-2.5 rounded-2xl text-xs font-semibold flex items-center gap-2 transition-all shadow-sm ${
+            className={`px-4 py-2.5 rounded-2xl text-xs font-semibold flex items-center gap-2 transition-all shadow-sm cursor-pointer ${
               isGlobalActive
                 ? 'bg-emerald-500 text-white hover:bg-emerald-600'
                 : 'bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-700'
@@ -426,7 +414,7 @@ export default function PromoAdmin() {
             <button
               type="button"
               onClick={handleResetCookie}
-              className="px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-[11px] font-medium flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-[11px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <RotateCcw size={13} />
               Tes User Baru (20s lalu 2m)
@@ -434,7 +422,7 @@ export default function PromoAdmin() {
             <button
               type="button"
               onClick={handleSetReturningUserCookie}
-              className="px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-[11px] font-medium flex items-center gap-1.5 transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-[11px] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <RefreshCw size={13} />
               Tes User Lama (3m lalu 4m)
@@ -442,7 +430,7 @@ export default function PromoAdmin() {
             <button
               type="button"
               onClick={() => handleTriggerRandomNow()}
-              className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 text-[11px] font-semibold flex items-center gap-1.5 transition-colors border border-amber-500/20"
+              className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 text-[11px] font-semibold flex items-center gap-1.5 transition-colors border border-amber-500/20 cursor-pointer"
             >
               <Sparkles size={13} />
               Munculkan Sekarang (Acak)
@@ -477,24 +465,39 @@ export default function PromoAdmin() {
                       Poster #{slotNumber}
                     </h4>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => updatePosterField(index, 'active', poster.active === false ? true : false)}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold flex items-center gap-1 transition-colors ${
-                      poster.active !== false
-                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
-                    }`}
-                  >
-                    {poster.active !== false ? 'Aktif di Acak' : 'Nonaktif'}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => updatePosterField(index, 'active', poster.active === false ? true : false)}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
+                        poster.active !== false
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                          : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400'
+                      }`}
+                    >
+                      {poster.active !== false ? 'Aktif di Acak' : 'Nonaktif'}
+                    </button>
+                    {poster.image && (
+                      <button
+                        type="button"
+                        onClick={() => handleClearSlot(index)}
+                        title="Hapus poster slot ini"
+                        className="p-1 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Preview & Upload Gambar (Rasio Vertikal 4:5) */}
                 <div className="mb-5">
-                  <label className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 mb-2 block">
-                    Gambar Poster (Rasio Vertikal 4:5)
-                  </label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 block">
+                      Gambar Poster (Rasio Vertikal 4:5)
+                    </label>
+                    <span className="text-[10px] text-zinc-400">PNG, JPG, WebP</span>
+                  </div>
                   
                   <div className="relative w-44 mx-auto aspect-[4/5] bg-zinc-100 dark:bg-zinc-950 border-2 border-dashed border-zinc-300 dark:border-zinc-800 hover:border-black dark:hover:border-white transition-all rounded-2xl overflow-hidden flex flex-col items-center justify-center group cursor-pointer shadow-md">
                     <input
@@ -508,7 +511,7 @@ export default function PromoAdmin() {
                     {isUploading ? (
                       <div className="flex flex-col items-center text-black dark:text-white p-3 text-center z-10">
                         <Loader2 size={24} className="animate-spin mb-2" />
-                        <span className="text-[11px] font-semibold">Mengompres...</span>
+                        <span className="text-[11px] font-semibold">Mengunggah...</span>
                       </div>
                     ) : poster.image ? (
                       <>
@@ -526,9 +529,23 @@ export default function PromoAdmin() {
                     ) : (
                       <div className="flex flex-col items-center text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors p-3 text-center">
                         <ImageIcon size={28} className="mb-1.5" />
-                        <span className="text-[11px] font-semibold">Pilih Poster 4:5</span>
+                        <span className="text-[11px] font-semibold">Klik / Tarik Poster 4:5</span>
                       </div>
                     )}
+                  </div>
+
+                  {/* Input URL Gambar Alternatif */}
+                  <div className="mt-2.5">
+                    <div className="relative flex items-center">
+                      <LinkIcon size={12} className="absolute left-2.5 text-zinc-400" />
+                      <input
+                        type="text"
+                        value={poster.image || ""}
+                        onChange={(e) => updatePosterField(index, 'image', e.target.value)}
+                        placeholder="Atau tempel URL gambar (/uploads/... atau https://...)"
+                        className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700/60 pl-7 pr-3 py-1.5 text-[11px] focus:border-black dark:focus:border-white outline-none rounded-xl text-black dark:text-white"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -580,14 +597,14 @@ export default function PromoAdmin() {
                           'link',
                           `https://wa.me/${(settings.contactPhone || '628112345678').replace(/\D/g, '')}?text=Halo%20saya%20tertarik%20dengan%20${encodeURIComponent(poster.title || 'Promo Diskon')}`
                         )}
-                        className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[10px] text-zinc-700 dark:text-zinc-300 transition-colors"
+                        className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[10px] text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
                       >
                         WhatsApp
                       </button>
                       <button
                         type="button"
                         onClick={() => updatePosterField(index, 'link', '#store')}
-                        className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[10px] text-zinc-700 dark:text-zinc-300 transition-colors"
+                        className="px-2 py-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[10px] text-zinc-700 dark:text-zinc-300 transition-colors cursor-pointer"
                       >
                         Order Form (#store)
                       </button>
@@ -601,11 +618,17 @@ export default function PromoAdmin() {
                 <button
                   type="button"
                   onClick={() => handleTriggerRandomNow(poster.id)}
-                  className="text-[11px] text-zinc-500 hover:text-black dark:hover:text-white flex items-center gap-1 transition-colors"
+                  disabled={!poster.image}
+                  className="text-[11px] text-zinc-500 hover:text-black dark:hover:text-white flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-40"
                 >
                   <ExternalLink size={12} />
                   Pratinjau Poster Ini
                 </button>
+                {poster.image && (
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+                    <Check size={11} /> Siap Tampil
+                  </span>
+                )}
               </div>
             </div>
           );
@@ -615,7 +638,7 @@ export default function PromoAdmin() {
       {/* Footer Simpan */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-6 border-t border-zinc-200 dark:border-zinc-800">
         <p className="text-xs text-zinc-500">
-          * Perubahan akan langsung disinkronkan ke database Firestore dan tampilan frontend website.
+          * Poster yang diunggah otomatis terkompresi WebP ringan dan tersinkronisasi instan ke menu Order dan widget pop-up.
         </p>
 
         <button

@@ -38,18 +38,26 @@ export function markQuotaExhausted(): void {
   }
 }
 
+export function clearQuotaStatus(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.removeItem('firestore_quota_exhausted');
+      localStorage.removeItem('firestore_quota_exhausted_time');
+      sessionStorage.removeItem('firestore_quota_exhausted');
+      sessionStorage.removeItem('firestore_quota_exhausted_time');
+    } catch {}
+  }
+}
+
 export function isQuotaExhausted(): boolean {
   if (typeof window === 'undefined') return false;
   try {
     const val = localStorage.getItem('firestore_quota_exhausted') || sessionStorage.getItem('firestore_quota_exhausted');
     if (!val) return false;
     const time = Number(localStorage.getItem('firestore_quota_exhausted_time') || sessionStorage.getItem('firestore_quota_exhausted_time') || 0);
-    // Quota resets daily (~12 to 24 jam)
-    if (Date.now() - time > 12 * 3600 * 1000) {
-      localStorage.removeItem('firestore_quota_exhausted');
-      localStorage.removeItem('firestore_quota_exhausted_time');
-      sessionStorage.removeItem('firestore_quota_exhausted');
-      sessionStorage.removeItem('firestore_quota_exhausted_time');
+    // Quota retry window: 3 minutes (allows auto-recovery when quota resets)
+    if (Date.now() - time > 3 * 60 * 1000) {
+      clearQuotaStatus();
       return false;
     }
     return true;
