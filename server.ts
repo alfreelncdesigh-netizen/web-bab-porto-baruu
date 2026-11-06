@@ -387,6 +387,7 @@ const settingsFilePath = path.resolve(__dirname, 'settings-storage.json');
 const projectsFilePath = path.resolve(__dirname, 'projects-storage.json');
 const blogsFilePath = path.resolve(__dirname, 'blogs-storage.json');
 const experiencesFilePath = path.resolve(__dirname, 'experiences-storage.json');
+const messagesFilePath = path.resolve(__dirname, 'messages-storage.json');
 
 const requireAdminAuth = (req: Request, res: Response, next: NextFunction): void => {
   const token = req.headers['x-admin-token'] || req.headers['authorization'];
@@ -553,6 +554,62 @@ app.post('/api/experiences', requireAdminAuth, (req: Request, res: Response): vo
     res.status(400).json({ error: 'Format data pengalaman tidak valid' });
   } catch {
     res.status(500).json({ error: 'Gagal menyimpan pengalaman' });
+  }
+});
+
+app.get('/api/messages', (_req: Request, res: Response): void => {
+  try {
+    if (fs.existsSync(messagesFilePath)) {
+      const data = fs.readFileSync(messagesFilePath, 'utf-8');
+      res.status(200).json(JSON.parse(data));
+      return;
+    }
+  } catch {}
+  res.status(200).json([]);
+});
+
+app.post('/api/messages', (req: Request, res: Response): void => {
+  try {
+    const payload = req.body;
+    if (payload && typeof payload === 'object') {
+      let list: any[] = [];
+      if (fs.existsSync(messagesFilePath)) {
+        try {
+          list = JSON.parse(fs.readFileSync(messagesFilePath, 'utf-8'));
+          if (!Array.isArray(list)) list = [];
+        } catch {}
+      }
+      const newMsg = {
+        id: payload.id || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        name: (payload.name || '').trim(),
+        email: (payload.email || '').trim(),
+        message: (payload.message || '').trim(),
+        dateAdded: payload.dateAdded || new Date().toISOString()
+      };
+      list.unshift(newMsg);
+      fs.writeFileSync(messagesFilePath, JSON.stringify(list, null, 2), 'utf-8');
+      res.status(200).json({ success: true, message: newMsg });
+      return;
+    }
+    res.status(400).json({ error: 'Format pesan tidak valid' });
+  } catch {
+    res.status(500).json({ error: 'Gagal menyimpan pesan' });
+  }
+});
+
+app.delete('/api/messages/:id', (req: Request, res: Response): void => {
+  try {
+    const { id } = req.params;
+    if (fs.existsSync(messagesFilePath)) {
+      let list: any[] = JSON.parse(fs.readFileSync(messagesFilePath, 'utf-8'));
+      if (Array.isArray(list)) {
+        list = list.filter((m: any) => String(m.id) !== String(id));
+        fs.writeFileSync(messagesFilePath, JSON.stringify(list, null, 2), 'utf-8');
+      }
+    }
+    res.status(200).json({ success: true });
+  } catch {
+    res.status(500).json({ error: 'Gagal menghapus pesan' });
   }
 });
 

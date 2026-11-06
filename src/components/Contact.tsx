@@ -19,8 +19,26 @@ export default function Contact() {
  const [formData, setFormData] = useState({ name: '', email: '', message: '' });
  const [isSubmitting, setIsSubmitting] = useState(false);
  const [isSuccess, setIsSuccess] = useState(false);
- const [messages, setMessages] = useState<any[]>([]);
- const [loadingMessages, setLoadingMessages] = useState(true);
+ const [messages, setMessages] = useState<any[]>(() => {
+   try {
+     const raw = typeof window !== 'undefined' ? localStorage.getItem('user_messages') : null;
+     if (raw) {
+       const parsed = JSON.parse(raw);
+       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+     }
+   } catch {}
+   return [];
+ });
+ const [loadingMessages, setLoadingMessages] = useState(() => {
+   try {
+     const raw = typeof window !== 'undefined' ? localStorage.getItem('user_messages') : null;
+     if (raw) {
+       const parsed = JSON.parse(raw);
+       if (Array.isArray(parsed) && parsed.length > 0) return false;
+     }
+   } catch {}
+   return true;
+ });
  const [showAllComments, setShowAllComments] = useState(false);
  const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
  const [toast, setToast] = useState<{ show: boolean; type: 'success' | 'error'; title: string; text: string } | null>(null);
@@ -84,7 +102,46 @@ export default function Contact() {
   };
   window.addEventListener('message_deleted', handleMessageDeleted);
 
-  // Berlangganan data seluruh komentar secara publik untuk semua pengunjung
+  // 1. Muat komentar yang sudah ada dari endpoint server disk (/api/messages)
+  fetch('/api/messages')
+    .then(res => res.ok ? res.json() : [])
+    .then(apiData => {
+      if (Array.isArray(apiData) && apiData.length > 0) {
+        let localDeleted: Set<string> = new Set();
+        try {
+          const rawDel = localStorage.getItem('deleted_message_ids');
+          if (rawDel) localDeleted = new Set(JSON.parse(rawDel));
+        } catch {}
+
+        setMessages(prev => {
+          const map = new Map<string, any>();
+          apiData.forEach((m: any) => {
+            if (!localDeleted.has(String(m.id)) && m.isDeleted !== true) {
+              map.set(String(m.id), m);
+            }
+          });
+          prev.forEach((m: any) => {
+            if (!localDeleted.has(String(m.id)) && m.isDeleted !== true) {
+              map.set(String(m.id), m);
+            }
+          });
+          const merged = Array.from(map.values());
+          merged.sort((a: any, b: any) => {
+            const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+            const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+            return timeB - timeA;
+          });
+          try {
+            localStorage.setItem('user_messages', JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+        setLoadingMessages(false);
+      }
+    })
+    .catch(() => {});
+
+  // 2. Berlangganan data seluruh komentar secara publik untuk sinkronisasi cloud jika tersedia
   const unsubscribeMessages = onSnapshot(
     collection(db, 'messages'),
     (snapshot) => {
@@ -101,25 +158,33 @@ export default function Contact() {
       const msgData: any[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        // Saring secara ketat: pesan yang dihapus TIDAK BOLEH tampil di website utama
         if (data.isDeleted === true || data.status === 'deleted' || deletedSet.has(docSnap.id)) {
           return;
         }
         msgData.push({ id: docSnap.id, ...data });
       });
 
-      // Urutkan dari komentar terbaru ke terlama secara andal
-      msgData.sort((a, b) => {
-        const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
-        const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
-        return timeB - timeA;
-      });
-
-      setMessages(msgData);
+      if (msgData.length > 0) {
+        setMessages(prev => {
+          const map = new Map<string, any>();
+          prev.forEach((m: any) => map.set(String(m.id), m));
+          msgData.forEach((m: any) => map.set(String(m.id), m));
+          const merged = Array.from(map.values()).filter(m => !deletedSet.has(String(m.id)));
+          merged.sort((a, b) => {
+            const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+            const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+            return timeB - timeA;
+          });
+          try {
+            localStorage.setItem('user_messages', JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      }
       setLoadingMessages(false);
     },
     (err) => {
-      console.warn("Messages public subscription notice:", err);
+      console.warn("Messages public subscription notice (retaining disk/cached messages):", err);
       setLoadingMessages(false);
     }
   );
@@ -157,65 +222,55 @@ export default function Contact() {
   setIsSubmitting(true);
   const currentName = formData.name.trim();
 
-  if (isQuotaExhausted()) {
-    try {
-      const localMsgs = JSON.parse(localStorage.getItem('user_messages') || '[]');
-      localMsgs.push({ ...formData, dateAdded: new Date().toISOString() });
-      localStorage.setItem('user_messages', JSON.stringify(localMsgs));
-    } catch {}
-    setIsSubmitting(false);
-    setIsSuccess(true);
-    setFormData({ name: '', email: '', message: '' });
-    triggerToast(
-      'success',
-      'Pesan Berhasil Dicatat!',
-      `Terima kasih${currentName ? `, ${currentName}` : ''}. Pesan Anda telah dicatat. Anda juga dapat langsung berdiskusi via WhatsApp.`
-    );
-    setTimeout(() => setIsSuccess(false), 5000);
-    return;
+  const newCommentObj = {
+    id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    name: currentName || 'Pengunjung Anonim',
+    email: formData.email.trim(),
+    message: formData.message.trim(),
+    dateAdded: new Date().toISOString()
+  };
+
+  // 1. Tampilkan komentar baru seketika di state website (Optimistic UI)
+  setMessages(prev => [newCommentObj, ...prev]);
+
+  // 2. Simpan seketika di penyimpanan lokal perangkat
+  try {
+    const localMsgs = JSON.parse(localStorage.getItem('user_messages') || '[]');
+    localMsgs.unshift(newCommentObj);
+    localStorage.setItem('user_messages', JSON.stringify(localMsgs));
+  } catch {}
+
+  // 3. Simpan ke server disk via /api/messages secara permanen
+  try {
+    fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newCommentObj)
+    }).catch(() => {});
+  } catch {}
+
+  // 4. Sinkronkan ke Cloud Firestore di latar belakang
+  if (!isQuotaExhausted()) {
+    addDoc(collection(db, 'messages'), {
+      ...formData,
+      dateAdded: new Date()
+    }).catch((error: any) => {
+      if (isQuotaError(error)) {
+        markQuotaExhausted();
+      }
+      console.warn("Background cloud comment sync notice:", error);
+    });
   }
 
-  try {
-   await addDoc(collection(db, 'messages'), {
-    ...formData,
-    dateAdded: new Date()
-   });
-   setIsSubmitting(false);
-   setIsSuccess(true);
-   setFormData({ name: '', email: '', message: '' });
-   triggerToast(
-     'success',
-     'Pesan Berhasil Terkirim!',
-     `Terima kasih${currentName ? `, ${currentName}` : ''}. Pesan Anda telah kami terima dan akan segera kami balas.`
-   );
-   setTimeout(() => setIsSuccess(false), 5000);
-  } catch (error: any) {
-   if (isQuotaError(error)) {
-     markQuotaExhausted();
-     try {
-       const localMsgs = JSON.parse(localStorage.getItem('user_messages') || '[]');
-       localMsgs.push({ ...formData, dateAdded: new Date().toISOString() });
-       localStorage.setItem('user_messages', JSON.stringify(localMsgs));
-     } catch {}
-     setIsSubmitting(false);
-     setIsSuccess(true);
-     setFormData({ name: '', email: '', message: '' });
-     triggerToast(
-       'success',
-       'Pesan Berhasil Dicatat!',
-       `Pesan Anda tersimpan di sistem lokal. Anda dapat menghubungi via WhatsApp untuk respons cepat.`
-     );
-     setTimeout(() => setIsSuccess(false), 5000);
-     return;
-   }
-   console.warn("Error adding document: ", error);
-   setIsSubmitting(false);
-   triggerToast(
-     'error',
-     'Gagal Mengirim Pesan',
-     'Terjadi kendala saat mengirim pesan ke server. Silakan coba lagi atau hubungi kami langsung via WhatsApp.'
-   );
-  }
+  setIsSubmitting(false);
+  setIsSuccess(true);
+  setFormData({ name: '', email: '', message: '' });
+  triggerToast(
+    'success',
+    'Pesan Berhasil Terkirim!',
+    `Terima kasih${currentName ? `, ${currentName}` : ''}. Komentar Anda telah tersimpan dan tampil di website.`
+  );
+  setTimeout(() => setIsSuccess(false), 5000);
  };
 
  const waLink = "https://wa.me/qr/UDCAZ44OXWLGM1";

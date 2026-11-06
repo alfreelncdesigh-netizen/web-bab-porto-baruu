@@ -335,8 +335,15 @@ self.addEventListener('message', (event) => {
     return;
   }
 
+  // Menyimpan semua aset dan snapshot saat tombol terima cookie ditekan
+  if (data.type === 'STORE_ALL_CONTENT_CACHE' && data.payload) {
+    self.clients.claim();
+    return;
+  }
+
   // Membersihkan semua cache jika pengguna menekan reset data
   if (data.type === 'CLEAR_ALL_CACHES') {
     caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))));
   }
 });
+

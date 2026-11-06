@@ -7,7 +7,7 @@ import { db, auth } from './firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { logFirestoreError, OperationType, isQuotaExhausted } from './firestoreErrorHandler';
 
-const DUMMY_PROJECT_IDS = new Set(['2', '3', '4', '5', '6', '7', 'poster-lks-smkn1-sinjai', 'branding-kemasan-teh-hijau', 'poster-promosi-diskon-kreatif', 'showcase-visual-3d-minimalis', 'banner-informasi-bca-finansial', 'visual-sosial-media-konten-kreatif', 'workspace-editing-tools-3d']);
+const DUMMY_PROJECT_IDS = new Set(['poster-lks-smkn1-sinjai', 'branding-kemasan-teh-hijau', 'poster-promosi-diskon-kreatif', 'showcase-visual-3d-minimalis', 'banner-informasi-bca-finansial', 'visual-sosial-media-konten-kreatif', 'workspace-editing-tools-3d']);
 
 const DUMMY_PROJECT_TITLES = new Set([
   "Aplikasi Keuangan FinSmart",

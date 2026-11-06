@@ -53,16 +53,26 @@ export default function Experience() {
   const handleOpenExp = (exp: any, initialImg?: string) => {
     setSelectedExp(exp);
     setImageAspectRatio(null);
-    const firstImg = initialImg || (exp.images && exp.images[0]) || '';
+    const expImages = Array.from(
+      new Set(
+        [
+          ...(Array.isArray(exp?.images) ? exp.images : []),
+          exp?.image
+        ].filter((img): img is string => typeof img === 'string' && img.trim().length > 0)
+      )
+    );
+    const firstImg = initialImg || expImages[0] || '';
     setActivePhotoUrl(firstImg);
   };
 
-  const allExpImages: string[] = selectedExp?.images && Array.isArray(selectedExp.images)
-    ? selectedExp.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0)
-    : [];
-  if (allExpImages.length === 0 && selectedExp?.image) {
-    allExpImages.push(selectedExp.image);
-  }
+  const allExpImages: string[] = selectedExp ? Array.from(
+    new Set(
+      [
+        ...(Array.isArray(selectedExp?.images) ? selectedExp.images : []),
+        selectedExp?.image
+      ].filter((img): img is string => typeof img === 'string' && img.trim().length > 0)
+    )
+  ) : [];
 
   const currentPhotoIndex = Math.max(0, allExpImages.indexOf(activePhotoUrl));
 
@@ -244,6 +254,15 @@ export default function Experience() {
         <motion.div variants={childGridContainer} className="space-y-4 sm:space-y-6 md:space-y-8 flex flex-col items-center w-full">
           {experiences.map((exp, idx) => {
             const isEven = idx % 2 === 0;
+            const expImages = Array.from(
+              new Set(
+                [
+                  ...(Array.isArray(exp?.images) ? exp.images : []),
+                  exp?.image
+                ].filter((img): img is string => typeof img === 'string' && img.trim().length > 0)
+              )
+            );
+
             return (
               <motion.div 
                 key={exp.id ? `exp-${exp.id}-${idx}` : `exp-idx-${idx}`}
@@ -320,47 +339,78 @@ export default function Experience() {
                     )}
 
                     {/* Tombol Lihat Detail & Dokumentasi */}
-                    {exp.images && exp.images.length > 0 && (
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenExp(exp);
-                        }}
-                        className="inline-flex items-center gap-2 px-3.5 py-1.5 md:px-4 md:py-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-xs font-semibold text-black dark:text-white transition-all border border-zinc-200 dark:border-zinc-800 shadow-sm w-fit active:scale-95 cursor-pointer mt-1"
-                      >
-                        <Camera className="w-3.5 h-3.5 text-zinc-500" />
-                        <span>Lihat Detail ({exp.images.length} foto)</span>
-                      </button>
+                    {expImages.length > 0 && (
+                      <div className="space-y-2 mt-1">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenExp(exp);
+                          }}
+                          className="inline-flex items-center gap-2 px-3.5 py-1.5 md:px-4 md:py-2 bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl text-xs font-semibold text-black dark:text-white transition-all border border-zinc-200 dark:border-zinc-800 shadow-sm w-fit active:scale-95 cursor-pointer"
+                        >
+                          <Camera className="w-3.5 h-3.5 text-zinc-500" />
+                          <span>Lihat Detail ({expImages.length} foto)</span>
+                        </button>
+
+                        {/* Preview Thumbnail Strip Foto Dokumentasi pada Kartu */}
+                        {expImages.length > 1 && (
+                          <div className="flex items-center gap-1.5 pt-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                            {expImages.slice(0, 5).map((thumbImg: string, thumbIdx: number) => (
+                              <div
+                                key={thumbIdx}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenExp(exp, thumbImg);
+                                }}
+                                className="relative w-10 h-10 sm:w-11 sm:h-11 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800 hover:border-indigo-500 dark:hover:border-indigo-400 transition-all cursor-pointer shrink-0"
+                                title={`Foto ${thumbIdx + 1}`}
+                              >
+                                <img
+                                  src={resolveImageUrl(thumbImg)}
+                                  alt=""
+                                  className="w-full h-full object-cover"
+                                  onError={handleImageError}
+                                />
+                                {thumbIdx === 4 && expImages.length > 5 && (
+                                  <div className="absolute inset-0 bg-black/75 text-white text-[8px] font-bold flex items-center justify-center font-mono">
+                                    +{expImages.length - 5}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
 
                   {/* Image Gallery - Gambar Pertama */}
                   <div className="w-full md:w-1/2 flex items-center justify-center">
-                    {exp.images && exp.images.length > 0 && (
+                    {expImages.length > 0 && (
                       <div 
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleOpenExp(exp, exp.images[0]);
+                          handleOpenExp(exp, expImages[0]);
                         }}
                         className="relative rounded-xl md:rounded-2xl cursor-pointer group w-full max-w-md sm:max-w-lg md:max-w-none md:bg-transparent md:border-0 md:p-0 bg-zinc-100/90 dark:bg-zinc-900/90 border border-zinc-200/80 dark:border-zinc-800/80 p-1.5 sm:p-3 flex items-center justify-center overflow-hidden"
                       >
                         <img 
-                          src={resolveImageUrl(exp.images[0])} 
+                          src={resolveImageUrl(expImages[0])} 
                           alt={exp.header} 
                           className="w-full h-auto max-h-[290px] sm:max-h-[380px] md:max-h-[460px] lg:max-h-[540px] xl:max-h-[600px] object-contain rounded-lg md:rounded-2xl shadow-xs md:shadow-md transition-transform duration-500 group-hover:scale-[1.02] block mx-auto" 
                           loading="lazy"
                           onError={handleImageError}
                         />
-                        {exp.images.length > 1 && (
+                        {expImages.length > 1 && (
                           <div className="absolute top-2.5 right-2.5 z-10 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md text-white text-[10px] font-bold flex items-center gap-1.5 shadow-md border border-white/10">
                             <Camera className="w-3 h-3 text-white" />
-                            <span>{exp.images.length} Foto</span>
+                            <span>{expImages.length} Foto</span>
                           </div>
                         )}
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center rounded-xl md:rounded-2xl pointer-events-none">
                           <div className="opacity-0 group-hover:opacity-100 bg-white/95 dark:bg-black/90 text-black dark:text-white px-4 py-2 rounded-full text-[11px] font-bold transition-all transform translate-y-2 group-hover:translate-y-0 backdrop-blur-sm shadow-md flex items-center gap-1.5 pointer-events-auto">
                             <Maximize2 className="w-3 h-3" />
-                            Buka Detail ({exp.images.length} foto)
+                            Buka Detail ({expImages.length} foto)
                           </div>
                         </div>
                       </div>
@@ -659,6 +709,65 @@ export default function Experience() {
                             {selectedExp.collaborationPartner ? `Kolaborasi dengan ${selectedExp.collaborationPartner}` : 'Pengalaman Kolaborasi Mitra'}
                           </h4>
                         </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bagian Galeri Seluruh Foto Dokumentasi & Sertifikat */}
+                  {allExpImages.length > 0 && (
+                    <div className="mt-2 mb-5 pt-4 border-t border-zinc-100 dark:border-zinc-800/60">
+                      <div className="flex items-center justify-between mb-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <h4 className="text-xs font-bold text-black dark:text-white flex items-center gap-1.5">
+                            <Camera size={13} className="text-emerald-500" />
+                            Dokumentasi & Sertifikat
+                          </h4>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
+                          {allExpImages.length} Foto
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {allExpImages.map((img, idx) => {
+                          const isActive = activePhotoUrl === img;
+                          return (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => {
+                                setActivePhotoUrl(img);
+                                setImageAspectRatio(null);
+                                if (window.innerWidth < 768) {
+                                  modalRootRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                                }
+                              }}
+                              className={`group/thumb relative rounded-xl overflow-hidden border-2 aspect-video bg-zinc-100 dark:bg-zinc-900 transition-all cursor-pointer ${
+                                isActive
+                                  ? 'border-indigo-600 ring-2 ring-indigo-500/30 scale-[1.02] shadow-sm'
+                                  : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600'
+                              }`}
+                              title={`Foto ${idx + 1} - Klik untuk tampilkan`}
+                            >
+                              <img
+                                src={resolveImageUrl(img)}
+                                alt={`Foto ${idx + 1}`}
+                                className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-200"
+                                onError={handleImageError}
+                              />
+                              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-xs text-[8px] font-bold text-white font-mono">
+                                #{idx + 1}
+                              </div>
+                              {isActive && (
+                                <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-indigo-600 text-[8px] font-bold text-white flex items-center gap-0.5 shadow-xs">
+                                  <Check size={8} className="stroke-[3]" />
+                                  <span>Aktif</span>
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

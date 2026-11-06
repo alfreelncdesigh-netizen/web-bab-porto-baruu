@@ -13,6 +13,43 @@ export default function MessagesAdmin() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
+    // 1. Muat pesan dari disk server (/api/messages)
+    fetch('/api/messages')
+      .then(res => res.ok ? res.json() : [])
+      .then(apiData => {
+        if (Array.isArray(apiData) && apiData.length > 0) {
+          let localDeleted: Set<string> = new Set();
+          try {
+            const raw = localStorage.getItem('deleted_message_ids');
+            if (raw) localDeleted = new Set(JSON.parse(raw));
+          } catch {}
+
+          setMessages(prev => {
+            const map = new Map<string, any>();
+            apiData.forEach((m: any) => {
+              if (!localDeleted.has(String(m.id)) && m.isDeleted !== true) {
+                map.set(String(m.id), m);
+              }
+            });
+            prev.forEach((m: any) => {
+              if (!localDeleted.has(String(m.id)) && m.isDeleted !== true) {
+                map.set(String(m.id), m);
+              }
+            });
+            const list = Array.from(map.values());
+            list.sort((a: any, b: any) => {
+              const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+              const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+              return timeB - timeA;
+            });
+            return list;
+          });
+          setLoading(false);
+        }
+      })
+      .catch(() => {});
+
+    // 2. Berlangganan pesan dari Firestore jika tersedia
     const unsubscribe = onSnapshot(
       collection(db, 'messages'),
       (snapshot) => {
@@ -30,12 +67,20 @@ export default function MessagesAdmin() {
           }
           msgData.push({ id: docSnap.id, ...data });
         });
-        msgData.sort((a, b) => {
-          const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
-          const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
-          return timeB - timeA;
-        });
-        setMessages(msgData);
+        if (msgData.length > 0) {
+          setMessages(prev => {
+            const map = new Map<string, any>();
+            prev.forEach((m: any) => map.set(String(m.id), m));
+            msgData.forEach((m: any) => map.set(String(m.id), m));
+            const list = Array.from(map.values()).filter(m => !localDeleted.has(String(m.id)));
+            list.sort((a, b) => {
+              const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+              const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+              return timeB - timeA;
+            });
+            return list;
+          });
+        }
         setLoading(false);
       },
       (err) => {
@@ -56,7 +101,7 @@ export default function MessagesAdmin() {
     const id = messageToDelete.id;
 
     // 1. Optimistic UI update
-    setMessages(prev => prev.filter(m => m.id !== id));
+    setMessages(prev => prev.filter(m => String(m.id) !== String(id)));
     setToast("Pesan berhasil dihapus");
     setTimeout(() => setToast(''), 3000);
     setMessageToDelete(null);
@@ -65,19 +110,24 @@ export default function MessagesAdmin() {
     try {
       const raw = localStorage.getItem('deleted_message_ids');
       const list = raw ? JSON.parse(raw) : [];
-      if (!list.includes(id)) {
-        list.push(id);
+      if (!list.includes(String(id))) {
+        list.push(String(id));
         localStorage.setItem('deleted_message_ids', JSON.stringify(list));
       }
     } catch {}
 
-    // 3. Siarkan event ke seluruh komponen aktif (seperti Contact.tsx di halaman publik)
+    // 3. Hapus dari server disk (/api/messages/:id)
+    try {
+      fetch(`/api/messages/${encodeURIComponent(String(id))}`, { method: 'DELETE' }).catch(() => {});
+    } catch {}
+
+    // 4. Siarkan event ke seluruh komponen aktif (seperti Contact.tsx di halaman publik)
     window.dispatchEvent(new CustomEvent('message_deleted', { detail: { id } }));
     window.dispatchEvent(new CustomEvent('messages_updated'));
 
     try {
-      // 4. Tandai dokumen sebagai isDeleted di Firestore (safety net instan)
-      await setDoc(doc(db, 'messages', id), { 
+      // 5. Tandai dokumen sebagai isDeleted di Firestore (safety net instan)
+      await setDoc(doc(db, 'messages', String(id)), { 
         isDeleted: true, 
         status: 'deleted',
         deletedAt: new Date().toISOString(),
@@ -85,18 +135,18 @@ export default function MessagesAdmin() {
         updatedByAdmin: true
       }, { merge: true }).catch(() => {});
 
-      // 5. Hapus permanen dokumen dari database Firestore
-      await deleteDoc(doc(db, 'messages', id));
+      // 6. Hapus permanen dokumen dari database Firestore
+      await deleteDoc(doc(db, 'messages', String(id))).catch(() => {});
 
-      // 6. Catat ID pesan terhapus di settings/global agar tersimpan permanen di cloud
+      // 7. Catat ID pesan terhapus di settings/global agar tersimpan permanen di cloud
       try {
         const globalSnap = await getDoc(doc(db, 'settings', 'global'));
         const existingDeleted: string[] = globalSnap.exists() && Array.isArray(globalSnap.data().deletedMessageIds) 
           ? globalSnap.data().deletedMessageIds 
           : [];
-        if (!existingDeleted.includes(id)) {
+        if (!existingDeleted.includes(String(id))) {
           await setDoc(doc(db, 'settings', 'global'), {
-            deletedMessageIds: [...existingDeleted, id],
+            deletedMessageIds: [...existingDeleted, String(id)],
             _adminAuth: 'alfreelnc_admin_auth_verified',
             updatedByAdmin: true
           }, { merge: true });

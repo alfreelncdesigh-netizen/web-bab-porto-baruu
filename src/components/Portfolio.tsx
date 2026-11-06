@@ -246,16 +246,17 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Mode Layout Kisi Portofolio: 'grid-2' (dua gambar kanan & kiri) atau 'single' (satu gambar ke bawah)
-  const [layoutMode, setLayoutMode] = useState<'grid-2' | 'single'>(() => {
+  // Mode Layout Kisi Portofolio: 'grid-3' (tampilan 3 karya) atau 'grid-2' (dua gambar kanan & kiri rasio asli)
+  const [layoutMode, setLayoutMode] = useState<'grid-3' | 'grid-2'>(() => {
     try {
       const saved = localStorage.getItem('portfolio_layout_mode');
-      if (saved === 'grid-2' || saved === 'single') return saved;
+      if (saved === 'grid-3' || saved === 'grid-2') return saved;
+      if (saved === 'single') return 'grid-2';
     } catch {}
-    return 'grid-2';
+    return 'grid-3';
   });
 
-  const handleSetLayoutMode = (mode: 'grid-2' | 'single') => {
+  const handleSetLayoutMode = (mode: 'grid-3' | 'grid-2') => {
     setLayoutMode(mode);
     try {
       localStorage.setItem('portfolio_layout_mode', mode);
@@ -326,12 +327,29 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       return Promise.all(promises);
     };
 
-    // Muat data awal dari cache penyimpanan lokal segera tanpa memblokir UI
+    // 1. Muat data awal dari cache penyimpanan lokal segera tanpa memblokir UI
     const initialProjects = getStoredProjects();
     if (initialProjects.length > 0) {
+      setProjects(initialProjects);
       if (isMounted) setLoading(false);
       preloadImages(initialProjects);
     }
+
+    // 2. Tarik data instan dari disk server (/api/projects) tanpa menunggu Firebase (bebas batasan kuota)
+    fetch('/api/projects')
+      .then(res => res.ok ? res.json() : [])
+      .then(apiProjects => {
+        if (Array.isArray(apiProjects) && apiProjects.length > 0) {
+          const cleaned = cleanProjects(apiProjects);
+          if (cleaned.length > 0 && isMounted) {
+            setProjects(cleaned);
+            saveStoredProjects(cleaned);
+            setLoading(false);
+            preloadImages(cleaned);
+          }
+        }
+      })
+      .catch((e) => console.warn("Fetch /api/projects notice:", e));
 
     const handleUpdate = (e: any) => {
       if (e.detail) {
@@ -342,6 +360,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     };
     window.addEventListener('user_projects_updated', handleUpdate);
 
+    // 3. Sinkronisasi sekunder dari Cloud Firestore
     const unsubscribe = onSnapshot(
       collection(db, 'projects'),
       (snapshot) => {
@@ -350,30 +369,35 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           const data = doc.data() as any;
           if (!data.isArchived) projData.push({ id: doc.id, ...data });
         });
-        projData.sort((a, b) => {
-          const dateA = a.date || '';
-          const dateB = b.date || '';
-          return dateB.localeCompare(dateA);
-        });
-        const cleaned = cleanProjects(projData);
-        setProjects(cleaned);
-        saveStoredProjects(cleaned);
-        if (isMounted) setLoading(false);
-        preloadImages(cleaned);
+        if (projData.length > 0) {
+          projData.sort((a, b) => {
+            const dateA = a.date || '';
+            const dateB = b.date || '';
+            return dateB.localeCompare(dateA);
+          });
+          const cleaned = cleanProjects(projData);
+          if (cleaned.length > 0) {
+            setProjects(cleaned);
+            saveStoredProjects(cleaned);
+            if (isMounted) setLoading(false);
+            preloadImages(cleaned);
+          }
+        }
       },
       (error) => {
-        console.warn("Firestore Portfolio Error (using stored projects):", error);
+        console.warn("Firestore Portfolio Error (using stored/api projects):", error);
         const stored = getStoredProjects();
-        setProjects(stored);
+        if (stored.length > 0) {
+          setProjects(stored);
+        }
         if (isMounted) setLoading(false);
-        preloadImages(stored);
       }
     );
 
-    // Safety timeout singkat agar skeleton tidak pernah menggantung
+    // Safety timeout singkat agar skeleton tidak pernah menggantung lebih dari 400ms
     const timer = setTimeout(() => {
       if (isMounted) setLoading(false);
-    }, 1200);
+    }, 400);
 
     return () => {
       isMounted = false;
@@ -612,14 +636,14 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
 
             {/* Pilihan Kisi di Sebelah Kanan */}
             <div className="flex items-center gap-1 p-1 rounded-xl bg-zinc-100/90 dark:bg-[#141414] border border-zinc-200/80 dark:border-zinc-800 shadow-2xs">
-              {/* Tombol 1: Kisi 3 Karya Kanan dan Kiri */}
+              {/* Tombol 1: Tampilan Kisi 3 Kolom */}
               <button
                 type="button"
-                onClick={() => handleSetLayoutMode('grid-2')}
-                title="Tampilan Kisi 3 Karya (Desktop)"
-                aria-label="Tampilan Kisi 3 Karya (Desktop)"
+                onClick={() => handleSetLayoutMode('grid-3')}
+                title="Tampilan Kisi 3 Kolom"
+                aria-label="Tampilan Kisi 3 Kolom"
                 className={`p-1.5 sm:p-2 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
-                  layoutMode === 'grid-2'
+                  layoutMode === 'grid-3'
                     ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-xs'
                     : 'text-zinc-400 dark:text-zinc-500 hover:text-black dark:hover:text-white'
                 }`}
@@ -632,22 +656,22 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                 </svg>
               </button>
 
-              {/* Tombol 2: Kisi Satu Gambar Kebawah */}
+              {/* Tombol 2: Tampilan 2 Kolom Kiri dan Kanan (Rasio Asli Gambar) */}
               <button
                 type="button"
-                onClick={() => handleSetLayoutMode('single')}
-                title="Tampilan Satu Gambar ke Bawah"
-                aria-label="Tampilan Satu Gambar ke Bawah"
+                onClick={() => handleSetLayoutMode('grid-2')}
+                title="Tampilan 2 Kolom Kiri dan Kanan (Rasio Asli Gambar)"
+                aria-label="Tampilan 2 Kolom Kiri dan Kanan (Rasio Asli Gambar)"
                 className={`p-1.5 sm:p-2 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
-                  layoutMode === 'single'
+                  layoutMode === 'grid-2'
                     ? 'bg-white dark:bg-zinc-800 text-black dark:text-white shadow-xs'
                     : 'text-zinc-400 dark:text-zinc-500 hover:text-black dark:hover:text-white'
                 }`}
               >
-                {/* Logo sederhana satu gambar kebawah */}
+                {/* Logo kisi 2 kolom di kanan dan kiri */}
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                  <rect x="3" y="3" width="14" height="6" rx="1.5" />
-                  <rect x="3" y="11" width="14" height="6" rx="1.5" />
+                  <rect x="2.5" y="3" width="6.8" height="14" rx="1.5" />
+                  <rect x="10.7" y="3" width="6.8" height="14" rx="1.5" />
                 </svg>
               </button>
             </div>
@@ -656,8 +680,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
 
         {loading ? (
           <div className={
-            layoutMode === 'single'
-              ? 'flex flex-col gap-8 md:gap-10 max-w-4xl xl:max-w-5xl mx-auto'
+            layoutMode === 'grid-2'
+              ? 'grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-7 md:gap-8 items-start'
               : 'columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 lg:gap-8'
           }>
             {[1, 2, 3, 4, 5, 6].map((n) => (
@@ -676,8 +700,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
             initial="hidden"
             animate="visible"
             className={
-              layoutMode === 'single'
-                ? 'flex flex-col gap-8 md:gap-10 max-w-4xl xl:max-w-5xl mx-auto'
+              layoutMode === 'grid-2'
+                ? 'grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-7 md:gap-8 items-start'
                 : 'columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 lg:gap-8 [column-fill:_balance]'
             }
           >
@@ -700,18 +724,18 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           layout
                           variants={cardItemVariants}
                           key={project.id ? `project-${project.id}-${index}` : `project-idx-${index}`} 
-                          className={`group relative w-full ${layoutMode === 'single' ? 'mb-8 md:mb-10' : 'break-inside-avoid mb-6 md:mb-7 lg:mb-8'} rounded-2xl overflow-hidden cursor-pointer border hover:shadow-2xl transition-all ${cinematicCardClass}`} 
+                          className={`group relative w-full ${layoutMode === 'grid-2' ? 'mb-0' : 'break-inside-avoid mb-6 md:mb-7 lg:mb-8'} rounded-2xl overflow-hidden cursor-pointer border hover:shadow-2xl transition-all ${cinematicCardClass}`} 
                           onClick={() => handleOpenArticle(project)}
                         >
                           {project.image ? (
                             <PortfolioLazyImage 
                               src={project.image} 
                               alt={project.title} 
-                              priority={index < 3}
-                              className="w-full h-auto object-contain transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block" 
+                              priority={index < 4}
+                              className="w-full h-auto object-contain transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block mx-auto" 
                               skeletonClassName="rounded-2xl"
-                              aspectClass="min-h-[200px] sm:min-h-[260px]"
-                              containerClassName="relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center"
+                              aspectClass={layoutMode === 'grid-2' ? "min-h-[240px] sm:min-h-[320px]" : "min-h-[200px] sm:min-h-[260px]"}
+                              containerClassName="relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center rounded-2xl"
                             />
                           ) : (
                             <div className="w-full aspect-[4/5] min-h-[260px] sm:min-h-[340px] transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800 animate-shimmer rounded-2xl"></div>

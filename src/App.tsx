@@ -572,17 +572,32 @@ export default function App() {
               }
             }).catch(e => console.warn("Cloud settings sync fallback:", e));
 
-            // Projects
+            // Projects: Sinkronisasi server disk (/api/projects) & Cloud Firestore
+            const serverProjectsPromise = fetch('/api/projects')
+              .then(res => res.ok ? res.json() : null)
+              .then(async serverProjs => {
+                if (Array.isArray(serverProjs) && serverProjs.length > 0) {
+                  const cleaned = cleanProjects(serverProjs);
+                  if (cleaned.length > 0) {
+                    saveStoredProjects(cleaned);
+                    syncFirestoreSnapshotToSW('projects', cleaned);
+                    window.dispatchEvent(new CustomEvent('user_projects_updated', { detail: cleaned }));
+                    await Promise.all(cleaned.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
+                  }
+                }
+              }).catch(() => {});
+
             const projectsPromise = getDocs(collection(db, 'projects')).then(async (snap) => {
               if (!snap.empty) {
                 const projs: any[] = [];
                 snap.forEach(d => { if(!d.data().isArchived) projs.push({ id: d.id, ...d.data() }) });
                 const cleanedProjs = cleanProjects(projs);
-                cleanedProjs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-                saveStoredProjects(cleanedProjs);
-                syncFirestoreSnapshotToSW('projects', cleanedProjs);
-                // Hanya preload 2 proyek teratas agar hemat bandwidth dan sesuai dengan lazy loading IntersectionObserver
-                await Promise.all(cleanedProjs.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
+                if (cleanedProjs.length > 0) {
+                  cleanedProjs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+                  saveStoredProjects(cleanedProjs);
+                  syncFirestoreSnapshotToSW('projects', cleanedProjs);
+                  await Promise.all(cleanedProjs.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
+                }
               }
             }).catch(e => console.warn("Cloud projects sync fallback:", e));
 
@@ -602,7 +617,20 @@ export default function App() {
               }
             }).catch(e => console.warn("Cloud blogs sync fallback:", e));
 
-            // Experiences
+            // Experiences: Sinkronkan disk server & Cloud Firestore
+            const serverExpPromise = fetch('/api/experiences')
+              .then(res => res.ok ? res.json() : null)
+              .then(serverData => {
+                if (Array.isArray(serverData) && serverData.length > 0) {
+                  const current = getStoredExperiences();
+                  if (!current || current.length === 0) {
+                    saveStoredExperiences(serverData);
+                    syncFirestoreSnapshotToSW('experiences', serverData);
+                    window.dispatchEvent(new CustomEvent('user_experiences_updated', { detail: serverData }));
+                  }
+                }
+              }).catch(() => {});
+
             const expPromise = getDocs(collection(db, 'experiences')).then((snap) => {
               if (!snap.empty) {
                 const exps: any[] = [];
@@ -618,7 +646,7 @@ export default function App() {
               }
             }).catch(e => console.warn("Cloud exp sync fallback:", e));
 
-            await Promise.all([settingsPromise, projectsPromise, blogsPromise, expPromise]);
+            await Promise.all([settingsPromise, projectsPromise, serverProjectsPromise, blogsPromise, expPromise, serverExpPromise]);
           } catch (err) {
             console.warn("Cloud sync offline fallback, reading SW snapshot cache:", err);
             try {
@@ -647,7 +675,11 @@ export default function App() {
           }
         };
 
-        const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 2500));
+        const isCached = typeof window !== 'undefined' && (
+          localStorage.getItem('all_content_cached') === 'true' ||
+          Boolean(localStorage.getItem('alfreelnc_cookie_consent'))
+        );
+        const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, isCached ? 800 : 2500));
         await Promise.race([
           Promise.all([...imagePromises, cloudSync()]),
           timeoutPromise
@@ -662,11 +694,15 @@ export default function App() {
         resolve();
       } else {
         window.addEventListener('load', () => resolve(), { once: true });
-        setTimeout(resolve, 2500);
+        setTimeout(resolve, 2000);
       }
     });
 
-    const minDelay = new Promise<void>((resolve) => setTimeout(resolve, 550));
+    const isAlreadyCached = typeof window !== 'undefined' && (
+      localStorage.getItem('all_content_cached') === 'true' ||
+      Boolean(localStorage.getItem('alfreelnc_cookie_consent'))
+    );
+    const minDelay = new Promise<void>((resolve) => setTimeout(resolve, isAlreadyCached ? 80 : 450));
 
     // Wait for content, images, DOM ready, and a smooth minimum presentation delay
     Promise.all([prefetchData(), domReady, minDelay])
@@ -677,10 +713,10 @@ export default function App() {
         setIsAppLoading(false);
       });
       
-    // Maximum safe fallback: ALWAYS reveal content after 2.5s
+    // Maximum safe fallback: ALWAYS reveal content after 1.2s if cached, 2.5s otherwise
     const maxFallback = setTimeout(() => {
       setIsAppLoading(false);
-    }, 2500);
+    }, isAlreadyCached ? 1200 : 2500);
 
     return () => clearTimeout(maxFallback);
   }, []);

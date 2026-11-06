@@ -174,7 +174,30 @@ export async function uploadImageToStorage(
   const abortController = new AbortController();
 
   const doUpload = async (): Promise<string> => {
-    // 1. Jalur Cepat & Instan: Unggah langsung ke server API (/api/upload) dalam hitungan milidetik
+    // 1. Jalur Cepat & Super Instan: Jika dataUrl/Base64 sudah dikompresi di client, kirim via JSON
+    if (fallbackBase64 && typeof fallbackBase64 === 'string' && fallbackBase64.startsWith('data:')) {
+      try {
+        const jsonRes = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'x-admin-token': 'alfreelnc_admin_auth_verified'
+          },
+          body: JSON.stringify({ file: fallbackBase64, filename: cleanName }),
+          signal: abortController.signal,
+        });
+        if (jsonRes.ok) {
+          const resData = await jsonRes.json();
+          if (resData.url) {
+            return resData.url;
+          }
+        }
+      } catch (jsonFastErr) {
+        console.warn("Fast JSON upload notice:", jsonFastErr);
+      }
+    }
+
+    // 2. Jalur Multipart Upload ke server API (/api/upload)
     try {
       const formData = new FormData();
       formData.append('file', fileOrBlob, cleanName);
@@ -195,10 +218,10 @@ export async function uploadImageToStorage(
         }
       }
     } catch (apiErr: any) {
-      console.warn("Local multipart upload notice, mencoba jalur JSON:", apiErr?.message || apiErr);
+      console.warn("Local multipart upload notice, mencoba fallback:", apiErr?.message || apiErr);
     }
 
-    // 2. Jalur Cepat JSON Base64 ke server API (/api/upload)
+    // 3. Cadangan JSON Base64 sekunder jika belum dikirim sebelumnya
     try {
       let base64 = fallbackBase64;
       if (!base64 && typeof window !== 'undefined') {
@@ -227,7 +250,7 @@ export async function uploadImageToStorage(
         }
       }
     } catch (jsonErr) {
-      console.warn("Local JSON upload notice:", jsonErr);
+      console.warn("Secondary JSON upload notice:", jsonErr);
     }
 
     // 3. Cadangan Cloud Firebase Storage (Timeout dipersingkat ke 2 detik agar tidak menghambat)

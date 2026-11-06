@@ -43,15 +43,20 @@
     },
     "Experience": {
       "title": "Experience",
-      "description": "A work experience record.",
+      "description": "A work experience and achievement record.",
       "type": "object",
       "properties": {
-        "role": { "type": "string", "maxLength": 200 },
-        "company": { "type": "string", "maxLength": 200 },
-        "period": { "type": "string", "maxLength": 100 },
-        "description": { "type": "string", "maxLength": 3000 }
+        "header": { "type": "string", "maxLength": 200 },
+        "subtheme": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "images": { "type": "array", "description": "Array of image URLs for documentation and certificates." },
+        "image": { "type": "string", "maxLength": 1000 },
+        "isCollaboration": { "type": "boolean" },
+        "collaborationPartner": { "type": "string", "maxLength": 200 },
+        "collaborationLogo": { "type": "string", "maxLength": 1000 },
+        "collaborationText": { "type": "string", "maxLength": 200 }
       },
-      "required": ["role", "company"]
+      "required": ["header"]
     },
     "StatsViews": {
       "title": "StatsViews",

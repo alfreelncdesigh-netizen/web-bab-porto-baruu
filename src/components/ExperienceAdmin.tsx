@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ArchiveMoveModal from './ArchiveMoveModal';
 import ConfirmModal from './ConfirmModal';
 import { db } from '../lib/firebase';
@@ -23,6 +23,7 @@ export default function ExperienceAdmin() {
   const [uploadProgressText, setUploadProgressText] = useState<string>('');
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -85,6 +86,7 @@ export default function ExperienceAdmin() {
       subtheme: '',
       description: '',
       images: [],
+      image: '',
       isNew: true,
       isCollaboration: false,
       collaborationPartner: collabPartner || siteSettings.collaboration?.partnerName || '',
@@ -95,7 +97,19 @@ export default function ExperienceAdmin() {
   };
 
   const handleEdit = (item: any) => {
-    setEditingItem({ ...item, images: item.images || [], isNew: false });
+    let existingImages: string[] = [];
+    if (Array.isArray(item.images)) {
+      existingImages = item.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0);
+    }
+    if (existingImages.length === 0 && item.image && typeof item.image === 'string' && item.image.trim()) {
+      existingImages = [item.image.trim()];
+    }
+    setEditingItem({
+      ...item,
+      images: existingImages,
+      image: existingImages[0] || '',
+      isNew: false
+    });
     setIsEditing(true);
   };
 
@@ -160,6 +174,7 @@ export default function ExperienceAdmin() {
       subtheme: (editingItem.subtheme || '').trim(),
       description: (editingItem.description || '').trim(),
       images: cleanImages,
+      image: cleanImages[0] || '',
       isCollaboration: Boolean(editingItem.isCollaboration),
       collaborationPartner: (editingItem.collaborationPartner || '').trim(),
       collaborationLogo: (editingItem.collaborationLogo || '').trim(),
@@ -251,11 +266,18 @@ export default function ExperienceAdmin() {
    * 4. Dukungan Menambah Foto ke-2, ke-3 dst secara berulang tanpa menimpa foto yang sudah ada
    */
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0 || !editingItem) return;
+    const rawFiles = e.target.files;
+    if (!rawFiles || rawFiles.length === 0 || !editingItem) return;
+
+    // Salin file list secara sinkron & bersihkan input seketika sebelum async
+    // agar pemilihan file berikutnya atau file yang sama selalu memicu onChange
+    const fileList = Array.from(rawFiles);
+    e.target.value = '';
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
 
     setUploading(true);
-    const fileList = Array.from(files);
     let successCount = 0;
     const newUrls: string[] = [];
 
@@ -264,7 +286,7 @@ export default function ExperienceAdmin() {
       setUploadProgressText(`Mengompres & Mengunggah Gambar (${i + 1}/${fileList.length})...`);
       try {
         const url = await compressAndUpload(file, 'experiences', 1200, 0.8, 12000);
-        if (url && typeof url === 'string') {
+        if (url && typeof url === 'string' && url.trim()) {
           newUrls.push(url.trim());
           successCount++;
         }
@@ -274,10 +296,18 @@ export default function ExperienceAdmin() {
     }
 
     if (newUrls.length > 0) {
-      setEditingItem((prev: any) => ({
-        ...prev,
-        images: [...(prev?.images || []), ...newUrls]
-      }));
+      setEditingItem((prev: any) => {
+        if (!prev) return prev;
+        const currentImages = Array.isArray(prev.images)
+          ? prev.images.filter((img: any) => typeof img === 'string' && img.trim())
+          : (prev.image ? [prev.image] : []);
+        const mergedImages = [...currentImages, ...newUrls];
+        return {
+          ...prev,
+          images: mergedImages,
+          image: mergedImages[0] || ''
+        };
+      });
       showToast(`${successCount} gambar berhasil ditambahkan!`);
     } else {
       showToast("Gagal mengunggah gambar, silakan coba lagi.", "error");
@@ -285,16 +315,23 @@ export default function ExperienceAdmin() {
 
     setUploading(false);
     setUploadProgressText('');
-    e.target.value = '';
   };
 
   const handleAddImageUrl = () => {
     if (!imageUrlInput.trim() || !editingItem) return;
     const url = imageUrlInput.trim();
-    setEditingItem((prev: any) => ({
-      ...prev,
-      images: [...(prev?.images || []), url]
-    }));
+    setEditingItem((prev: any) => {
+      if (!prev) return prev;
+      const currentImages = Array.isArray(prev.images)
+        ? prev.images.filter((img: any) => typeof img === 'string' && img.trim())
+        : (prev.image ? [prev.image] : []);
+      const mergedImages = [...currentImages, url];
+      return {
+        ...prev,
+        images: mergedImages,
+        image: mergedImages[0] || ''
+      };
+    });
     setImageUrlInput('');
     showToast("Gambar berhasil ditambahkan dari tautan URL!");
   };
@@ -303,7 +340,11 @@ export default function ExperienceAdmin() {
     if (!editingItem?.images) return;
     const newImages = [...editingItem.images];
     newImages.splice(idx, 1);
-    setEditingItem({ ...editingItem, images: newImages });
+    setEditingItem({ 
+      ...editingItem, 
+      images: newImages,
+      image: newImages[0] || ''
+    });
     showToast("Gambar dihapus dari daftar.");
   };
 
@@ -312,7 +353,11 @@ export default function ExperienceAdmin() {
     const newImages = [...editingItem.images];
     const [selected] = newImages.splice(idx, 1);
     newImages.unshift(selected);
-    setEditingItem({ ...editingItem, images: newImages });
+    setEditingItem({ 
+      ...editingItem, 
+      images: newImages,
+      image: newImages[0] || ''
+    });
     showToast("Foto utama berhasil diperbarui!");
   };
 
@@ -324,7 +369,11 @@ export default function ExperienceAdmin() {
     const temp = newImages[idx];
     newImages[idx] = newImages[targetIdx];
     newImages[targetIdx] = temp;
-    setEditingItem({ ...editingItem, images: newImages });
+    setEditingItem({ 
+      ...editingItem, 
+      images: newImages,
+      image: newImages[0] || ''
+    });
   };
 
   return (
@@ -637,8 +686,23 @@ export default function ExperienceAdmin() {
 
               {/* Area Upload File Baru & Tambah Gambar Berikutnya */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+                {/* Input File Tersembunyi yang Dikontrol fileInputRef */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+
                 {/* Tombol Upload File */}
-                <label className="md:col-span-2 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-black dark:hover:border-zinc-500 hover:bg-white dark:hover:bg-zinc-900 transition-all flex items-center justify-center gap-3 cursor-pointer p-4 text-center">
+                <button
+                  type="button"
+                  onClick={() => !uploading && fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="md:col-span-2 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-black dark:hover:border-zinc-500 hover:bg-white dark:hover:bg-zinc-900 transition-all flex items-center justify-center gap-3 cursor-pointer p-4 text-center disabled:opacity-60 disabled:cursor-not-allowed"
+                >
                   {uploading ? (
                     <div className="flex items-center gap-2.5">
                       <Loader2 className="w-5 h-5 animate-spin text-indigo-600 dark:text-indigo-400" />
@@ -662,15 +726,7 @@ export default function ExperienceAdmin() {
                       </div>
                     </div>
                   )}
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="hidden"
-                    disabled={uploading}
-                  />
-                </label>
+                </button>
 
                 {/* Tambah via URL Gambar */}
                 <div className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-2.5 flex flex-col justify-center gap-1.5">

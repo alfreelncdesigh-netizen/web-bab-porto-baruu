@@ -1,0 +1,134 @@
+[
+  {
+    "id": "0",
+    "title": "HUT RI-81 ",
+    "category": "Poster",
+    "image": "/uploads/project_0_1793923223558.png",
+    "description": "Desain antarmuka untuk aplikasi pelacakan keuangan pribadi dengan fokus pada kemudahan penggunaan, visualisasi data yang jernih, dan navigasi yang intuitif untuk semua kalangan.",
+    "date": "15 Agustus 2026",
+    "role": "Designer",
+    "liveUrl": "",
+    "totalHoursSpent": "16 Jam",
+    "toolsUsed": [
+      "Canva",
+      "Affinity",
+      "Photoshop"
+    ],
+    "completionDate": "2026"
+  },
+  {
+    "id": "1",
+    "title": "Idul Fitri",
+    "category": "Postingan Instagram",
+    "image": "/uploads/project_1_1793923223575.png",
+    "description": "adalah",
+    "date": "31 April 2026",
+    "role": "Simpel, Minimalis, ",
+    "liveUrl": "",
+    "totalHoursSpent": "16 Jam",
+    "toolsUsed": [
+      "Canva",
+      "Affinity",
+      "Photoshop"
+    ],
+    "completionDate": "2026"
+  },
+  {
+    "id": "2",
+    "title": "Nike Air Max 270 React",
+    "category": "Poster",
+    "image": "/uploads/project_2_1793923223577.png",
+    "description": "Desain simpel dan minimalis",
+    "date": "2026",
+    "role": "Desaigner",
+    "liveUrl": "",
+    "totalHoursSpent": "16 Jam",
+    "toolsUsed": [
+      "Canva",
+      "Affinity",
+      "Photoshop"
+    ],
+    "completionDate": "2026"
+  },
+  {
+    "id": "3",
+    "title": "TRAVEL TO INDONESIA",
+    "category": "Poster",
+    "image": "/uploads/project_3_1793923223579.png",
+    "description": "Desain poster Promosi paket Traveling maskapai Garuda Airlines",
+    "date": "27 Agustus 2026",
+    "role": "Designer",
+    "liveUrl": "",
+    "totalHoursSpent": "16 Jam",
+    "toolsUsed": [
+      "Canva",
+      "Affinity",
+      "Photoshop"
+    ],
+    "completionDate": "2026"
+  },
+  {
+    "id": "4",
+    "title": "Simple Design but impact",
+    "category": "Postingan Instagram",
+    "image": "/uploads/project_4_1793923223580.png",
+    "description": "desain simpel, tapi berdampak",
+    "date": "2024",
+    "role": "desiagner",
+    "liveUrl": "",
+    "totalHoursSpent": "16 Jam",
+    "toolsUsed": [
+      "Canva",
+      "Affinity",
+      "Photoshop"
+    ],
+    "completionDate": "2026"
+  },
+  {
+    "id": "5",
+    "title": "Idul Fitri",
+    "category": "story instagram",
+    "image": "/uploads/project_5_1793923223580.png",
+    "description": "Buat desain web nya jauh lebih rapih, modern dan minimalis lagi, buat lebih estetik, dan scalable, terutama di device mobile dan tablet\nDi mode admin, saat klik tombol hapus, aku bisa hapus gambar karya dari menu karya, pengalaman atau hapus kolom paragraf dan otomatis tidak akan tampil lagi di website\n\nKhusus di menu karya, saat menu karya di klik, bagian header akan muncul togle untuk mengganti tampilan menu karya ke mode gelap dengan desain layout langsung berubah jadi lebih sinematik, dengan latar belakang yang asetetik dan gradasi hitam biru menyala yang bergerak, serta pinggiran bingkai gambar yang lebih keren, sinematik, aestetik tapi tetap rapih\n",
+    "date": "2026",
+    "role": "Desaigner",
+    "liveUrl": "",
+    "totalHoursSpent": "16 Jam",
+    "toolsUsed": [
+      "Canva",
+      "Affinity",
+      "Photoshop"
+    ],
+    "completionDate": "2026"
+  },
+  {
+    "id": "6",
+    "title": "Food poster design",
+    "category": "poster kuliner",
+    "image": "/uploads/project_6_1793923223581.png",
+    "description": "Desain poster bertema kuliner, mengusung konsep minimalis dengan objek pada bagian center, memberikan kesan clean, dan langsung fokus pada tujuan dan tema poster",
+    "date": "2026",
+    "role": "Desaigner",
+    "liveUrl": "",
+    "totalHoursSpent": "16 Jam",
+    "toolsUsed": [
+      "Canva",
+      "Affinity",
+      "Photoshop"
+    ],
+    "completionDate": "2026"
+  },
+  {
+    "id": "7",
+    "title": "Poster Minuman Teh Hijau",
+    "category": "poster kuliner",
+    "image": "https://ais-dev-yorttlileq6ppl6ub5mkov-535307665475.asia-southeast1.run.app/uploads/Teh_Hijau_1790560458614.png",
+    "description": "Poster Minuman segar, Teh hijau, dengan warna utama Hijau, dan komposisi fokus utama pada segelas teh hijau",
+    "date": "2026",
+    "role": "DESIGNER",
+    "liveUrl": "",
+    "totalHoursSpent": "1 Jam",
+    "toolsUsed": "Affinity",
+    "completionDate": "23 Juli 2026"
+  }
+]

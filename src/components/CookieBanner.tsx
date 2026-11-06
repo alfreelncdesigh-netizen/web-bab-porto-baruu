@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Cookie, Check, ShieldCheck, X } from 'lucide-react';
+import { Cookie, Check, ShieldCheck, X, Loader2 } from 'lucide-react';
 import { getStoredCookieConsent, saveCookieConsent } from '../lib/cookies';
+
+import { cacheAllWebsiteContent } from '../lib/cacheManager';
 
 export default function CookieBanner() {
   const [isVisible, setIsVisible] = useState(() => {
@@ -13,6 +15,8 @@ export default function CookieBanner() {
     return !!getStoredCookieConsent();
   });
   const [shake, setShake] = useState(false);
+  const [isCaching, setIsCaching] = useState(false);
+  const [cachingProgressText, setCachingProgressText] = useState('');
 
   // Lock body & document scroll completely when visible
   useEffect(() => {
@@ -77,60 +81,40 @@ export default function CookieBanner() {
     return () => window.removeEventListener('openCookieSettings', handleOpenRequest);
   }, []);
 
-  const handleAcceptAll = () => {
+  const handleAcceptAll = async () => {
+    setIsCaching(true);
+    setCachingProgressText('Menyimpan semua elemen & konten...');
     saveCookieConsent({ preferences: true, analytics: true, portfolioImagesOnly: false, cacheLevel: 'all' });
+    
     try {
       localStorage.setItem('alfreelnc_cache_mode', 'all');
-      // Menyimpan semua cache: preferensi, analitik, dan gambar portofolio
-      const raw = localStorage.getItem('user_projects');
-      if (raw) {
-        const items = JSON.parse(raw);
-        if (Array.isArray(items)) {
-          items.forEach((p: { image?: string; gallery?: string[] }) => {
-            if (p.image) {
-              const img = new Image();
-              img.src = p.image;
-            }
-            if (Array.isArray(p.gallery)) {
-              p.gallery.forEach((g: string) => {
-                const img = new Image();
-                img.src = g;
-              });
-            }
-          });
-        }
-      }
-    } catch {}
-    setHasExistingConsent(true);
-    setIsVisible(false);
+      // Jalankan caching menyeluruh untuk semua elemen, teks, dan gambar website
+      await cacheAllWebsiteContent((_progress, text) => {
+        setCachingProgressText(text);
+      });
+    } catch (err) {
+      console.warn('Cache all on cookie accept:', err);
+    } finally {
+      setIsCaching(false);
+      setHasExistingConsent(true);
+      setIsVisible(false);
+      window.dispatchEvent(new CustomEvent('website_cache_completed'));
+    }
   };
 
-  const handleEssentialOnly = () => {
+  const handleEssentialOnly = async () => {
+    setIsCaching(true);
+    setCachingProgressText('Menyimpan cache esensial...');
     saveCookieConsent({ preferences: false, analytics: false, portfolioImagesOnly: true, cacheLevel: 'essential_images' });
     try {
       localStorage.setItem('alfreelnc_cache_mode', 'essential_images');
-      // Hanya menyimpan cache gambar karya portofolio (mengabaikan analitik/tracking non-esensial)
-      const raw = localStorage.getItem('user_projects');
-      if (raw) {
-        const items = JSON.parse(raw);
-        if (Array.isArray(items)) {
-          items.forEach((p: { image?: string; gallery?: string[] }) => {
-            if (p.image) {
-              const img = new Image();
-              img.src = p.image;
-            }
-            if (Array.isArray(p.gallery)) {
-              p.gallery.forEach((g: string) => {
-                const img = new Image();
-                img.src = g;
-              });
-            }
-          });
-        }
-      }
+      await cacheAllWebsiteContent();
     } catch {}
-    setHasExistingConsent(true);
-    setIsVisible(false);
+    finally {
+      setIsCaching(false);
+      setHasExistingConsent(true);
+      setIsVisible(false);
+    }
   };
 
   const handleCloseIfConsented = () => {
@@ -210,22 +194,33 @@ export default function CookieBanner() {
               </p>
             </div>
 
-            {/* Buttons: Menerima Cookie & Yang Penting Saja */}
+            {/* Buttons: Menerima Semua Cookis (Tombol Pertama) & Yang Penting Saja */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <button
                 type="button"
-                onClick={handleEssentialOnly}
-                className="w-full order-2 sm:order-1 bg-zinc-100 text-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:text-zinc-200 dark:hover:bg-zinc-700/80 border border-zinc-200/80 dark:border-zinc-700/80 text-xs sm:text-sm font-semibold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={isCaching}
+                onClick={handleAcceptAll}
+                className="w-full order-1 bg-zinc-900 text-white hover:bg-black dark:bg-white dark:text-black dark:hover:bg-zinc-100 text-xs sm:text-sm font-bold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                Yang Penting Saja
+                {isCaching ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white dark:text-black" />
+                    <span>{cachingProgressText || 'Menyimpan Cache...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Menerima Semua Cookis</span>
+                  </>
+                )}
               </button>
               <button
                 type="button"
-                onClick={handleAcceptAll}
-                className="w-full order-1 sm:order-2 bg-zinc-900 text-white hover:bg-black dark:bg-white dark:text-black dark:hover:bg-zinc-100 text-xs sm:text-sm font-bold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                disabled={isCaching}
+                onClick={handleEssentialOnly}
+                className="w-full order-2 bg-zinc-100 text-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:text-zinc-200 dark:hover:bg-zinc-700/80 border border-zinc-200/80 dark:border-zinc-700/80 text-xs sm:text-sm font-semibold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                <Check className="w-4 h-4" />
-                Menerima Cookie
+                Yang Penting Saja
               </button>
             </div>
           </motion.div>
