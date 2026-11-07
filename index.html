@@ -3,11 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-    <link rel="icon" type="image/png" href="/favicon.png" />
-    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=2" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=2" />
+    <link rel="icon" type="image/png" href="/favicon.png?v=2" />
+    <link rel="shortcut icon" href="/favicon.ico?v=2" />
     
     <!-- Primary Page Metadata (matches metadata.json) -->
     <title>Alfreelnc Design Portofolio</title>
@@ -21,7 +21,7 @@
     
     <!-- PWA Manifest & App Icons -->
     <link rel="manifest" href="/manifest.json" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -38,19 +38,19 @@
     <meta property="og:title" content="Alfreelnc Design Portofolio" id="og-title" />
     <meta property="og:description" content="Kumpulan karya desain grafis, branding, dan informasi pemesanan jasa, kunjungi untuk info lebih lanjut ." id="og-desc" />
     <meta property="og:url" content="/" id="og-url" />
-    <meta property="og:image" content="/uploads/cover_web_1792581846511.png" id="og-image" />
-    <meta property="og:image:secure_url" content="/uploads/cover_web_1792581846511.png" id="og-image-secure" />
+    <meta property="og:image" content="/images/hero-albi.png" id="og-image" />
+    <meta property="og:image:secure_url" content="/images/hero-albi.png" id="og-image-secure" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1408" />
     <meta property="og:image:height" content="768" />
-    <meta property="og:image:alt" content="Alfreelnc Design Portofolio – Muhammad Albiansyah" id="og-image-alt" />
+    <meta property="og:image:alt" content="Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio" id="og-image-alt" />
 
     <!-- Twitter / X Social Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Alfreelnc Design Portofolio" id="twitter-title" />
     <meta name="twitter:description" content="Kumpulan karya desain grafis, branding, dan informasi pemesanan jasa, kunjungi untuk info lebih lanjut ." id="twitter-desc" />
-    <meta name="twitter:image" content="/uploads/cover_web_1792581846511.png" id="twitter-image" />
-    <meta name="twitter:image:alt" content="Alfreelnc Design Portofolio – Muhammad Albiansyah" id="twitter-image-alt" />
+    <meta name="twitter:image" content="/images/hero-albi.png" id="twitter-image" />
+    <meta name="twitter:image:alt" content="Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio" id="twitter-image-alt" />
 
     <!-- Schema.org JSON-LD Structured Data for Enhanced Search Engine Crawlability -->
     <script type="application/ld+json" id="schema-structured-data">
@@ -71,7 +71,7 @@
           "name": "Muhammad Albiansyah",
           "jobTitle": "Graphic Designer & UI/UX Specialist",
           "description": "Desainer Grafis & UI/UX dengan dedikasi tinggi dalam menciptakan identitas visual yang presisi, estetis, dan fungsional.",
-          "image": "/images/editing_tools_3d_1787123977793.jpg",
+          "image": "/images/hero-albi.png",
           "knowsAbout": [
             "Graphic Design",
             "UI/UX Design",
@@ -172,9 +172,9 @@
             var origin = window.location.origin || '';
             var title = opts.title || 'Alfreelnc Design Portofolio';
             var description = opts.description || 'Kumpulan karya desain grafis, branding, dan informasi pemesanan jasa, kunjungi untuk info lebih lanjut .';
-            var image = opts.image ? toAbsoluteUrl(opts.image) : toAbsoluteUrl('/uploads/cover_web_1792581846511.png');
+            var image = opts.image ? toAbsoluteUrl(opts.image) : toAbsoluteUrl('/images/hero-albi.png');
             var url = opts.url ? toAbsoluteUrl(opts.url) : (origin + window.location.pathname + window.location.hash);
-            var imageAlt = opts.imageAlt || (title + ' – Pratinjau Visual');
+            var imageAlt = opts.imageAlt || 'Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio';
 
             // Update document title
             document.title = title;

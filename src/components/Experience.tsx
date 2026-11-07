@@ -186,10 +186,23 @@ export default function Experience() {
     const unsub = onSnapshot(
       collection(db, 'experiences'),
       (snap) => {
+        const localExps = getStoredExperiences();
+        const localMap = new Map<string, any>(localExps.map(e => [String(e.id), e]));
+
         const data: any[] = [];
         snap.forEach(d => {
-          const dataDoc = d.data() as any;
-          if (!dataDoc.isArchived) data.push({ id: d.id, ...dataDoc });
+          const dataDoc = { id: d.id, ...(d.data() as any) };
+          if (!dataDoc.isArchived) {
+            const local = localMap.get(String(d.id));
+            if (local && Array.isArray(local.images) && local.images.length > 0) {
+              const cloudImages = Array.isArray(dataDoc.images) ? dataDoc.images : [];
+              if (local.images.length > cloudImages.length) {
+                dataDoc.images = Array.from(new Set([...cloudImages, ...local.images]));
+                dataDoc.image = dataDoc.images[0] || dataDoc.image;
+              }
+            }
+            data.push(dataDoc);
+          }
         });
         data.sort((a, b) => {
           const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;

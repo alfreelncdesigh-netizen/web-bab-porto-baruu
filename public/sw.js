@@ -4,10 +4,10 @@
 // Offline Strategy: App Shell Fallback + Stale-While-Revalidate + Cache-First
 // ============================================================================
 
-const STATIC_CACHE_NAME = 'portfolio-static-v2';
-const IMAGE_CACHE_NAME = 'portfolio-images-v2';
-const FIRESTORE_CACHE_NAME = 'portfolio-firestore-snapshots-v2';
-const FONT_CACHE_NAME = 'portfolio-fonts-v2';
+const STATIC_CACHE_NAME = 'portfolio-static-v3';
+const IMAGE_CACHE_NAME = 'portfolio-images-v3';
+const FIRESTORE_CACHE_NAME = 'portfolio-firestore-snapshots-v3';
+const FONT_CACHE_NAME = 'portfolio-fonts-v3';
 
 const CURRENT_CACHES = [
   STATIC_CACHE_NAME,
@@ -21,16 +21,19 @@ const PRECACHE_ASSETS = [
   '/',
   '/manifest.json',
   '/favicon.svg',
+  '/favicon.png',
+  '/favicon-32x32.png',
+  '/favicon-16x16.png',
+  '/favicon.ico',
+  '/apple-touch-icon.png',
   '/pwa-192x192.png',
   '/pwa-512x512.png',
   '/pwa-maskable-512x512.png',
-  '/apple-touch-icon.png',
+  '/images/hero-albi.png',
   '/logo-text-hitam.png',
   '/logo-text-putih.png',
   '/logo-text-hitam.svg',
   '/logo-text-putih.svg',
-  '/uploads/cover_web_1792581846511.png',
-  '/uploads/cover_web_dejwax_1792936005852_d33cf44f.webp',
   '/api/settings',
   '/api/hero-image'
 ];

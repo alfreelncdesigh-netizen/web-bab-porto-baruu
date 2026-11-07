@@ -948,7 +948,7 @@ function getRequestOrigin(req: Request): string {
 }
 
 function getPrimaryCoverImage(): { imagePath: string; mimeType: string; width: number; height: number } {
-  let imagePath = '/uploads/cover_web_1792581846511.png';
+  let imagePath = '/images/hero-albi.png';
   try {
     if (fs.existsSync(settingsFilePath)) {
       const data = JSON.parse(fs.readFileSync(settingsFilePath, 'utf-8'));
@@ -964,12 +964,14 @@ function getPrimaryCoverImage(): { imagePath: string; mimeType: string; width: n
             height: 768,
           };
         }
-        const rel = candidate.startsWith('/') ? candidate : `/${candidate}`;
-        const localFile = path.join(publicDir, rel);
-        if (fs.existsSync(localFile)) {
-          imagePath = rel;
-        } else if (candidate.includes('cover_web')) {
-          imagePath = '/uploads/cover_web_1792581846511.png';
+        if (candidate.includes('hero-albi')) {
+          imagePath = '/images/hero-albi.png';
+        } else if (!candidate.includes('cover_web_') && !candidate.includes('editing_tools_3d')) {
+          const rel = candidate.startsWith('/') ? candidate : `/${candidate}`;
+          const localFile = path.join(publicDir, rel);
+          if (fs.existsSync(localFile)) {
+            imagePath = rel;
+          }
         }
       }
     }

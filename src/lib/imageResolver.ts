@@ -33,13 +33,12 @@ export function resolveImageUrl(url?: string | null): string {
     return trimmed;
   }
 
-  // Handle Vite asset paths yang tersimpan sebagai /src/assets/images/...
-  if (trimmed.includes('/src/assets/images/')) {
-    const filename = trimmed.split('/src/assets/images/')[1];
-    return `/images/${filename}`;
+  // Handle Vite asset paths yang tersimpan sebagai ./src/assets/images/... atau ./assets/images/...
+  if (trimmed.includes('hero-albi')) {
+    return '/images/hero-albi.png';
   }
-  if (trimmed.startsWith('src/assets/images/')) {
-    const filename = trimmed.replace('src/assets/images/', '');
+  if (trimmed.includes('assets/images/')) {
+    const filename = trimmed.split('assets/images/')[1];
     return `/images/${filename}`;
   }
 

@@ -129,7 +129,7 @@ export const defaultSettings: SiteSettings = {
   aboutDescription1: "Desain yang baik bukan hanya tentang bagaimana ia terlihat, tetapi bagaimana ia berfungsi. Saya percaya pada pendekatan minimalis dimana setiap elemen memiliki tujuan.",
   aboutDescription2: "Dengan pengalaman lebih dari 5 tahun di industri kreatif, saya telah bekerja dengan berbagai klien dari startup hingga perusahaan besar untuk merancang produk digital yang tidak hanya estetis, tetapi juga memecahkan masalah pengguna secara nyata.",
   aboutImage: "",
-  heroImage: "/uploads/cover_web_dejwax_1792936005852_d33cf44f.webp",
+  heroImage: "/images/hero-albi.png",
   heroBanners: [
     {
       id: "banner-1",

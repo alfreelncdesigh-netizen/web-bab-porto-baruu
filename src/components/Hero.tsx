@@ -7,6 +7,7 @@ import { SiteSettings, defaultSettings } from '../data/settings';
 import { getStoredSettings, cleanSettings } from '../lib/contentStorage';
 import HeroBannerCarousel from './HeroBannerCarousel';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import heroAlbiImg from '../assets/images/hero-albi.png';
 
 export default function Hero() {
   const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
@@ -21,7 +22,7 @@ export default function Hero() {
     const currentLocal = getStoredSettings();
     if (currentLocal) setSettings(currentLocal);
 
-    // 1. Dengarkan pembaruan global settings dari Firestore
+    // 1. Dengarkan pembaruan global settings dari Firestore (tanpa menimpa hero lokal permanen dengan dummy)
     const docRef = doc(db, 'settings', 'global');
     const unsubscribeGlobal = onSnapshot(
       docRef,
@@ -32,9 +33,10 @@ export default function Hero() {
             const current = getStoredSettings();
             const cloudHero = cloudData.heroImage;
             const userHero = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image') || '') : '';
-            const heroImg = (cloudHero && typeof cloudHero === 'string' && cloudHero.trim().length > 0)
-              ? cloudHero.trim()
-              : (userHero || current.heroImage || defaultSettings.heroImage);
+            const isInvalidCloud = !cloudHero || cloudHero.includes('cover_web_') || cloudHero.includes('editing_tools_3d');
+            const heroImg = isInvalidCloud
+              ? (userHero && !userHero.includes('cover_web_') && !userHero.includes('editing_tools_3d') ? userHero : '/images/hero-albi.png')
+              : cloudHero.trim();
             const merged = { ...defaultSettings, ...cleanSettings(cloudData), heroImage: heroImg };
             setSettings(merged);
             try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
@@ -47,30 +49,30 @@ export default function Hero() {
       }
     );
 
-    // 2. Dengarkan pembaruan dokumen mandiri settings/hero dari Firestore agar gambar hero tidak pernah tertimpa
+    // 2. Dengarkan pembaruan dokumen mandiri settings/hero dari Firestore
     const heroDocRef = doc(db, 'settings', 'hero');
     const unsubscribeHero = onSnapshot(
       heroDocRef,
       (heroSnap) => {
         if (heroSnap.exists()) {
           const hData = heroSnap.data();
-          const hImg = hData?.heroImage && typeof hData.heroImage === 'string' ? hData.heroImage.trim() : '';
+          const rawHImg = hData?.heroImage && typeof hData.heroImage === 'string' ? hData.heroImage.trim() : '';
+          const isInvalidHImg = !rawHImg || rawHImg.includes('cover_web_') || rawHImg.includes('editing_tools_3d');
+          const hImg = isInvalidHImg ? '/images/hero-albi.png' : rawHImg;
           const hDataUrl = hData?.heroImageDataUrl && typeof hData.heroImageDataUrl === 'string' ? hData.heroImageDataUrl.trim() : '';
           
           if (hImg || hDataUrl) {
             setSettings(prev => ({
               ...prev,
-              ...(hImg ? { heroImage: hImg } : {}),
+              heroImage: hImg,
               ...(hDataUrl ? { heroImageDataUrl: hDataUrl } : {})
             }));
             if (typeof window !== 'undefined') {
               try {
-                if (hImg) {
-                  localStorage.setItem('app_custom_hero_image', hImg);
-                  const cur = JSON.parse(localStorage.getItem('app_settings') || '{}');
-                  cur.heroImage = hImg;
-                  localStorage.setItem('app_settings', JSON.stringify(cur));
-                }
+                localStorage.setItem('app_custom_hero_image', hImg);
+                const cur = JSON.parse(localStorage.getItem('app_settings') || '{}');
+                cur.heroImage = hImg;
+                localStorage.setItem('app_settings', JSON.stringify(cur));
                 if (hDataUrl) {
                   localStorage.setItem('app_custom_hero_image_backup', hDataUrl);
                 }
@@ -93,39 +95,20 @@ export default function Hero() {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Penanganan error pemuatan gambar hero: mengutamakan link pengguna dan cadangan tanpa pernah mereset ke gambar bawaan secara paksa
+  // Penanganan fallback gambar hero: mengutamakan aset lokal permanen hero-albi.png
   const handleHeroImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     const target = e.currentTarget;
-    const customHero = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image') || '') : '';
-    const backupDataUrl = settings.heroImageDataUrl || (typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image_backup') || '') : '');
-
-    // 1. Coba cadangan dataUrl WebP dari Firestore / LocalStorage
-    if (backupDataUrl && target.src !== backupDataUrl) {
-      target.src = backupDataUrl;
+    if (target.src !== heroAlbiImg) {
+      target.src = heroAlbiImg;
       return;
     }
-
-    // 2. Coba customHero resolved
-    if (customHero) {
-      const resolvedCustom = resolveImageUrl(customHero);
-      if (target.src !== resolvedCustom && !target.src.endsWith(customHero)) {
-        target.src = resolvedCustom;
-        return;
-      }
-    }
-
-    // 3. Cadangan file cover lokal asli
-    const fallbackCover = '/uploads/cover_web_dejwax_1792936005852_d33cf44f.webp';
-    if (!target.src.includes(fallbackCover)) {
-      target.src = fallbackCover;
-      return;
-    }
-
     handleImageError(e);
   };
 
   const userHero = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image') || '') : '';
-  const currentHeroImg = settings.heroImage || userHero || '/uploads/cover_web_dejwax_1792936005852_d33cf44f.webp';
+  const rawHero = settings.heroImage || userHero || '';
+  const isOldCoverOrDummy = !rawHero || rawHero.includes('cover_web_') || rawHero.includes('editing_tools_3d');
+  const currentHeroImg = isOldCoverOrDummy ? heroAlbiImg : resolveImageUrl(rawHero);
 
   // Helper to ensure clean, correct typography (correcting misspelled phrases)
   const sanitizeTypography = (text?: string, fallback: string = '') => {
@@ -220,8 +203,8 @@ export default function Hero() {
             <div className="absolute w-[260px] h-[260px] sm:w-[300px] sm:h-[300px] rounded-full bg-blue-500/10 dark:bg-blue-600/15 blur-3xl pointer-events-none -z-10" />
 
             <img 
-              src={resolveImageUrl(currentHeroImg)} 
-              alt="Muhammad Albiansyah - Creative Designer"
+              src={currentHeroImg} 
+              alt="Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio"
               className="w-full h-full object-contain object-bottom select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-md"
               fetchPriority="high"
               loading="eager"
@@ -304,8 +287,8 @@ export default function Hero() {
 
               {/* Foto Profil Asli (Transparan, Jernih, Tanpa Garis Bingkai) */}
               <img 
-                src={resolveImageUrl(currentHeroImg)} 
-                alt="Muhammad Albiansyah - Creative Designer"
+                src={currentHeroImg} 
+                alt="Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio"
                 className="w-full h-full object-contain object-bottom select-none bg-transparent border-0 shadow-none outline-none filter drop-shadow-xl transition-transform duration-500 hover:scale-[1.01]"
                 fetchPriority="high"
                 loading="eager"

@@ -109,17 +109,23 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
     }
   } else if (cleaned.heroImage && typeof cleaned.heroImage === 'string' && cleaned.heroImage.trim().length > 0) {
     let hero = cleaned.heroImage.trim();
-    if (hero.includes('/src/assets/images/')) {
+    if (hero.includes('hero-albi')) {
+      hero = '/images/hero-albi.png';
+    } else if (hero.includes('cover_web_') || hero.includes('editing_tools_3d')) {
+      hero = '/images/hero-albi.png';
+    } else if (hero.includes('/src/assets/images/')) {
       const filename = hero.split('/src/assets/images/')[1];
       hero = `/images/${filename}`;
     } else if (hero.startsWith('src/assets/images/')) {
       hero = `/images/${hero.replace('src/assets/images/', '')}`;
+    } else if (hero.startsWith('./assets/images/')) {
+      hero = `/images/${hero.replace('./assets/images/', '')}`;
     }
     cleaned.heroImage = hero;
     if (typeof window !== 'undefined' && hero && !hero.includes('editing_tools_3d_1787123977793.jpg')) {
       try { localStorage.setItem('app_custom_hero_image', hero); } catch {}
     }
-  } else if (userHero) {
+  } else if (userHero && !userHero.includes('cover_web_') && !userHero.includes('editing_tools_3d')) {
     // Pertahankan hero image pilihan admin sebelumnya, jangan pernah timpa dengan gambar bawaan
     cleaned.heroImage = userHero;
   } else {
@@ -127,12 +133,12 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
       const prev = localStorage.getItem('app_settings');
       if (prev) {
         const parsed = JSON.parse(prev);
-        if (parsed.heroImage && typeof parsed.heroImage === 'string' && parsed.heroImage.trim().length > 0) {
+        if (parsed.heroImage && typeof parsed.heroImage === 'string' && parsed.heroImage.trim().length > 0 && !parsed.heroImage.includes('cover_web_') && !parsed.heroImage.includes('editing_tools_3d')) {
           cleaned.heroImage = parsed.heroImage.trim();
         }
       }
     } catch {}
-    if (!cleaned.heroImage) {
+    if (!cleaned.heroImage || cleaned.heroImage.includes('cover_web_') || cleaned.heroImage.includes('editing_tools_3d')) {
       cleaned.heroImage = defaultSettings.heroImage;
     }
   }

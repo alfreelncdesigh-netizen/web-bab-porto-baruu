@@ -279,7 +279,9 @@ export default function App() {
   // Dynamic social sharing images & metadata synchronizer
   useEffect(() => {
     const currentSettings = getStoredSettings();
-    const heroImage = currentSettings.heroImage || '/uploads/cover_web_1792581846511.png';
+    const heroImage = (currentSettings.heroImage && !currentSettings.heroImage.includes('cover_web_') && !currentSettings.heroImage.includes('editing_tools_3d'))
+      ? currentSettings.heroImage
+      : '/images/hero-albi.png';
 
     const metaMap: Record<string, { title: string; description: string; image: string; hash: string }> = {
       home: {
@@ -537,15 +539,22 @@ export default function App() {
                 const current = getStoredSettings();
                 const cachedUserHero = localStorage.getItem('app_custom_hero_image');
 
-                const rawHero = (heroData?.heroImage && typeof heroData.heroImage === 'string' && heroData.heroImage.trim().length > 0)
-                  ? heroData.heroImage.trim()
-                  : (data.heroImage && typeof data.heroImage === 'string' && data.heroImage.trim().length > 0)
-                    ? data.heroImage.trim()
-                    : (serverHeroData?.heroImage && typeof serverHeroData.heroImage === 'string' && serverHeroData.heroImage.trim().length > 0)
-                      ? serverHeroData.heroImage.trim()
-                      : (cachedUserHero || current.heroImage || defaultSettings.heroImage);
+                const filterHeroCandidate = (val?: any): string => {
+                  if (typeof val !== 'string') return '';
+                  const trimmed = val.trim();
+                  if (!trimmed || trimmed.includes('cover_web_') || trimmed.includes('editing_tools_3d')) return '';
+                  if (trimmed.includes('hero-albi')) return '/images/hero-albi.png';
+                  return trimmed;
+                };
 
-                const finalHero = rawHero.trim();
+                const rawHero = filterHeroCandidate(heroData?.heroImage)
+                  || filterHeroCandidate(data.heroImage)
+                  || filterHeroCandidate(serverHeroData?.heroImage)
+                  || filterHeroCandidate(cachedUserHero)
+                  || filterHeroCandidate(current.heroImage)
+                  || defaultSettings.heroImage;
+
+                const finalHero = rawHero || defaultSettings.heroImage;
                 if (finalHero && finalHero !== defaultSettings.heroImage) {
                   localStorage.setItem('app_custom_hero_image', finalHero);
                 }

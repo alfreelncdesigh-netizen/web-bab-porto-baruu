@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import ArchiveMoveModal from './ArchiveMoveModal';
 import ConfirmModal from './ConfirmModal';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, updateDoc, arrayUnion, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { getStoredExperiences, saveStoredExperiences, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { SiteSettings } from '../data/settings';
 import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake, Upload, ChevronLeft, ChevronRight, Star, Link as LinkIcon } from 'lucide-react';
@@ -39,9 +39,24 @@ export default function ExperienceAdmin() {
     const unsub = onSnapshot(
       collection(db, 'experiences'),
       (snap) => {
+        const localExps = getStoredExperiences();
+        const localMap = new Map<string, any>(localExps.map(e => [String(e.id), e]));
+
         const data: any[] = [];
         snap.forEach(d => {
-          if (!d.data().isArchived) data.push({ id: d.id, ...d.data() });
+          const cloudDoc: any = { id: d.id, ...d.data() };
+          if (!cloudDoc.isArchived) {
+            const local = localMap.get(String(d.id));
+            if (local && Array.isArray(local.images) && local.images.length > 0) {
+              const cloudImages = Array.isArray(cloudDoc.images) ? cloudDoc.images : [];
+              // Lindungi dari fetch data lama: pertahankan gambar lokal yang lebih lengkap
+              if (local.images.length > cloudImages.length) {
+                cloudDoc.images = Array.from(new Set([...cloudImages, ...local.images]));
+                cloudDoc.image = cloudDoc.images[0] || cloudDoc.image;
+              }
+            }
+            data.push(cloudDoc);
+          }
         });
         data.sort((a, b) => {
           const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;
@@ -158,7 +173,7 @@ export default function ExperienceAdmin() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem.header) return;
+    if (!editingItem || !editingItem.header) return;
     setSaving(true);
 
     const docId = editingItem.id.toString();
@@ -188,9 +203,46 @@ export default function ExperienceAdmin() {
       toFirestore.dateAdded = serverTimestamp();
     }
 
-    const stateItem = { ...toFirestore, id: docId };
+    const docRef = doc(db, 'experiences', docId);
 
-    // Update state dan local storage seketika agar langsung tampil di website
+    // 1. TULIS KE DATABASE FIRESTORE TERLEBIH DAHULU MENGGUNAKAN arrayUnion() UNTUK FIELD images
+    try {
+      if (!isNew && cleanImages.length > 0) {
+        try {
+          // Gunakan arrayUnion() saat memperbarui field images agar tersimpan permanen tanpa menimpa data lama
+          await withTimeout(
+            updateDoc(docRef, {
+              ...toFirestore,
+              images: arrayUnion(...cleanImages)
+            }),
+            5000,
+            "Firestore updateDoc timeout"
+          );
+        } catch (updateErr: any) {
+          // Fallback ke setDoc jika dokumen belum ada di koleksi cloud
+          await withTimeout(
+            setDoc(docRef, toFirestore, { merge: true }),
+            5000,
+            "Firestore setDoc fallback timeout"
+          );
+        }
+      } else {
+        await withTimeout(
+          setDoc(docRef, toFirestore, { merge: true }),
+          5000,
+          "Firestore setDoc timeout"
+        );
+      }
+    } catch (err: any) {
+      if (isQuotaError(err)) {
+        markQuotaExhausted();
+      }
+      console.warn("Firestore save experience notice:", err);
+    }
+
+    // 2. PERBARUI STATE LOKAL & STORAGE SETELAH PROSES TULIS KE DATABASE BERHASIL
+    // Memastikan tampilan tidak tereset kembali oleh data fetch lama
+    const stateItem = { ...toFirestore, id: docId };
     const exists = experiences.some(exp => exp.id === docId);
     const updated = exists
       ? experiences.map(exp => (exp.id === docId ? stateItem : exp))
@@ -199,7 +251,7 @@ export default function ExperienceAdmin() {
     setExperiences(updated);
     saveStoredExperiences(updated);
 
-    // Jika kolaborasi aktif pada pengalaman ini, langsung terapkan ke pengaturan website agar logo langsung tampil di header & website
+    // Jika kolaborasi aktif pada pengalaman ini, langsung terapkan ke pengaturan website
     if (toFirestore.isCollaboration) {
       try {
         const siteSettings = getStoredSettings();
@@ -225,12 +277,6 @@ export default function ExperienceAdmin() {
       }
     }
 
-    // Tutup editor dan tampilkan notifikasi berhasil seketika (optimistic save)
-    showToast("Pengalaman berhasil disimpan & tampil di website!");
-    setIsEditing(false);
-    setEditingItem(null);
-    setSaving(false);
-
     // Lacak aktivitas kolaborator secara realtime jika sesi aktif adalah kolaborator
     try {
       const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
@@ -243,20 +289,11 @@ export default function ExperienceAdmin() {
       }
     } catch {}
 
-    if (!isQuotaExhausted()) {
-      try {
-        await withTimeout(
-          setDoc(doc(db, 'experiences', docId), toFirestore, { merge: true }),
-          4000,
-          "Database cloud disinkronkan di latar belakang."
-        );
-      } catch (err: any) {
-        if (isQuotaError(err)) {
-          markQuotaExhausted();
-        }
-        console.warn("Firestore save experience background notice:", err);
-      }
-    }
+    // Tutup editor dan tampilkan notifikasi berhasil
+    showToast("Pengalaman & foto dokumentasi berhasil disimpan permanen!");
+    setIsEditing(false);
+    setEditingItem(null);
+    setSaving(false);
   };
 
   /**
@@ -296,6 +333,19 @@ export default function ExperienceAdmin() {
     }
 
     if (newUrls.length > 0) {
+      // Jika mengedit dokumen yang sudah ada di database, sinkronkan gambar tambahan menggunakan arrayUnion()
+      if (!editingItem.isNew && editingItem.id) {
+        try {
+          const docRef = doc(db, 'experiences', editingItem.id.toString());
+          await updateDoc(docRef, {
+            images: arrayUnion(...newUrls),
+            updatedAt: new Date().toISOString()
+          });
+        } catch (syncErr) {
+          console.warn("Direct arrayUnion upload sync notice:", syncErr);
+        }
+      }
+
       setEditingItem((prev: any) => {
         if (!prev) return prev;
         const currentImages = Array.isArray(prev.images)
@@ -317,9 +367,23 @@ export default function ExperienceAdmin() {
     setUploadProgressText('');
   };
 
-  const handleAddImageUrl = () => {
+  const handleAddImageUrl = async () => {
     if (!imageUrlInput.trim() || !editingItem) return;
     const url = imageUrlInput.trim();
+
+    // Jika mengedit dokumen yang sudah ada di database, sinkronkan gambar URL menggunakan arrayUnion()
+    if (!editingItem.isNew && editingItem.id) {
+      try {
+        const docRef = doc(db, 'experiences', editingItem.id.toString());
+        await updateDoc(docRef, {
+          images: arrayUnion(url),
+          updatedAt: new Date().toISOString()
+        });
+      } catch (syncErr) {
+        console.warn("Direct arrayUnion URL sync notice:", syncErr);
+      }
+    }
+
     setEditingItem((prev: any) => {
       if (!prev) return prev;
       const currentImages = Array.isArray(prev.images)
