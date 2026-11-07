@@ -136,7 +136,7 @@ function getSharedPortfolioObserver(): IntersectionObserver | null {
         }
       },
       {
-        rootMargin: '100px 0px 100px 0px', // Lazy loading agresif: hanya minta gambar saat berjarak 100px dari layar
+        rootMargin: '800px 0px 800px 0px', // Prefetch gambar lebih awal 800px sebelum viewport agar saat di-scroll gambar langsung siap
         threshold: 0.01,
       }
     );
@@ -681,14 +681,16 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
         {loading ? (
           <div className={
             layoutMode === 'grid-2'
-              ? 'grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-7 md:gap-8 items-start'
+              ? 'columns-2 md:columns-2 gap-3 sm:gap-4 md:gap-6 lg:gap-8 [column-fill:_balance]'
               : 'columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 lg:gap-8'
           }>
             {[1, 2, 3, 4, 5, 6].map((n) => (
               <div 
                 key={n} 
-                className={`w-full rounded-2xl overflow-hidden animate-shimmer mb-6 ${
-                  n % 2 === 0 ? 'aspect-[16/10] min-h-[220px]' : 'aspect-[4/5] min-h-[300px]'
+                className={`w-full rounded-xl sm:rounded-2xl overflow-hidden animate-shimmer ${
+                  layoutMode === 'grid-2' ? 'break-inside-avoid mb-3 sm:mb-4 md:mb-6' : 'mb-6'
+                } ${
+                  n % 2 === 0 ? 'aspect-[16/10] min-h-[140px] sm:min-h-[220px]' : 'aspect-[4/5] min-h-[180px] sm:min-h-[300px]'
                 }`}
               />
             ))}
@@ -701,7 +703,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
             animate="visible"
             className={
               layoutMode === 'grid-2'
-                ? 'grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-7 md:gap-8 items-start'
+                ? 'columns-2 md:columns-2 gap-3 sm:gap-4 md:gap-6 lg:gap-8 [column-fill:_balance]'
                 : 'columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 lg:gap-8 [column-fill:_balance]'
             }
           >
@@ -724,67 +726,67 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           layout
                           variants={cardItemVariants}
                           key={project.id ? `project-${project.id}-${index}` : `project-idx-${index}`} 
-                          className={`group relative w-full ${layoutMode === 'grid-2' ? 'mb-0' : 'break-inside-avoid mb-6 md:mb-7 lg:mb-8'} rounded-2xl overflow-hidden cursor-pointer border hover:shadow-2xl transition-all ${cinematicCardClass}`} 
+                          className={`group relative w-full ${layoutMode === 'grid-2' ? 'break-inside-avoid mb-3 sm:mb-4 md:mb-6' : 'break-inside-avoid mb-6 md:mb-7 lg:mb-8'} rounded-xl sm:rounded-2xl overflow-hidden cursor-pointer border hover:shadow-2xl transition-all ${cinematicCardClass}`} 
                           onClick={() => handleOpenArticle(project)}
                         >
                           {project.image ? (
                             <PortfolioLazyImage 
                               src={project.image} 
                               alt={project.title} 
-                              priority={index < 4}
+                              priority={index < 6}
                               className="w-full h-auto object-contain transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block mx-auto" 
-                              skeletonClassName="rounded-2xl"
-                              aspectClass={layoutMode === 'grid-2' ? "min-h-[240px] sm:min-h-[320px]" : "min-h-[200px] sm:min-h-[260px]"}
-                              containerClassName="relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center rounded-2xl"
+                              skeletonClassName="rounded-xl sm:rounded-2xl"
+                              aspectClass={layoutMode === 'grid-2' ? "min-h-[140px] sm:min-h-[260px]" : "min-h-[200px] sm:min-h-[260px]"}
+                              containerClassName="relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center rounded-xl sm:rounded-2xl"
                             />
                           ) : (
-                            <div className="w-full aspect-[4/5] min-h-[260px] sm:min-h-[340px] transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800 animate-shimmer rounded-2xl"></div>
+                            <div className="w-full aspect-[4/5] min-h-[160px] sm:min-h-[300px] transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800 animate-shimmer rounded-xl sm:rounded-2xl"></div>
                           )}
                           
-                          {/* Gradien gelap halus di bagian bawah gambar agar teks judul selalu kontras & terbaca jelas tanpa menutupi gambar atas */}
-                          <div className="absolute inset-x-0 bottom-0 h-32 sm:h-36 opacity-75 group-hover:opacity-95 transition-opacity duration-500 bg-gradient-to-t from-[#0A0A0A]/95 via-[#0A0A0A]/50 to-transparent pointer-events-none"></div>
+                          {/* Gradien gelap halus di bagian bawah gambar agar teks judul selalu kontras & terbaca jelas */}
+                          <div className={`absolute inset-x-0 bottom-0 ${layoutMode === 'grid-2' ? 'h-24 sm:h-32 md:h-36' : 'h-32 sm:h-36'} opacity-80 group-hover:opacity-95 transition-opacity duration-500 bg-gradient-to-t from-[#0A0A0A]/95 via-[#0A0A0A]/50 to-transparent pointer-events-none`}></div>
                           
-                          <div className="absolute inset-x-0 bottom-0 p-4 sm:p-5 md:p-6 flex flex-col justify-end items-start text-white pointer-events-none z-10">
+                          <div className={`absolute inset-x-0 bottom-0 ${layoutMode === 'grid-2' ? 'p-2.5 sm:p-4 md:p-6' : 'p-4 sm:p-5 md:p-6'} flex flex-col justify-end items-start text-white pointer-events-none z-10`}>
                             <motion.div 
                               initial={{ y: 20, opacity: 0 }} 
                               whileInView={{ y: 0, opacity: 1 }} 
                               transition={{ duration: 0.5 }} 
                               className="transform translate-y-3 group-hover:translate-y-0 transition-transform duration-500 ease-out w-full"
                             >
-                              <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                                <span className="inline-block px-2.5 py-0.5 bg-white/20 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase border border-white/10 shadow-sm">
+                              <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 mb-1 sm:mb-1.5">
+                                <span className={`inline-block ${layoutMode === 'grid-2' ? 'px-2 py-0.5 text-[8.5px] sm:text-[10px]' : 'px-2.5 py-0.5 text-[9px] md:text-[10px]'} bg-white/20 backdrop-blur-md rounded-full font-bold tracking-wider uppercase border border-white/10 shadow-sm`}>
                                   {project.category}
                                 </span>
                                 {Boolean(project.isCollaboration) && (
-                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-indigo-600/90 backdrop-blur-md rounded-full text-[9px] md:text-[10px] font-bold tracking-wider uppercase border border-indigo-400/30 text-white shadow-sm">
+                                  <span className={`inline-flex items-center gap-1 sm:gap-1.5 ${layoutMode === 'grid-2' ? 'px-2 py-0.5 text-[8.5px] sm:text-[10px]' : 'px-2.5 py-0.5 text-[9px] md:text-[10px]'} bg-indigo-600/90 backdrop-blur-md rounded-full font-bold tracking-wider uppercase border border-indigo-400/30 text-white shadow-sm`}>
                                     {project.collaborationLogo ? (
                                       <img 
                                         src={resolveImageUrl(project.collaborationLogo)} 
                                         alt={project.collaborationPartner || "Mitra Kolaborasi"} 
-                                        className="h-3.5 w-auto max-w-[28px] object-contain rounded-xs bg-white/20 p-0.5"
+                                        className="h-3 sm:h-3.5 w-auto max-w-[24px] sm:max-w-[28px] object-contain rounded-xs bg-white/20 p-0.5"
                                         onError={handleImageError}
                                       />
                                     ) : (
-                                      <Handshake size={12} />
+                                      <Handshake size={layoutMode === 'grid-2' ? 10 : 12} />
                                     )}
                                     <span>{project.collaborationPartner || 'Kolaborasi'}</span>
                                   </span>
                                 )}
                               </div>
-                              <h3 className="text-base sm:text-lg md:text-xl font-bold tracking-tight mb-0 leading-[1.25] line-clamp-2">
+                              <h3 className={`${layoutMode === 'grid-2' ? 'text-xs sm:text-base md:text-xl leading-[1.25]' : 'text-base sm:text-lg md:text-xl leading-[1.25]'} font-bold tracking-tight mb-0 line-clamp-2`}>
                                 {project.title}
                               </h3>
-                              <div className="mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-2 pointer-events-auto">
-                                <div className="flex items-center text-[10px] md:text-xs font-semibold gap-1.5 bg-white text-black px-3.5 py-1.5 rounded-full w-fit shadow-xl shadow-black/20">
-                                  <Eye size={14} /> Quick View
+                              <div className="mt-2 sm:mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
+                                <div className={`flex items-center ${layoutMode === 'grid-2' ? 'text-[9.5px] sm:text-xs px-2.5 sm:px-3.5 py-1 sm:py-1.5' : 'text-[10px] md:text-xs px-3.5 py-1.5'} font-semibold gap-1 sm:gap-1.5 bg-white text-black rounded-full w-fit shadow-xl shadow-black/20`}>
+                                  <Eye size={layoutMode === 'grid-2' ? 12 : 14} /> Quick View
                                 </div>
                                 <button
                                   type="button"
                                   onClick={(e) => handleShareProject(project, e)}
-                                  className="flex items-center text-[10px] md:text-xs font-semibold gap-1 bg-white/20 hover:bg-white/35 backdrop-blur-md text-white px-3 py-1.5 rounded-full border border-white/20 shadow-xl transition-all active:scale-95 cursor-pointer"
+                                  className={`flex items-center ${layoutMode === 'grid-2' ? 'text-[9.5px] sm:text-xs px-2.5 sm:px-3.5 py-1 sm:py-1.5' : 'text-[10px] md:text-xs px-3.5 py-1.5'} font-semibold gap-1 bg-white/20 hover:bg-white/35 backdrop-blur-md text-white rounded-full border border-white/20 shadow-xl transition-all active:scale-95 cursor-pointer`}
                                   title="Bagikan Karya"
                                 >
-                                  <Share2 size={13} /> Bagikan
+                                  <Share2 size={layoutMode === 'grid-2' ? 11 : 13} /> Bagikan
                                 </button>
                               </div>
                             </motion.div>

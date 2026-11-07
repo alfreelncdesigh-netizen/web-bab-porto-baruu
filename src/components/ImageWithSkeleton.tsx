@@ -28,7 +28,7 @@ export default function ImageWithSkeleton({
 }: ImageWithSkeletonProps) {
   const resolvedSrc = resolveImageUrl(src);
   const isInline = typeof resolvedSrc === 'string' && (resolvedSrc.startsWith('data:') || resolvedSrc.startsWith('blob:'));
-  const [isLoaded, setIsLoaded] = useState<boolean>(() => isInline);
+  const [isLoaded, setIsLoaded] = useState<boolean>(() => isInline || priority);
   const [hasError, setHasError] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 

@@ -285,26 +285,26 @@ export default function App() {
 
     const metaMap: Record<string, { title: string; description: string; image: string; hash: string }> = {
       home: {
-        title: 'Alfreelnc Design Portofolio',
-        description: 'Kumpulan karya desain grafis, branding, dan informasi pemesanan jasa, kunjungi untuk info lebih lanjut .',
+        title: 'Alfreelnc Design Portofolio – Jasa Desain Grafis & Poster Kreatif',
+        description: 'Alfreelnc Design Portofolio karya Albian (Muhammad Albiansyah) – Jasa desain grafis profesional, portofolio design graphic, jasa buat poster, jasa mengedit poster, jasa tugas, agensi desain grafis, agensi joki tugas, dan freelance desain grafis.',
         image: heroImage,
         hash: '',
       },
       portfolio: {
-        title: 'Galeri Portofolio & Proyek Pilihan – Portofolio Desain Minimalis',
-        description: 'Eksplorasi proyek desain grafis, identitas visual, poster kreatif, dan desain antarmuka pengguna interaktif.',
+        title: 'Galeri Portofolio Desain Grafis & Desain Kreatif – Alfreelnc Design',
+        description: 'Eksplorasi portofolio design graphic, jasa buat poster, desain identitas brand, mockup 3D, dan proyek freelance desain grafis oleh Albian.',
         image: '/images/minimalist_3d_illustration_1787122966121.jpg',
         hash: '#portfolio',
       },
       about: {
-        title: 'Tentang Desainer & Filosofi Desain – Muhammad Albiansyah',
-        description: 'Profil profesional, filosofi desain fungsional, dan pendekatan kreatif dalam merancang solusi visual berkualitas.',
+        title: 'Tentang Desainer & Filosofi Desain – Muhammad Albiansyah (Albian)',
+        description: 'Profil profesional Albian (Alfreelnc Design), filosofi desain fungsional, dan pendekatan kreatif agensi freelance desain grafis.',
         image: '/images/editing_tools_3d_1787123977793.jpg',
         hash: '#about',
       },
       experience: {
         title: 'Riwayat Pengalaman & Karier Desain – Muhammad Albiansyah',
-        description: 'Pengalaman kerja profesional, pencapaian proyek desain visual, dan keahlian di berbagai software desain.',
+        description: 'Pengalaman kerja profesional, pencapaian proyek desain visual, dan keahlian di berbagai software desain grafis.',
         image: '/images/editing_tools_3d_1787123977793.jpg',
         hash: '#experience',
       },
@@ -315,8 +315,8 @@ export default function App() {
         hash: '#cv',
       },
       store: {
-        title: 'Toko Template & Layanan Desain Grafis – Portofolio Desain Minimalis',
-        description: 'Dapatkan template desain grafis modern dan pesan layanan desain kustom profesional untuk kebutuhan bisnis Anda.',
+        title: 'Toko Template & Jasa Desain Grafis – Alfreelnc Design',
+        description: 'Pesan jasa desain grafis profesional, jasa buat & edit poster, jasa tugas desain, dan template grafis siap pakai berkualitas tinggi.',
         image: '/images/banner_promo_crea_1788696808849.jpg',
         hash: '#store',
       },
