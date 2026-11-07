@@ -306,6 +306,8 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                               src={resolveImageUrl(post.collaborationLogo)} 
                               alt={post.collaborationPartner || "Mitra Kolaborasi"} 
                               className="h-3.5 w-auto max-w-[28px] object-contain rounded-xs bg-white/20 p-0.5"
+                              loading="lazy"
+                              decoding="async"
                               onError={handleImageError}
                             />
                           ) : (
@@ -434,6 +436,8 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                             src={resolveImageUrl(selectedPost.collaborationLogo)} 
                             alt={selectedPost.collaborationPartner || "Mitra Kolaborasi"} 
                             className="h-9 sm:h-10 w-auto max-w-[70px] sm:max-w-[90px] object-contain rounded-lg"
+                            loading="lazy"
+                            decoding="async"
                             onError={handleImageError}
                           />
                         </div>
@@ -496,6 +500,8 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                                     src={resolveImageUrl(item.image)} 
                                     alt={item.title} 
                                     className="w-full h-auto max-h-[140px] object-contain rounded-lg group-hover:scale-105 transition-transform duration-300" 
+                                    loading="lazy"
+                                    decoding="async"
                                     onError={handleImageError} 
                                   />
                                   {isUnread && (

@@ -192,6 +192,8 @@ export default function Header({ setView, currentView }: HeaderProps) {
           src={resolveImageUrl(settings.collaboration.partnerLogo)} 
           alt={settings.collaboration.partnerName || "Logo Mitra Kolaborasi"} 
           className="h-6 sm:h-7 md:h-8.5 lg:h-9 w-auto max-w-[75px] sm:max-w-[105px] md:max-w-[135px] object-contain select-none"
+          loading="lazy"
+          decoding="async"
           onError={handleImageError}
          />
         </div>

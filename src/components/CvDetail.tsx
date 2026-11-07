@@ -6,21 +6,14 @@ import { defaultSettings, defaultCvSections, SiteSettings, CvSectionItem } from 
 import { getStoredSettings, cleanSettings } from '../lib/contentStorage';
 import { Download, Mail, Phone, MapPin, Link as LinkIcon, Copy, Check, X, ChevronLeft, ChevronRight, Maximize2, ImageOff, Image as ImageIcon } from 'lucide-react';
 
+import { resolveImageUrl, handleImageError as globalHandleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
+
 // Variasi rotasi alami ala Instagram Chat Stacked (-3° hingga 3°)
 const STACK_ROTATIONS = [-3, 2, -2, 3, -2.5, 1.8, -1.5, 2.5];
 
-// Helper untuk memastikan URL gambar valid dan absolute
+// Helper untuk memastikan URL gambar valid dan absolute dengan proteksi token Firebase Storage
 export const formatImageUrl = (url?: string): string => {
-  if (!url || typeof url !== 'string') return '';
-  const trimmed = url.trim();
-  if (!trimmed) return '';
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('data:')) {
-    return trimmed;
-  }
-  if (trimmed.startsWith('/')) {
-    return `${window.location.origin}${trimmed}`;
-  }
-  return `https://${trimmed}`;
+  return resolveImageUrl(url);
 };
 
 interface IrregularPhotoCollageProps {
@@ -600,13 +593,15 @@ export default function CvDetail() {
                       key={lightbox.index + '_' + lightbox.images[lightbox.index]}
                       src={formatImageUrl(lightbox.images[lightbox.index])}
                       alt={`Foto ${lightbox.index + 1}`}
+                      loading="lazy"
+                      decoding="async"
                       className={`w-full sm:w-auto h-auto max-h-[82vh] object-contain rounded-none sm:rounded-xl select-none shadow-lg relative z-[1] transition-opacity duration-300 block mx-auto ${
                         lightboxLoaded ? 'opacity-100' : 'opacity-0'
                       }`}
                       onLoad={() => setLightboxLoaded(true)}
-                      onError={() => {
-                        setLightboxError(true);
+                      onError={(e) => {
                         setLightboxLoaded(true);
+                        globalHandleImageError(e);
                       }}
                     />
                   )}
@@ -658,7 +653,14 @@ export default function CvDetail() {
                             : 'border-transparent opacity-50 hover:opacity-80'
                         }`}
                       >
-                        <img src={formatImageUrl(img)} alt="thumb" className="w-full h-full object-cover" />
+                        <img 
+                          src={formatImageUrl(img)} 
+                          alt="thumb" 
+                          loading="lazy" 
+                          decoding="async"
+                          className="w-full h-full object-cover" 
+                          onError={globalHandleImageError}
+                        />
                       </button>
                     ))}
                   </div>

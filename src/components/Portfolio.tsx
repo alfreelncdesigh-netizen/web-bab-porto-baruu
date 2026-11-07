@@ -508,21 +508,32 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     }
   };
 
-  // Deteksi tautan khusus dari URL (?project=ID)
+  // Deteksi tautan khusus dari URL (?project=ID, ?p=ID, ?id=ID) & dukung navigasi back/forward browser
   useEffect(() => {
-    if (typeof window !== 'undefined' && projects.length > 0 && !selectedProject) {
+    if (typeof window === 'undefined') return;
+
+    const syncFromUrl = () => {
       const params = new URLSearchParams(window.location.search);
-      const projectId = params.get('project');
-      if (projectId) {
+      const projectId = params.get('project') || params.get('p') || params.get('id');
+      if (projectId && projects.length > 0) {
         const found = projects.find(p => String(p.id) === String(projectId));
-        if (found) {
+        if (found && (!selectedProject || String(selectedProject.id) !== String(projectId))) {
           handleOpenArticle(found);
         }
+      } else if (!projectId && selectedProject) {
+        setSelectedProject(null);
+        if ((window as any).__updateSocialMeta) {
+          (window as any).__updateSocialMeta();
+        }
       }
-    }
-  }, [projects]);
+    };
 
-  // Buka Quick View modal dan picu auto-scroll ke paling atas
+    syncFromUrl();
+    window.addEventListener('popstate', syncFromUrl);
+    return () => window.removeEventListener('popstate', syncFromUrl);
+  }, [projects, selectedProject]);
+
+  // Buka Quick View modal, perbarui URL & sinkronkan OpenGraph metadata secara dinamis
   const handleOpenArticle = (projectToOpen: Project) => {
     markAsRead(projectToOpen.id);
     setSelectedProject(projectToOpen);
@@ -531,12 +542,48 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     setImageFitMode('cover');
     setShowSharePopup(false);
 
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.set('project', String(projectToOpen.id));
+        window.history.replaceState({ projectId: projectToOpen.id }, '', url.pathname + url.search + url.hash);
+        if ((window as any).__updateSocialMeta) {
+          (window as any).__updateSocialMeta({
+            title: `${projectToOpen.title} – Alfreelnc Design Portofolio`,
+            description: projectToOpen.description || (projectToOpen.category ? `Karya desain grafis ${projectToOpen.category} oleh Alfreelnc Design.` : undefined),
+            image: projectToOpen.image,
+            project: projectToOpen
+          });
+        }
+      } catch (e) {}
+    }
+
     // Scroll instan dan halus
     setTimeout(() => {
       if (modalRootRef.current) modalRootRef.current.scrollTop = 0;
       if (modalContentRef.current) modalContentRef.current.scrollTop = 0;
       modalTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 20);
+  };
+
+  // Tutup Quick View modal dan kembalikan OpenGraph ke default brand & cover hero
+  const handleCloseArticle = () => {
+    setSelectedProject(null);
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('project') || url.searchParams.has('p') || url.searchParams.has('id')) {
+          url.searchParams.delete('project');
+          url.searchParams.delete('p');
+          url.searchParams.delete('id');
+          const cleanSearch = url.search ? url.search : '';
+          window.history.replaceState({}, '', url.pathname + cleanSearch + url.hash);
+        }
+        if ((window as any).__updateSocialMeta) {
+          (window as any).__updateSocialMeta();
+        }
+      } catch (e) {}
+    }
   };
 
   // Semua karya lainnya (seluruh karya yang tidak termasuk karya yang sedang dibuka)
@@ -764,6 +811,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                         src={resolveImageUrl(project.collaborationLogo)} 
                                         alt={project.collaborationPartner || "Mitra Kolaborasi"} 
                                         className="h-3 sm:h-3.5 w-auto max-w-[24px] sm:max-w-[28px] object-contain rounded-xs bg-white/20 p-0.5"
+                                        loading="lazy"
+                                        decoding="async"
                                         onError={handleImageError}
                                       />
                                     ) : (
@@ -857,7 +906,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
             animate={{ opacity: 1, backdropFilter: "blur(12px)" }} 
             exit={{ opacity: 0, backdropFilter: "blur(0px)" }} 
             className="fixed inset-0 z-[120] flex items-center justify-center p-0 md:p-3 lg:p-5 xl:p-6 bg-black/80 dark:bg-black/90 overflow-hidden"
-            onClick={() => setSelectedProject(null)}
+            onClick={handleCloseArticle}
           >
             {/* Tombol Tutup (X): Hilang jika layar tidak disentuh selama 3 detik, muncul kembali saat layar disentuh / di-scroll */}
             <AnimatePresence>
@@ -868,7 +917,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.8 }}
                   transition={{ duration: 0.2, ease: "easeOut" }}
-                  onClick={() => setSelectedProject(null)} 
+                  onClick={handleCloseArticle} 
                   aria-label="Tutup Quick View"
                   className="fixed top-3 right-3 sm:top-4 sm:right-4 md:absolute md:top-5 md:right-5 z-[140] p-2.5 sm:p-3 rounded-full hover:scale-105 active:scale-95 duration-200 shadow-xl border text-black dark:text-white bg-white/85 dark:bg-[#18181b]/85 backdrop-blur-md border-zinc-200/70 dark:border-zinc-700/70 cursor-pointer"
                 >
@@ -937,6 +986,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                             transition={{ duration: 0.15, ease: "easeOut" }}
                             src={resolveImageUrl(activeImage)} 
                             alt={selectedProject.title} 
+                            loading="lazy"
+                            decoding="async"
                             onLoad={(e) => {
                               const el = e.currentTarget;
                               if (el.naturalWidth && el.naturalHeight) {
@@ -1095,6 +1146,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               src={resolveImageUrl(selectedProject.collaborationLogo)} 
                               alt={selectedProject.collaborationPartner || "Mitra Kolaborasi"} 
                               className="h-9 sm:h-10 w-auto max-w-[70px] sm:max-w-[90px] object-contain rounded-lg"
+                              loading="lazy"
+                              decoding="async"
                               onError={handleImageError}
                             />
                           </div>
@@ -1386,6 +1439,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                 transition={{ duration: 0.15 }}
                 src={resolveImageUrl(activeImage)}
                 alt={selectedProject?.title || 'Karya Desain'}
+                loading="lazy"
+                decoding="async"
                 onError={handleImageError}
                 className="w-auto h-auto max-w-full max-h-[96vh] md:max-h-[98vh] object-contain rounded-none md:rounded-lg shadow-2xl block mx-auto"
                 onClick={(e) => e.stopPropagation()}

@@ -31,6 +31,22 @@
     <!-- Canonical URL -->
     <link rel="canonical" href="/" id="canonical-url" />
 
+    <!-- Global Early Image Error Handler & Fallback -->
+    <script>
+      (function() {
+        var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#18181b"/><stop offset="50%" stop-color="#111114"/><stop offset="100%" stop-color="#09090b"/></linearGradient><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#bg)"/><g transform="translate(400,240) scale(1.65)" opacity="0.2"><circle cx="0" cy="0" r="70" fill="url(#g)"/><circle cx="0" cy="0" r="42" fill="#18181b"/><text x="0" y="11" font-family="system-ui, sans-serif" font-size="34" font-weight="900" fill="#fff" text-anchor="middle">AL</text><circle cx="-28" cy="-12" r="5" fill="#a855f7"/><circle cx="28" cy="12" r="5" fill="#3b82f6"/></g><text x="400" y="405" font-family="system-ui, sans-serif" font-size="19" font-weight="600" fill="#a1a1aa" text-anchor="middle" letter-spacing="0.4">Gambar sedang dimuat...</text><rect x="360" y="430" width="80" height="3" rx="1.5" fill="#6366f1" opacity="0.35"/></svg>';
+        window.FALLBACK_IMAGE = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+        window.handleImageError = function(e) {
+          if (!e) return;
+          var t = e.currentTarget || e.target || (e instanceof HTMLElement ? e : null);
+          if (!t || t.dataset.triedFallback === 'true') return;
+          t.dataset.triedFallback = 'true';
+          t.onerror = null;
+          t.src = window.FALLBACK_IMAGE;
+        };
+      })();
+    </script>
+
     <!-- OpenGraph / Facebook / WhatsApp Social Card -->
     <meta property="og:site_name" content="Alfreelnc Design Portofolio" />
     <meta property="og:type" content="website" />
@@ -216,97 +232,128 @@
     }
     </script>
 
-    <!-- Dynamic Social Share & Canonical Metadata Resolver -->
+    <!-- Dynamic Social Share & OpenGraph Metadata Engine -->
     <script>
       (function() {
-        // Resolve absolute URL helper
+        var DEFAULT_TITLE = "Alfreelnc Design Portofolio – Jasa Desain Grafis & Poster Kreatif";
+        var DEFAULT_DESC = "Alfreelnc Design Portofolio karya Albian (Muhammad Albiansyah) – Jasa desain grafis profesional, portofolio design graphic, jasa buat poster, jasa mengedit poster, jasa tugas, agensi desain grafis, agensi joki tugas, dan freelance desain grafis.";
+        var DEFAULT_IMG = "/images/hero-albi.png";
+        var DEFAULT_ALT = "Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio";
+
         function toAbsoluteUrl(path) {
           if (!path) return '';
-          if (path.startsWith('http://') || path.startsWith('https://')) return path;
+          if (path.indexOf('http://') === 0 || path.indexOf('https://') === 0) return path;
           var origin = window.location.origin || (window.location.protocol + '//' + window.location.host);
-          var cleanPath = path.startsWith('/') ? path : '/' + path;
-          return origin + cleanPath;
+          var clean = path.charAt(0) === '/' ? path : '/' + path;
+          return origin + clean;
         }
 
-        // Global dynamic metadata updater accessible by React and window events
+        function setAttr(selector, attr, value) {
+          if (!value) return;
+          try {
+            var el = document.getElementById(selector) || document.querySelector(selector);
+            if (el) el.setAttribute(attr, value);
+          } catch (e) {}
+        }
+
+        // Global helper yang dapat dipanggil baik oleh script head maupun komponen React
         window.__updateSocialMeta = function(opts) {
           try {
-            if (!opts) return;
-            var origin = window.location.origin || '';
-            var title = opts.title || 'Alfreelnc Design Portofolio – Jasa Desain Grafis & Poster Kreatif';
-            var description = opts.description || 'Alfreelnc Design Portofolio karya Albian (Muhammad Albiansyah) – Jasa desain grafis profesional, portofolio design graphic, jasa buat poster, jasa mengedit poster, jasa tugas, agensi desain grafis, agensi joki tugas, dan freelance desain grafis.';
-            var image = opts.image ? toAbsoluteUrl(opts.image) : toAbsoluteUrl('/images/hero-albi.png');
-            var url = opts.url ? toAbsoluteUrl(opts.url) : (origin + window.location.pathname + window.location.hash);
-            var imageAlt = opts.imageAlt || 'Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio';
+            var hasProj = Boolean(opts && (opts.title || opts.project));
+            var title = hasProj && opts.title ? opts.title : DEFAULT_TITLE;
+            var description = hasProj && opts.description ? opts.description : DEFAULT_DESC;
+            var rawImage = hasProj && opts.image ? opts.image : DEFAULT_IMG;
+            var image = toAbsoluteUrl(rawImage);
+            var url = opts && opts.url ? toAbsoluteUrl(opts.url) : (window.location.origin + window.location.pathname + window.location.search);
+            var imageAlt = (hasProj && opts.project && opts.project.title) ? (opts.project.title + ' – Alfreelnc Design') : DEFAULT_ALT;
 
-            // Update document title
+            // 1. Title Dokumen & Meta Standar (Bebas dari teks generik 'Cookie check')
             document.title = title;
+            setAttr('meta[name="title"]', 'content', title);
+            setAttr('meta[name="description"]', 'content', description);
 
-            // Update standard meta
-            var metaDesc = document.querySelector('meta[name="description"]');
-            if (metaDesc) metaDesc.setAttribute('content', description);
+            // 2. Canonical URL
+            setAttr('canonical-url', 'href', url);
 
-            var metaTitle = document.querySelector('meta[name="title"]');
-            if (metaTitle) metaTitle.setAttribute('content', title);
+            // 3. Tag OpenGraph (WhatsApp, Facebook, LinkedIn, Telegram)
+            setAttr('og-title', 'content', title);
+            setAttr('og-desc', 'content', description);
+            setAttr('og-url', 'content', url);
+            setAttr('og-image', 'content', image);
+            setAttr('og-image-secure', 'content', image);
+            setAttr('og-image-alt', 'content', imageAlt);
 
-            // Update Canonical
-            var linkCanon = document.getElementById('canonical-url');
-            if (linkCanon) linkCanon.setAttribute('href', url);
-
-            // Update OpenGraph
-            var ogTitle = document.getElementById('og-title');
-            if (ogTitle) ogTitle.setAttribute('content', title);
-
-            var ogDesc = document.getElementById('og-desc');
-            if (ogDesc) ogDesc.setAttribute('content', description);
-
-            var ogUrl = document.getElementById('og-url');
-            if (ogUrl) ogUrl.setAttribute('content', url);
-
-            var ogImg = document.getElementById('og-image');
-            if (ogImg) ogImg.setAttribute('content', image);
-
-            var ogImgSec = document.getElementById('og-image-secure');
-            if (ogImgSec) ogImgSec.setAttribute('content', image);
-
-            var ogImgAlt = document.getElementById('og-image-alt');
-            if (ogImgAlt) ogImgAlt.setAttribute('content', imageAlt);
-
-            // Update Twitter
-            var twTitle = document.getElementById('twitter-title');
-            if (twTitle) twTitle.setAttribute('content', title);
-
-            var twDesc = document.getElementById('twitter-desc');
-            if (twDesc) twDesc.setAttribute('content', description);
-
-            var twImg = document.getElementById('twitter-image');
-            if (twImg) twImg.setAttribute('content', image);
-
-            var twImgAlt = document.getElementById('twitter-image-alt');
-            if (twImgAlt) twImgAlt.setAttribute('content', imageAlt);
-          } catch (e) {
-            console.warn('Social meta update error:', e);
+            // 4. Tag Twitter / X Card
+            setAttr('twitter-title', 'content', title);
+            setAttr('twitter-desc', 'content', description);
+            setAttr('twitter-image', 'content', image);
+            setAttr('twitter-image-alt', 'content', imageAlt);
+          } catch (err) {
+            console.warn('Social meta update notice:', err);
           }
         };
 
-        // Initialize absolute URLs on first load
-        if (typeof window !== 'undefined') {
-          var initialUrl = window.location.origin + window.location.pathname + window.location.hash;
-          var canon = document.getElementById('canonical-url');
-          if (canon) canon.setAttribute('href', initialUrl);
-          var ogUrlTag = document.getElementById('og-url');
-          if (ogUrlTag) ogUrlTag.setAttribute('content', initialUrl);
-          var ogImgTag = document.getElementById('og-image');
-          if (ogImgTag) {
-            var curImg = ogImgTag.getAttribute('content');
-            var absImg = toAbsoluteUrl(curImg);
-            ogImgTag.setAttribute('content', absImg);
-            var ogImgSecTag = document.getElementById('og-image-secure');
-            if (ogImgSecTag) ogImgSecTag.setAttribute('content', absImg);
-            var twImgTag = document.getElementById('twitter-image');
-            if (twImgTag) twImgTag.setAttribute('content', absImg);
+        // Deteksi parameter URL (?project=ID_KARYA, ?p=ID, ?id=ID, atau /project/ID) SEBELUM halaman dirender
+        try {
+          var search = window.location.search || '';
+          var pathname = window.location.pathname || '';
+          var targetProjectId = null;
+
+          if (search) {
+            var match = search.match(/[?&](project|p|id)=([^&#]+)/i);
+            if (match && match[2]) {
+              targetProjectId = decodeURIComponent(match[2]);
+            }
           }
-        }
+          if (!targetProjectId && pathname.indexOf('/project/') !== -1) {
+            var segs = pathname.split('/project/')[1];
+            if (segs) targetProjectId = decodeURIComponent(segs.split('/')[0]);
+          }
+
+          if (targetProjectId) {
+            var found = null;
+            var storageKeys = ['user_projects', 'alfreelnc_cached_projects', 'projects_cache'];
+            for (var k = 0; k < storageKeys.length; k++) {
+              try {
+                var stored = localStorage.getItem(storageKeys[k]);
+                if (stored) {
+                  var arr = JSON.parse(stored);
+                  if (Array.isArray(arr)) {
+                    found = arr.find(function(it) { return String(it.id) === String(targetProjectId); });
+                    if (found) break;
+                  }
+                }
+              } catch (e) {}
+            }
+
+            if (found) {
+              window.__updateSocialMeta({
+                title: found.title ? (found.title + ' – Alfreelnc Design Portofolio') : DEFAULT_TITLE,
+                description: found.description || (found.category ? ('Karya desain grafis ' + found.category + ' oleh Alfreelnc Design') : DEFAULT_DESC),
+                image: found.image || DEFAULT_IMG,
+                project: found
+              });
+            } else {
+              // Ambil langsung dari disk server (/api/projects) jika belum ada di localStorage
+              fetch('/api/projects').then(function(res) { return res.json(); }).then(function(list) {
+                if (Array.isArray(list)) {
+                  var p = list.find(function(it) { return String(it.id) === String(targetProjectId); });
+                  if (p) {
+                    window.__updateSocialMeta({
+                      title: p.title ? (p.title + ' – Alfreelnc Design Portofolio') : DEFAULT_TITLE,
+                      description: p.description || (p.category ? ('Karya desain grafis ' + p.category + ' oleh Alfreelnc Design') : DEFAULT_DESC),
+                      image: p.image || DEFAULT_IMG,
+                      project: p
+                    });
+                  }
+                }
+              }).catch(function() {});
+            }
+          } else {
+            // Halaman utama tanpa parameter proyek: pastikan menggunakan default setting brand & hero
+            window.__updateSocialMeta();
+          }
+        } catch (e) {}
       })();
     </script>
 

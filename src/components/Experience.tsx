@@ -303,6 +303,8 @@ export default function Experience() {
                                 src={resolveImageUrl(exp.collaborationLogo)}
                                 alt=""
                                 className="w-3.5 h-3.5 object-contain rounded-full bg-white p-0.5 shrink-0"
+                                loading="lazy"
+                                decoding="async"
                                 onError={handleImageError}
                               />
                             ) : (
@@ -331,6 +333,8 @@ export default function Experience() {
                                 src={resolveImageUrl(exp.collaborationLogo)} 
                                 alt={exp.collaborationPartner || "Mitra Kolaborasi"} 
                                 className="h-8 sm:h-9 w-auto max-w-[65px] sm:max-w-[80px] object-contain rounded-lg"
+                                loading="lazy"
+                                decoding="async"
                                 onError={handleImageError}
                               />
                             </div>
@@ -382,6 +386,8 @@ export default function Experience() {
                                   src={resolveImageUrl(thumbImg)}
                                   alt=""
                                   className="w-full h-full object-cover"
+                                  loading="lazy"
+                                  decoding="async"
                                   onError={handleImageError}
                                 />
                                 {thumbIdx === 4 && expImages.length > 5 && (
@@ -412,6 +418,7 @@ export default function Experience() {
                           alt={exp.header} 
                           className="w-full h-auto max-h-[290px] sm:max-h-[380px] md:max-h-[460px] lg:max-h-[540px] xl:max-h-[600px] object-contain rounded-lg md:rounded-2xl shadow-xs md:shadow-md transition-transform duration-500 group-hover:scale-[1.02] block mx-auto" 
                           loading="lazy"
+                          decoding="async"
                           onError={handleImageError}
                         />
                         {expImages.length > 1 && (
@@ -511,6 +518,8 @@ export default function Experience() {
                           transition={{ duration: 0.15, ease: "easeOut" }}
                           src={resolveImageUrl(activePhotoUrl)} 
                           alt={selectedExp.header} 
+                          loading="lazy"
+                          decoding="async"
                           onLoad={(e) => {
                             const el = e.currentTarget;
                             if (el.naturalWidth && el.naturalHeight) {
@@ -614,6 +623,8 @@ export default function Experience() {
                             src={resolveImageUrl(img)}
                             alt={`Dokumentasi ${idx + 1}`}
                             className="w-full h-full object-cover"
+                            loading="lazy"
+                            decoding="async"
                             onError={handleImageError}
                           />
                           <span className="absolute bottom-0 right-0 bg-black/75 text-white text-[8px] font-bold px-1 rounded-tl">
@@ -665,6 +676,8 @@ export default function Experience() {
                               src={resolveImageUrl(img)}
                               alt={`Pilihan foto ${idx + 1}`}
                               className="w-full h-full object-cover"
+                              loading="lazy"
+                              decoding="async"
                               onError={handleImageError}
                             />
                           </button>
@@ -706,6 +719,8 @@ export default function Experience() {
                               src={resolveImageUrl(selectedExp.collaborationLogo)} 
                               alt={selectedExp.collaborationPartner || "Mitra Kolaborasi"} 
                               className="h-9 sm:h-10 w-auto max-w-[70px] sm:max-w-[90px] object-contain rounded-lg"
+                              loading="lazy"
+                              decoding="async"
                               onError={handleImageError}
                             />
                           </div>
@@ -767,6 +782,8 @@ export default function Experience() {
                                 src={resolveImageUrl(img)}
                                 alt={`Foto ${idx + 1}`}
                                 className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-200"
+                                loading="lazy"
+                                decoding="async"
                                 onError={handleImageError}
                               />
                               <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/75 backdrop-blur-xs text-[8px] font-bold text-white font-mono">
@@ -828,6 +845,8 @@ export default function Experience() {
                                   src={resolveImageUrl(item.images[0])}
                                   alt={item.header}
                                   className="w-12 h-12 object-cover rounded-lg shrink-0 group-hover:scale-105 transition-transform"
+                                  loading="lazy"
+                                  decoding="async"
                                   onError={handleImageError}
                                 />
                               ) : (
@@ -955,6 +974,8 @@ export default function Experience() {
                 transition={{ duration: 0.15 }}
                 src={resolveImageUrl(activePhotoUrl)}
                 alt={selectedExp?.header || 'Foto Dokumentasi Pengalaman'}
+                loading="lazy"
+                decoding="async"
                 onError={handleImageError}
                 className="w-auto h-auto max-w-full max-h-[82vh] md:max-h-[86vh] object-contain rounded-none md:rounded-lg shadow-2xl block mx-auto cursor-default"
                 onClick={(e) => e.stopPropagation()}
@@ -986,6 +1007,8 @@ export default function Experience() {
                       src={resolveImageUrl(img)}
                       alt={`Foto ${idx + 1}`}
                       className="w-full h-full object-cover"
+                      loading="lazy"
+                      decoding="async"
                       onError={handleImageError}
                     />
                     <span className="absolute bottom-0 right-0 bg-black/80 text-white text-[8px] font-bold px-1 rounded-tl">

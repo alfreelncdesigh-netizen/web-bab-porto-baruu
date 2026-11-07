@@ -996,19 +996,155 @@ function getPrimaryCoverImage(): { imagePath: string; mimeType: string; width: n
   };
 }
 
-function injectDynamicMeta(html: string, req: Request): string {
+function getProjectById(projectId: string): any | null {
+  try {
+    if (fs.existsSync(projectsFilePath)) {
+      const list = JSON.parse(fs.readFileSync(projectsFilePath, 'utf-8'));
+      if (Array.isArray(list)) {
+        const found = list.find((p: any) => String(p.id) === String(projectId));
+        if (found) return found;
+      }
+    }
+  } catch (e) {
+    console.warn('Notice: getProjectById read error:', e);
+  }
+  return null;
+}
+
+async function resolveProjectData(projectId: string): Promise<any | null> {
+  const local = getProjectById(projectId);
+  if (local) return local;
+
+  // Coba ambil dari Cloud Firestore melalui REST API
+  try {
+    const firestoreUrl = getFirestoreRestDocUrl('projects', projectId);
+    const resp = await fetch(firestoreUrl, { method: 'GET' });
+    if (resp.ok) {
+      const docJson: any = await resp.json();
+      const fields = docJson?.fields;
+      if (fields) {
+        return {
+          id: projectId,
+          title: fields.title?.stringValue || 'Karya Desain',
+          category: fields.category?.stringValue || 'Desain Grafis',
+          description: fields.description?.stringValue || '',
+          image: fields.image?.stringValue || '',
+        };
+      }
+    }
+  } catch {}
+  return null;
+}
+
+async function injectDynamicMeta(html: string, req: Request): Promise<string> {
   const origin = getRequestOrigin(req);
-  const { imagePath, mimeType, width, height } = getPrimaryCoverImage();
+
+  // 1. Deteksi ID proyek dari query parameter (?project=ID, ?p=ID, ?id=ID) atau path (/project/:id)
+  let projectId: string | null = null;
+  if (req.query.project && typeof req.query.project === 'string') {
+    projectId = req.query.project.trim();
+  } else if (req.query.p && typeof req.query.p === 'string') {
+    projectId = req.query.p.trim();
+  } else if (req.query.id && typeof req.query.id === 'string') {
+    projectId = req.query.id.trim();
+  } else if (req.path.startsWith('/project/')) {
+    projectId = req.path.replace('/project/', '').split('/')[0].trim();
+  }
+
+  let project: any = null;
+  if (projectId) {
+    project = await resolveProjectData(projectId);
+  }
+
+  const DEFAULT_TITLE = 'Alfreelnc Design Portofolio – Jasa Desain Grafis & Poster Kreatif';
+  const DEFAULT_DESC = 'Alfreelnc Design Portofolio karya Albian (Muhammad Albiansyah) – Jasa desain grafis profesional, portofolio design graphic, jasa buat poster, jasa mengedit poster, jasa tugas, agensi desain grafis, agensi joki tugas, dan freelance desain grafis.';
+
+  let title = DEFAULT_TITLE;
+  let description = DEFAULT_DESC;
+  let imagePath = '/images/hero-albi.png';
+  let imageAlt = 'Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio';
+  let mimeType = 'image/png';
+  let width = 1408;
+  let height = 768;
+
+  if (project) {
+    // 1. Link memuat parameter proyek: ubah og:title, og:description, og:image, twitter:title, twitter:image
+    title = `${project.title || 'Karya Desain'} – Alfreelnc Design Portofolio`;
+    description = (project.description && project.description.trim().length > 0)
+      ? project.description.trim()
+      : `Karya desain grafis ${project.category || 'kreatif'} profesional oleh Alfreelnc Design (Muhammad Albiansyah).`;
+    
+    if (project.image && typeof project.image === 'string' && project.image.trim().length > 0) {
+      imagePath = project.image.trim();
+      const lower = imagePath.toLowerCase();
+      if (lower.endsWith('.webp')) mimeType = 'image/webp';
+      else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) mimeType = 'image/jpeg';
+      else if (lower.endsWith('.svg')) mimeType = 'image/svg+xml';
+      else mimeType = 'image/png';
+      width = 1200;
+      height = 630;
+    }
+    imageAlt = `${project.title || 'Karya'} - Portofolio Desain Grafis Alfreelnc`;
+  } else {
+    // 2. Halaman utama (tanpa parameter karya): gunakan default setting brand & cover hero utama
+    const cover = getPrimaryCoverImage();
+    imagePath = cover.imagePath;
+    mimeType = cover.mimeType;
+    width = cover.width;
+    height = cover.height;
+  }
+
   const absoluteImageUrl = imagePath.startsWith('http://') || imagePath.startsWith('https://')
     ? imagePath
     : `${origin}${imagePath.startsWith('/') ? imagePath : '/' + imagePath}`;
-  
+
   const fullUrl = `${origin}${req.originalUrl || '/'}`;
 
   let modified = html;
 
+  // Replace <title>
+  if (/<title>[^<]*<\/title>/i.test(modified)) {
+    modified = modified.replace(/<title>[^<]*<\/title>/i, `<title>${title}</title>`);
+  }
+
+  // Replace <meta name="title" ...>
+  if (/<meta\s+name=["']title["'][^>]*>/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+name=["']title["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta name="title" content="${title}" />`
+    );
+  }
+
+  // Replace <meta name="description" ...>
+  if (/<meta\s+name=["']description["'][^>]*>/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+name=["']description["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta name="description" content="${description}" />`
+    );
+  }
+
+  // Replace og:title
+  if (/<meta\s+property=["']og:title["'][^>]*>/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+property=["']og:title["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta property="og:title" content="${title}" id="og-title" />`
+    );
+  } else {
+    modified = modified.replace('</head>', `    <meta property="og:title" content="${title}" id="og-title" />\n  </head>`);
+  }
+
+  // Replace og:description
+  if (/<meta\s+property=["']og:description["'][^>]*>/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+property=["']og:description["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta property="og:description" content="${description}" id="og-desc" />`
+    );
+  } else {
+    modified = modified.replace('</head>', `    <meta property="og:description" content="${description}" id="og-desc" />\n  </head>`);
+  }
+
   // Replace og:image
-  if (/<meta\s+property=["']og:image["']/i.test(modified)) {
+  if (/<meta\s+property=["']og:image["'][^>]*>/i.test(modified)) {
     modified = modified.replace(
       /<meta\s+property=["']og:image["']\s+content=["'][^"']*["'][^>]*>/i,
       `<meta property="og:image" content="${absoluteImageUrl}" id="og-image" />`
@@ -1018,7 +1154,7 @@ function injectDynamicMeta(html: string, req: Request): string {
   }
 
   // Replace og:image:secure_url
-  if (/<meta\s+property=["']og:image:secure_url["']/i.test(modified)) {
+  if (/<meta\s+property=["']og:image:secure_url["'][^>]*>/i.test(modified)) {
     modified = modified.replace(
       /<meta\s+property=["']og:image:secure_url["']\s+content=["'][^"']*["'][^>]*>/i,
       `<meta property="og:image:secure_url" content="${absoluteImageUrl}" id="og-image-secure" />`
@@ -1027,8 +1163,16 @@ function injectDynamicMeta(html: string, req: Request): string {
     modified = modified.replace('</head>', `    <meta property="og:image:secure_url" content="${absoluteImageUrl}" id="og-image-secure" />\n  </head>`);
   }
 
+  // Replace og:image:alt
+  if (/<meta\s+property=["']og:image:alt["'][^>]*>/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+property=["']og:image:alt["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta property="og:image:alt" content="${imageAlt}" id="og-image-alt" />`
+    );
+  }
+
   // Replace og:image:type
-  if (/<meta\s+property=["']og:image:type["']/i.test(modified)) {
+  if (/<meta\s+property=["']og:image:type["'][^>]*>/i.test(modified)) {
     modified = modified.replace(
       /<meta\s+property=["']og:image:type["']\s+content=["'][^"']*["'][^>]*>/i,
       `<meta property="og:image:type" content="${mimeType}" />`
@@ -1036,7 +1180,7 @@ function injectDynamicMeta(html: string, req: Request): string {
   }
 
   // Replace og:image:width
-  if (/<meta\s+property=["']og:image:width["']/i.test(modified)) {
+  if (/<meta\s+property=["']og:image:width["'][^>]*>/i.test(modified)) {
     modified = modified.replace(
       /<meta\s+property=["']og:image:width["']\s+content=["'][^"']*["'][^>]*>/i,
       `<meta property="og:image:width" content="${width}" />`
@@ -1044,23 +1188,47 @@ function injectDynamicMeta(html: string, req: Request): string {
   }
 
   // Replace og:image:height
-  if (/<meta\s+property=["']og:image:height["']/i.test(modified)) {
+  if (/<meta\s+property=["']og:image:height["'][^>]*>/i.test(modified)) {
     modified = modified.replace(
       /<meta\s+property=["']og:image:height["']\s+content=["'][^"']*["'][^>]*>/i,
       `<meta property="og:image:height" content="${height}" />`
     );
   }
 
+  // Replace twitter:title
+  if (/<meta\s+name=["']twitter:title["'][^>]*>/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+name=["']twitter:title["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta name="twitter:title" content="${title}" id="twitter-title" />`
+    );
+  }
+
+  // Replace twitter:description
+  if (/<meta\s+name=["']twitter:description["'][^>]*>/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+name=["']twitter:description["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta name="twitter:description" content="${description}" id="twitter-desc" />`
+    );
+  }
+
   // Replace twitter:image
-  if (/<meta\s+name=["']twitter:image["']/i.test(modified)) {
+  if (/<meta\s+name=["']twitter:image["'][^>]*>/i.test(modified)) {
     modified = modified.replace(
       /<meta\s+name=["']twitter:image["']\s+content=["'][^"']*["'][^>]*>/i,
       `<meta name="twitter:image" content="${absoluteImageUrl}" id="twitter-image" />`
     );
   }
 
+  // Replace twitter:image:alt
+  if (/<meta\s+name=["']twitter:image:alt["'][^>]*>/i.test(modified)) {
+    modified = modified.replace(
+      /<meta\s+name=["']twitter:image:alt["']\s+content=["'][^"']*["'][^>]*>/i,
+      `<meta name="twitter:image:alt" content="${imageAlt}" id="twitter-image-alt" />`
+    );
+  }
+
   // Replace og:url
-  if (/<meta\s+property=["']og:url["']/i.test(modified)) {
+  if (/<meta\s+property=["']og:url["'][^>]*>/i.test(modified)) {
     modified = modified.replace(
       /<meta\s+property=["']og:url["']\s+content=["'][^"']*["'][^>]*>/i,
       `<meta property="og:url" content="${fullUrl}" id="og-url" />`
@@ -1068,7 +1236,7 @@ function injectDynamicMeta(html: string, req: Request): string {
   }
 
   // Replace canonical link
-  if (/<link\s+rel=["']canonical["']/i.test(modified)) {
+  if (/<link\s+rel=["']canonical["'][^>]*>/i.test(modified)) {
     modified = modified.replace(
       /<link\s+rel=["']canonical["']\s+href=["'][^"']*["'][^>]*>/i,
       `<link rel="canonical" href="${fullUrl}" id="canonical-url" />`
@@ -1112,7 +1280,7 @@ async function startServer() {
       try {
         const rawTemplate = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
         const viteTemplate = await vite.transformIndexHtml(req.originalUrl, rawTemplate);
-        const finalHtml = injectDynamicMeta(viteTemplate, req);
+        const finalHtml = await injectDynamicMeta(viteTemplate, req);
         res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(finalHtml);
       } catch (e: any) {
         vite.ssrFixStacktrace(e);
@@ -1131,12 +1299,12 @@ async function startServer() {
         }
       }
     }));
-    app.get('*', (req: Request, res: Response) => {
+    app.get('*', async (req: Request, res: Response) => {
       const indexPath = path.resolve(distDir, 'index.html');
       if (fs.existsSync(indexPath)) {
         try {
           const rawTemplate = fs.readFileSync(indexPath, 'utf-8');
-          const finalHtml = injectDynamicMeta(rawTemplate, req);
+          const finalHtml = await injectDynamicMeta(rawTemplate, req);
           res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(finalHtml);
         } catch {
           res.sendFile(indexPath);
