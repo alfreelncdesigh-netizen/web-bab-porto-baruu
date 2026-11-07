@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { getStoredExperiences, saveStoredExperiences } from '../lib/contentStorage';
+import { logFirestoreError, OperationType, isQuotaExhausted } from '../lib/firestoreErrorHandler';
 import { 
   Briefcase, 
   ArrowRight, 
@@ -178,53 +179,85 @@ export default function Experience() {
   }, [selectedExp?.id]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    // 1. Ambil data dari cache lokal
+    const local = getStoredExperiences();
+    if (local.length > 0) {
+      setExperiences(local);
+      setLoading(false);
+    }
+
+    // 2. Ambil dari server disk (/api/experiences) secara instan tanpa hambatan kuota
+    fetch('/api/experiences')
+      .then(res => res.ok ? res.json() : [])
+      .then(apiData => {
+        if (Array.isArray(apiData) && apiData.length > 0 && isMounted) {
+          setExperiences(apiData);
+          saveStoredExperiences(apiData);
+          setLoading(false);
+        }
+      })
+      .catch(() => {});
+
     const handleUpdate = (e: any) => {
-      if (e.detail && Array.isArray(e.detail)) setExperiences(e.detail);
+      if (e.detail && Array.isArray(e.detail) && isMounted) setExperiences(e.detail);
     };
     window.addEventListener('user_experiences_updated', handleUpdate);
 
-    const unsub = onSnapshot(
-      collection(db, 'experiences'),
-      (snap) => {
-        const localExps = getStoredExperiences();
-        const localMap = new Map<string, any>(localExps.map(e => [String(e.id), e]));
+    // 3. Sinkronisasi sekunder dari Firestore jika kuota belum habis
+    let unsub = () => {};
+    if (!isQuotaExhausted()) {
+      unsub = onSnapshot(
+        collection(db, 'experiences'),
+        (snap) => {
+          const localExps = getStoredExperiences();
+          const localMap = new Map<string, any>(localExps.map(e => [String(e.id), e]));
 
-        const data: any[] = [];
-        snap.forEach(d => {
-          const dataDoc = { id: d.id, ...(d.data() as any) };
-          if (!dataDoc.isArchived) {
-            const local = localMap.get(String(d.id));
-            if (local && Array.isArray(local.images) && local.images.length > 0) {
-              const cloudImages = Array.isArray(dataDoc.images) ? dataDoc.images : [];
-              if (local.images.length > cloudImages.length) {
-                dataDoc.images = Array.from(new Set([...cloudImages, ...local.images]));
-                dataDoc.image = dataDoc.images[0] || dataDoc.image;
+          const data: any[] = [];
+          snap.forEach(d => {
+            const dataDoc = { id: d.id, ...(d.data() as any) };
+            if (!dataDoc.isArchived) {
+              const local = localMap.get(String(d.id));
+              if (local && Array.isArray(local.images) && local.images.length > 0) {
+                const cloudImages = Array.isArray(dataDoc.images) ? dataDoc.images : [];
+                if (local.images.length > cloudImages.length) {
+                  dataDoc.images = Array.from(new Set([...cloudImages, ...local.images]));
+                  dataDoc.image = dataDoc.images[0] || dataDoc.image;
+                }
               }
+              data.push(dataDoc);
             }
-            data.push(dataDoc);
+          });
+          data.sort((a, b) => {
+            const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;
+            const dB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : 0;
+            return dB - dA;
+          });
+          if (isMounted) {
+            setExperiences(data);
+            saveStoredExperiences(data);
+            setLoading(false);
           }
-        });
-        data.sort((a, b) => {
-          const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;
-          const dB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : 0;
-          return dB - dA;
-        });
-        setExperiences(data);
-        saveStoredExperiences(data);
-        setLoading(false);
-      },
-      (error) => {
-        console.warn("Experience stats error (using stored):", error);
-        setExperiences(getStoredExperiences());
-        setLoading(false);
-      }
-    );
+        },
+        (error) => {
+          logFirestoreError(error, OperationType.LIST, 'experiences');
+          if (isMounted) {
+            setExperiences(getStoredExperiences());
+            setLoading(false);
+          }
+        }
+      );
+    } else {
+      if (isMounted) setLoading(false);
+    }
 
     const timer = setTimeout(() => {
-      setLoading(false);
-    }, 1200);
+      if (isMounted) setLoading(false);
+    }, 400);
 
     return () => {
+      isMounted = false;
       clearTimeout(timer);
       unsub();
       window.removeEventListener('user_experiences_updated', handleUpdate);

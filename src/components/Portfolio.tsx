@@ -6,6 +6,7 @@ import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { getStoredProjects, saveStoredProjects, cleanProjects } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
+import { logFirestoreError, OperationType, isQuotaExhausted } from '../lib/firestoreErrorHandler';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import ShareProjectModal from './ShareProjectModal';
 import { 
@@ -366,39 +367,49 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     };
     window.addEventListener('user_projects_updated', handleUpdate);
 
-    // 3. Sinkronisasi sekunder dari Cloud Firestore
-    const unsubscribe = onSnapshot(
-      collection(db, 'projects'),
-      (snapshot) => {
-        const projData: Project[] = [];
-        snapshot.forEach((doc) => {
-          const data = doc.data() as any;
-          if (!data.isArchived) projData.push({ id: doc.id, ...data });
-        });
-        if (projData.length > 0) {
-          projData.sort((a, b) => {
-            const dateA = a.date || '';
-            const dateB = b.date || '';
-            return dateB.localeCompare(dateA);
+    // 3. Sinkronisasi sekunder dari Cloud Firestore (jika kuota masih tersedia)
+    let unsubscribe = () => {};
+    if (!isQuotaExhausted()) {
+      unsubscribe = onSnapshot(
+        collection(db, 'projects'),
+        (snapshot) => {
+          const projData: Project[] = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data() as any;
+            if (!data.isArchived) projData.push({ id: doc.id, ...data });
           });
-          const cleaned = cleanProjects(projData);
-          if (cleaned.length > 0) {
-            setProjects(cleaned);
-            saveStoredProjects(cleaned);
-            if (isMounted) setLoading(false);
-            preloadImages(cleaned);
+          if (projData.length > 0) {
+            projData.sort((a, b) => {
+              const dateA = a.date || '';
+              const dateB = b.date || '';
+              return dateB.localeCompare(dateA);
+            });
+            const cleaned = cleanProjects(projData);
+            if (cleaned.length > 0) {
+              setProjects(cleaned);
+              saveStoredProjects(cleaned);
+              if (isMounted) setLoading(false);
+              preloadImages(cleaned);
+            }
           }
+        },
+        (error) => {
+          logFirestoreError(error, OperationType.LIST, 'projects');
+          const stored = getStoredProjects();
+          if (stored.length > 0) {
+            setProjects(stored);
+          }
+          if (isMounted) setLoading(false);
         }
-      },
-      (error) => {
-        console.warn("Firestore Portfolio Error (using stored/api projects):", error);
-        const stored = getStoredProjects();
-        if (stored.length > 0) {
-          setProjects(stored);
-        }
-        if (isMounted) setLoading(false);
+      );
+    } else {
+      // Kuota tercapai: langsung gunakan cache/api projects
+      const stored = getStoredProjects();
+      if (stored.length > 0) {
+        setProjects(stored);
       }
-    );
+      if (isMounted) setLoading(false);
+    }
 
     // Safety timeout singkat agar skeleton tidak pernah menggantung lebih dari 400ms
     const timer = setTimeout(() => {
@@ -760,13 +771,9 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                 : 'columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 lg:gap-8 [column-fill:_balance]'
             }
           >
-            {/* Tampilan 50% awal dan sisa dimuat otomatis saat scroll/ganti menu */}
+            {/* Tampilkan seluruh karya yang terfilter secara instan */}
             {(() => {
-              const is50Limited = !isSecondHalfLoaded && activeCategory === 'Semua' && !searchQuery.trim();
-              const displayLimit = is50Limited 
-                ? Math.max(1, Math.ceil(filteredProjects.length * 0.5)) 
-                : filteredProjects.length;
-              const visibleProjects = filteredProjects.slice(0, displayLimit);
+              const visibleProjects = filteredProjects;
 
               return (
                 <>

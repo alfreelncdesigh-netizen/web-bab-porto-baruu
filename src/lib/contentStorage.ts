@@ -455,11 +455,12 @@ export function getStoredProjects(): Project[] {
     if (saved) {
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return cleanProjects(parsed);
+        const cleaned = cleanProjects(parsed);
+        if (cleaned.length > 0) return cleaned;
       }
     }
   } catch(e) {}
-  return [];
+  return cleanProjects(defaultProjects);
 }
 
 export async function saveStoredProjects(newProjects: Project[]): Promise<void> {

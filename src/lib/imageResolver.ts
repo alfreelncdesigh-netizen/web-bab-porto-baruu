@@ -193,10 +193,6 @@ export function resolveImageUrl(url?: string | null): string {
 
   // 5. Relative path (misal: "/uploads/nama-file.png" atau "/images/nama-file.png")
   const path = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-  if (typeof window !== 'undefined' && window.location?.origin) {
-    return `${window.location.origin}${path}`;
-  }
-
   return path;
 }
 
