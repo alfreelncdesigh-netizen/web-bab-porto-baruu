@@ -5,7 +5,7 @@ import { Project } from '../data/projects';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { getStoredProjects, saveStoredProjects, cleanProjects } from '../lib/contentStorage';
-import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { resolveImageUrl, handleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import ShareProjectModal from './ShareProjectModal';
 import { 
@@ -191,7 +191,13 @@ function PortfolioLazyImage({
 
     observer.observe(currentEl);
 
+    // Timeout pengaman (1.200ms) agar kisi thumbnail tidak pernah terjebak di animasi shimmer jika observer terhambat
+    const safetyTimer = setTimeout(() => {
+      setIsInView(true);
+    }, 1200);
+
     return () => {
+      clearTimeout(safetyTimer);
       sharedPortfolioObserverCallbacks.delete(currentEl);
       observer.unobserve(currentEl);
     };
@@ -199,9 +205,9 @@ function PortfolioLazyImage({
 
   return (
     <div ref={containerRef} className={`relative w-full overflow-hidden ${containerClassName}`}>
-      {isInView && src ? (
+      {isInView ? (
         <ImageWithSkeleton
-          src={src}
+          src={src || FALLBACK_IMAGE}
           alt={alt}
           priority={priority}
           loading={priority ? 'eager' : 'lazy'}
@@ -787,7 +793,15 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               containerClassName="relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center rounded-xl sm:rounded-2xl"
                             />
                           ) : (
-                            <div className="w-full aspect-[4/5] min-h-[160px] sm:min-h-[300px] transition-transform duration-500 ease-out group-hover:scale-105 bg-zinc-200 dark:bg-zinc-800 animate-shimmer rounded-xl sm:rounded-2xl"></div>
+                            <PortfolioLazyImage 
+                              src={FALLBACK_IMAGE} 
+                              alt={project.title} 
+                              priority={index < 6}
+                              className="w-full h-auto object-contain transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block mx-auto" 
+                              skeletonClassName="rounded-xl sm:rounded-2xl"
+                              aspectClass={layoutMode === 'grid-2' ? "min-h-[140px] sm:min-h-[260px]" : "min-h-[200px] sm:min-h-[260px]"}
+                              containerClassName="relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center rounded-xl sm:rounded-2xl"
+                            />
                           )}
                           
                           {/* Gradien gelap halus di bagian bawah gambar agar teks judul selalu kontras & terbaca jelas */}

@@ -99,11 +99,8 @@ export default function ImageWithSkeleton({
           onError={(e) => {
             setHasError(true);
             setIsLoaded(true);
-            if (onError) {
-              onError(e);
-            } else {
-              handleImageError(e);
-            }
+            handleImageError(e);
+            onError?.(e);
           }}
           className={`${className} transition-opacity duration-300 ease-out relative z-[1] ${
             isLoaded ? 'opacity-100' : 'opacity-0'
