@@ -139,6 +139,13 @@ app.get('/sw.js', (_req: Request, res: Response) => {
   res.sendFile(swPath);
 });
 
+// Google Search Console Verification Endpoint
+app.get('/google2940fb20d347e64e.html', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send('google-site-verification: google2940fb20d347e64e.html\n');
+});
+
 const mediaRegistryPath = path.resolve(__dirname, 'uploads-registry.json');
 
 // Dynamic Cloud Firestore configuration from firebase-applet-config.json
