@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Menu, X, Sun, Moon, Palette } from 'lucide-react';
+import { Menu, X, Sun, Moon, Palette, Search, Sparkles, ChevronRight, HelpCircle, ArrowRight } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { motion, AnimatePresence } from 'motion/react';
 import BrandLogo from './BrandLogo';
@@ -7,6 +7,9 @@ import { SiteSettings } from '../data/settings';
 import { getStoredSettings } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { PWAInstallButton } from './PWAInstallButton';
+import { GoogleGIcon } from './SectionInsight';
+import { getStoredQuickFilterItems } from '../lib/quickFilterStorage';
+import { QuickFilterItem } from '../types/quickFilter';
 
 interface HeaderProps {
  setView: (view: string) => void;
@@ -18,30 +21,41 @@ export default function Header({ setView, currentView }: HeaderProps) {
  const [isScrolled, setIsScrolled] = useState(false);
  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
  const [isThemeDropdownOpen, setIsThemeDropdownOpen] = useState(false);
+ const [isSearchSlideOpen, setIsSearchSlideOpen] = useState(false);
+ const [insightItems, setInsightItems] = useState<QuickFilterItem[]>(() => getStoredQuickFilterItems());
 
  useEffect(() => {
    const handleSettingsUpdate = (e: any) => {
      if (e.detail) setSettings(e.detail);
    };
+   const handleInsightsUpdate = (e: any) => {
+     if (e.detail && Array.isArray(e.detail)) setInsightItems(e.detail);
+   };
    window.addEventListener('app_settings_updated', handleSettingsUpdate);
-   return () => window.removeEventListener('app_settings_updated', handleSettingsUpdate);
+   window.addEventListener('quick_filter_updated', handleInsightsUpdate);
+   return () => {
+     window.removeEventListener('app_settings_updated', handleSettingsUpdate);
+     window.removeEventListener('quick_filter_updated', handleInsightsUpdate);
+   };
  }, []);
-
 
  const [activeSection, setActiveSection] = useState('home');
  const { theme, isDark, toggleTheme, setTheme } = useTheme();
 
- // Refs for detecting click outside mobile menu and theme dropdown
+ // Refs for detecting click outside
  const mobileMenuRef = useRef<HTMLDivElement>(null);
  const mobileToggleRef = useRef<HTMLButtonElement>(null);
  const desktopThemeDropdownRef = useRef<HTMLDivElement>(null);
  const desktopThemeToggleRef = useRef<HTMLButtonElement>(null);
  const mobileThemeDropdownRef = useRef<HTMLDivElement>(null);
  const mobileThemeToggleRef = useRef<HTMLButtonElement>(null);
+ const searchSlideRef = useRef<HTMLDivElement>(null);
+ const desktopSearchTriggerRef = useRef<HTMLButtonElement>(null);
+ const mobileSearchTriggerRef = useRef<HTMLButtonElement>(null);
 
  // Handle click outside or tap on blank screen to auto-close dropdowns
  useEffect(() => {
-  if (!isMobileMenuOpen && !isThemeDropdownOpen) return;
+  if (!isMobileMenuOpen && !isThemeDropdownOpen && !isSearchSlideOpen) return;
 
   const handlePointerDown = (e: MouseEvent | TouchEvent) => {
     const target = e.target as Node | null;
@@ -67,12 +81,24 @@ export default function Header({ setView, currentView }: HeaderProps) {
         setIsThemeDropdownOpen(false);
       }
     }
+
+    // Check if clicked outside search slide panel
+    if (isSearchSlideOpen) {
+      const insideSlide = searchSlideRef.current?.contains(target);
+      const insideDesktopSearch = desktopSearchTriggerRef.current?.contains(target);
+      const insideMobileSearch = mobileSearchTriggerRef.current?.contains(target);
+
+      if (!insideSlide && !insideDesktopSearch && !insideMobileSearch) {
+        setIsSearchSlideOpen(false);
+      }
+    }
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       setIsMobileMenuOpen(false);
       setIsThemeDropdownOpen(false);
+      setIsSearchSlideOpen(false);
     }
   };
 
@@ -85,7 +111,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
     document.removeEventListener('touchstart', handlePointerDown);
     window.removeEventListener('keydown', handleKeyDown);
   };
- }, [isMobileMenuOpen, isThemeDropdownOpen]);
+ }, [isMobileMenuOpen, isThemeDropdownOpen, isSearchSlideOpen]);
 
  useEffect(() => {
   const handleScroll = () => {
@@ -95,6 +121,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
     if (window.scrollY > 50) {
       if (isMobileMenuOpen) setIsMobileMenuOpen(false);
       if (isThemeDropdownOpen) setIsThemeDropdownOpen(false);
+      if (isSearchSlideOpen) setIsSearchSlideOpen(false);
     }
 
     // Scroll spy logic
@@ -123,7 +150,6 @@ export default function Header({ setView, currentView }: HeaderProps) {
   { name: 'Karya', id: 'portfolio', view: 'portfolio' },
   { name: 'Pengalaman', id: 'experience', view: 'experience' },
   { name: 'Order', id: 'store', view: 'store' },
-  { name: 'Blog', id: 'blog', view: 'blog' },
   { name: 'Statistik', id: 'stats', view: 'stats' },
  ];
 
@@ -131,14 +157,59 @@ export default function Header({ setView, currentView }: HeaderProps) {
   e.preventDefault();
   setIsMobileMenuOpen(false);
   setIsThemeDropdownOpen(false);
+  setIsSearchSlideOpen(false);
   setView(link.view);
+ };
+
+ const handleSelectPresetQuestion = (itemOrCat: QuickFilterItem | string) => {
+  setIsSearchSlideOpen(false);
+  setIsMobileMenuOpen(false);
+  setIsThemeDropdownOpen(false);
+
+  const isObject = typeof itemOrCat === 'object';
+  const questionId = isObject ? itemOrCat.id : undefined;
+  const category = isObject ? itemOrCat.category : itemOrCat;
+
+  // Simpan state pilihan agar langsung aktif saat halaman insight khusus dibuka
+  if (typeof window !== 'undefined') {
+    (window as any).__selectedInsight = { questionId, category };
+  }
+
+  // Beralih ke halaman/menu insight khusus
+  setView('insight');
+
+  const emitInsight = () => {
+    window.dispatchEvent(
+      new CustomEvent('select_insight', {
+        detail: {
+          questionId,
+          category,
+        },
+      })
+    );
+  };
+
+  emitInsight();
+  setTimeout(emitInsight, 80);
+  setTimeout(emitInsight, 250);
+
+  setTimeout(() => {
+    if (questionId) {
+      const targetEl = document.getElementById(`insight-card-${questionId}`);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, 160);
  };
 
  return (
   <>
    {/* Transparent Backdrop to detect taps on empty screen / anywhere else */}
    <AnimatePresence>
-    {(isMobileMenuOpen || isThemeDropdownOpen) && (
+    {(isMobileMenuOpen || isThemeDropdownOpen || isSearchSlideOpen) && (
       <motion.div
         key="dropdown-backdrop"
         initial={{ opacity: 0 }}
@@ -149,10 +220,12 @@ export default function Header({ setView, currentView }: HeaderProps) {
         onClick={() => {
           setIsMobileMenuOpen(false);
           setIsThemeDropdownOpen(false);
+          setIsSearchSlideOpen(false);
         }}
         onTouchStart={() => {
           setIsMobileMenuOpen(false);
           setIsThemeDropdownOpen(false);
+          setIsSearchSlideOpen(false);
         }}
       />
     )}
@@ -201,8 +274,29 @@ export default function Header({ setView, currentView }: HeaderProps) {
       )}
      </div>
 
+
      {/* Desktop Nav */}
-     <nav className="hidden md:flex gap-6 lg:gap-7 text-[14px] lg:text-[15px] items-center">
+     <nav className="hidden md:flex gap-4 lg:gap-5.5 text-[14px] lg:text-[15px] items-center">
+      {/* Tombol Cari Insight (berlogo Google Search) tepat di samping menu "Tentang Saya" */}
+      <button
+        ref={desktopSearchTriggerRef}
+        onClick={() => {
+          setIsThemeDropdownOpen(false);
+          setIsSearchSlideOpen(!isSearchSlideOpen);
+        }}
+        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-semibold shadow-2xs transition-all hover:scale-102 cursor-pointer mr-1 lg:mr-1.5 ${
+          isSearchSlideOpen
+            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+            : 'bg-zinc-100 hover:bg-zinc-200/90 dark:bg-zinc-800/90 dark:hover:bg-zinc-700/90 border-zinc-200/80 dark:border-zinc-700/80 text-zinc-700 dark:text-zinc-200'
+        }`}
+        aria-label="Cari Insight & Q&A"
+        title="Buka Pencarian Cepat Insight"
+      >
+        <GoogleGIcon className="w-4 h-4 shrink-0" />
+        <span className="text-[12.5px] font-medium text-zinc-600 dark:text-zinc-300">Cari Insight</span>
+        <Search className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500" />
+      </button>
+
       {navLinks.map((link) => {
        const isActive = currentView === link.view;
        return (
@@ -268,8 +362,27 @@ export default function Header({ setView, currentView }: HeaderProps) {
       </button>
      </nav>
 
-     {/* Mobile Toggle Icons (Theme + Hamburger) */}
-     <div className="md:hidden flex items-center gap-2 sm:gap-2.5">
+     {/* Mobile Toggle Icons (Search + Theme + Hamburger) */}
+     <div className="md:hidden flex items-center gap-1.5 sm:gap-2">
+      {/* Mobile Search Icon (between Logo & Theme Toggle) */}
+      <button 
+        ref={mobileSearchTriggerRef}
+        onClick={() => {
+          setIsMobileMenuOpen(false);
+          setIsThemeDropdownOpen(false);
+          setIsSearchSlideOpen(!isSearchSlideOpen);
+        }} 
+        className={`p-2 rounded-full transition-colors flex items-center justify-center focus:outline-none cursor-pointer ${
+          isSearchSlideOpen 
+            ? 'bg-blue-600 text-white shadow-xs' 
+            : 'text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-85'
+        }`}
+        aria-label="Cari Insight"
+        title="Buka Pencarian Cepat Insight"
+      >
+        <GoogleGIcon className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
+      </button>
+
       <div className="relative">
         <button 
          ref={mobileThemeToggleRef}
@@ -363,6 +476,101 @@ export default function Header({ setView, currentView }: HeaderProps) {
           Hubungi Saya
          </button>
          <PWAInstallButton className="w-full justify-center py-2.5" />
+       </div>
+      </motion.div>
+     )}
+    </AnimatePresence>
+
+    {/* Slide-Down Quick Filter Search Panel */}
+    <AnimatePresence>
+     {isSearchSlideOpen && (
+      <motion.div 
+       ref={searchSlideRef}
+       initial={{ opacity: 0, y: -16, scale: 0.98 }}
+       animate={{ opacity: 1, y: 0, scale: 1 }}
+       exit={{ opacity: 0, y: -16, scale: 0.98 }}
+       transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+       className="pointer-events-auto absolute top-[62px] sm:top-[70px] md:top-[76px] left-3 sm:left-5 md:left-auto md:right-4 lg:right-8 right-3 sm:right-5 md:w-[680px] lg:w-[740px] bg-white/98 dark:bg-[#121215]/98 backdrop-blur-2xl border border-zinc-200/90 dark:border-zinc-800/90 rounded-3xl p-5 sm:p-6 shadow-2xl z-50 select-none overflow-hidden"
+      >
+       {/* Panel Header */}
+       <div className="flex items-center justify-between pb-3.5 border-b border-zinc-100 dark:border-zinc-800/80 mb-4">
+        <div className="flex items-center gap-2.5">
+         <GoogleGIcon className="w-5 h-5 shrink-0" />
+         <div>
+          <h3 className="text-xs sm:text-sm font-extrabold text-black dark:text-white tracking-tight">
+           Pencarian Cepat Insight & Pertanyaan Desain
+          </h3>
+          <p className="text-[10.5px] sm:text-[11px] text-zinc-500 dark:text-zinc-400">
+           Pilih topik atau pertanyaan di bawah untuk membuka jawaban di Halaman Insight Khusus.
+          </p>
+         </div>
+        </div>
+        <button
+         onClick={() => setIsSearchSlideOpen(false)}
+         className="p-1.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+         aria-label="Tutup Panel"
+        >
+         <X size={16} />
+        </button>
+       </div>
+
+       {/* Preset Topic Buttons */}
+       <div className="mb-4">
+        <span className="block text-[10px] font-mono uppercase font-bold text-zinc-400 dark:text-zinc-500 mb-2 tracking-wider">
+         Topik Kurasi Populer:
+        </span>
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+         {['Tren Warna', 'Tren Desain', 'Tips Branding', 'Jasa & Order'].map((cat) => (
+          <button
+           key={cat}
+           onClick={() => handleSelectPresetQuestion(cat)}
+           className="px-3 py-1.5 rounded-full text-xs font-semibold bg-zinc-100 hover:bg-blue-50 dark:bg-zinc-800 dark:hover:bg-blue-950/40 text-zinc-700 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400 border border-zinc-200/60 dark:border-zinc-700/60 transition-colors cursor-pointer flex items-center gap-1.5 active:scale-95"
+          >
+           <Sparkles size={11} className="text-blue-500" />
+           <span>{cat}</span>
+          </button>
+         ))}
+        </div>
+       </div>
+
+       {/* List of Curated Questions */}
+       <div>
+        <span className="block text-[10px] font-mono uppercase font-bold text-zinc-400 dark:text-zinc-500 mb-2 tracking-wider">
+         Pertanyaan Umum (Klik untuk Membuka Jawaban):
+        </span>
+        <div className="max-h-[240px] sm:max-h-[280px] overflow-y-auto space-y-1.5 pr-1 no-scrollbar">
+         {insightItems.slice(0, 8).map((qItem) => (
+          <button
+           key={qItem.id}
+           onClick={() => handleSelectPresetQuestion(qItem)}
+           className="w-full text-left p-3 rounded-2xl hover:bg-zinc-50 dark:hover:bg-zinc-850/80 border border-transparent hover:border-zinc-200 dark:hover:border-zinc-800 transition-all cursor-pointer group flex items-start justify-between gap-3 active:scale-99"
+          >
+           <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+             <span className="px-2 py-0.5 rounded-md text-[9.5px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+              {qItem.category}
+             </span>
+            </div>
+            <p className="text-xs sm:text-[13px] font-semibold text-zinc-800 dark:text-zinc-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-1">
+             {qItem.question}
+            </p>
+           </div>
+           <ChevronRight size={15} className="text-zinc-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all shrink-0 mt-1" />
+          </button>
+         ))}
+        </div>
+       </div>
+
+       {/* Footer link to Section Insight */}
+       <div className="mt-3.5 pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-500">
+        <span>Akses Menu Insight Khusus</span>
+        <button
+         onClick={() => handleSelectPresetQuestion('Semua')}
+         className="font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
+        >
+         <span>Buka Semua Topik Insight</span>
+         <ArrowRight size={12} />
+        </button>
        </div>
       </motion.div>
      )}

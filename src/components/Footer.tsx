@@ -75,10 +75,15 @@ export default function Footer() {
                 Pengalaman
               </button>
               <button 
-                onClick={() => window.dispatchEvent(new CustomEvent('changeView', { detail: { view: 'blog' } }))} 
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('changeView', { detail: { view: 'home' } }));
+                  setTimeout(() => {
+                    document.getElementById('quick-search')?.scrollIntoView({ behavior: 'smooth' });
+                  }, 100);
+                }} 
                 className="text-xs text-zinc-600 dark:text-zinc-400 font-medium hover:text-black dark:hover:text-white transition-colors text-left py-0.5 hover:translate-x-0.5 transform duration-150"
               >
-                Blog
+                Tanya Jawab
               </button>
               <button 
                 onClick={() => window.dispatchEvent(new CustomEvent('changeView', { detail: { view: 'cv' } }))} 

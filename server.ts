@@ -395,6 +395,7 @@ const projectsFilePath = path.resolve(__dirname, 'projects-storage.json');
 const blogsFilePath = path.resolve(__dirname, 'blogs-storage.json');
 const experiencesFilePath = path.resolve(__dirname, 'experiences-storage.json');
 const messagesFilePath = path.resolve(__dirname, 'messages-storage.json');
+const quickFilterFilePath = path.resolve(__dirname, 'quick-filter-storage.json');
 
 const requireAdminAuth = (req: Request, res: Response, next: NextFunction): void => {
   const token = req.headers['x-admin-token'] || req.headers['authorization'];
@@ -536,6 +537,31 @@ app.post('/api/blogs', requireAdminAuth, (req: Request, res: Response): void => 
     res.status(400).json({ error: 'Format data blog tidak valid' });
   } catch {
     res.status(500).json({ error: 'Gagal menyimpan blog' });
+  }
+});
+
+app.get('/api/quick-filter', (_req: Request, res: Response): void => {
+  try {
+    if (fs.existsSync(quickFilterFilePath)) {
+      const data = fs.readFileSync(quickFilterFilePath, 'utf-8');
+      res.status(200).json(JSON.parse(data));
+      return;
+    }
+  } catch {}
+  res.status(200).json([]);
+});
+
+app.post('/api/quick-filter', requireAdminAuth, (req: Request, res: Response): void => {
+  try {
+    const payload = req.body;
+    if (Array.isArray(payload)) {
+      fs.writeFileSync(quickFilterFilePath, JSON.stringify(payload, null, 2), 'utf-8');
+      res.status(200).json({ success: true });
+      return;
+    }
+    res.status(400).json({ error: 'Format data quick filter tidak valid' });
+  } catch {
+    res.status(500).json({ error: 'Gagal menyimpan data quick filter' });
   }
 });
 

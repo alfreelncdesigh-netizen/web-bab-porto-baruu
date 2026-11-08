@@ -5,10 +5,11 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Menu, X, Lock, LogOut, Image as ImageIcon, FileText, Settings, 
   ShoppingCart, Briefcase, BarChart3, User, Mail, Archive, Sparkles, 
-  Eye, EyeOff, ShieldCheck
+  Eye, EyeOff, ShieldCheck, Search
 } from 'lucide-react';
 import { doc, getDoc, setDoc, getDocs, query, collection, where } from 'firebase/firestore';
 
+import QuickFilterAdmin from './QuickFilterAdmin';
 import BlogAdmin from './BlogAdmin';
 import ExperienceAdmin from './ExperienceAdmin';
 import PortfolioAdmin from './PortfolioAdmin';
@@ -37,7 +38,7 @@ export const MASTER_ADMINS = [
 export default function AdminDashboard() {
   const [isAuth, setIsAuth] = useState(false);
   const [adminRole, setAdminRole] = useState<'master' | 'admin' | 'collaborator'>('master');
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'blog' | 'experience' | 'about' | 'cv' | 'stats' | 'settings' | 'store' | 'messages' | 'archive' | 'promo' | 'access' | 'collaboration'>('portfolio');
+  const [activeTab, setActiveTab] = useState<'portfolio' | 'quickSearch' | 'blog' | 'experience' | 'about' | 'cv' | 'stats' | 'settings' | 'store' | 'messages' | 'archive' | 'promo' | 'access' | 'collaboration'>('portfolio');
   const [isChecking, setIsChecking] = useState(true);
   const [error, setError] = useState('');
   
@@ -612,7 +613,8 @@ export default function AdminDashboard() {
               {(() => {
                 const currentTabObj = [
                   { id: 'portfolio', icon: ImageIcon },
-                  { id: 'blog', icon: FileText },
+                  { id: 'quickSearch', icon: Search },
+                  { id: 'blog', icon: Search },
                   { id: 'experience', icon: Briefcase },
                   { id: 'stats', icon: BarChart3 },
                   { id: 'messages', icon: Mail },
@@ -635,7 +637,8 @@ export default function AdminDashboard() {
                 {(() => {
                   const labels: Record<string, string> = {
                     portfolio: 'Kelola Karya (Portofolio)',
-                    blog: 'Kelola Artikel Blog',
+                    quickSearch: 'Kelola Quick Filter Q&A',
+                    blog: 'Kelola Quick Filter Q&A',
                     experience: 'Kelola Pengalaman',
                     store: 'Kelola Order Desain',
                     messages: 'Pesan Klien Masuk',
@@ -728,7 +731,7 @@ export default function AdminDashboard() {
               </div>
               {[
                 { id: 'portfolio', label: 'Karya', icon: ImageIcon },
-                { id: 'blog', label: 'Blog', icon: FileText },
+                { id: 'quickSearch', label: 'Section Insight Q&A', icon: Search },
                 { id: 'experience', label: 'Pengalaman', icon: Briefcase },
                 ...(adminRole !== 'collaborator' ? [
                   { id: 'about', label: 'Tentang Saya', icon: User },
@@ -865,7 +868,7 @@ export default function AdminDashboard() {
               transition={{ duration: 0.15, ease: [0.25, 1, 0.5, 1] }}
             >
               {activeTab === 'portfolio' && <PortfolioAdmin />}
-              {activeTab === 'blog' && <BlogAdmin />}
+              {(activeTab === 'quickSearch' || activeTab === 'blog') && <QuickFilterAdmin />}
               {activeTab === 'experience' && <ExperienceAdmin />}
               {adminRole !== 'collaborator' && (
                 <>

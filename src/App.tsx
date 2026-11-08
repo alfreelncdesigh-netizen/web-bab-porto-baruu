@@ -9,6 +9,7 @@ import Store from './components/Store';
 import Contact from './components/Contact';
 import Footer from './components/Footer';
 import Blog from './components/Blog';
+import SectionInsight from './components/SectionInsight';
 import Stats from './components/Stats';
 import Experience from './components/Experience';
 import AdminDashboard from './components/AdminDashboard';
@@ -54,7 +55,7 @@ const AppSkeleton = () => (
 
         {/* Nav Links (Desktop) */}
         <div className="hidden md:flex gap-5 lg:gap-6 items-center">
-          {['Tentang Saya', 'Beranda', 'Karya', 'Pengalaman', 'Order', 'Blog', 'Statistik'].map((_, i) => (
+          {['Tentang Saya', 'Beranda', 'Karya', 'Pengalaman', 'Order', 'Statistik'].map((_, i) => (
             <div key={i} className={`h-3 w-12 lg:w-14 rounded-full ${skeletonGradient}`} />
           ))}
           <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700 mx-1" />
@@ -241,7 +242,7 @@ const SectionDivider = () => (
 );
 
 export default function App() {
-  const [view, setView] = useState<'home' | 'about' | 'portfolio' | 'store' | 'contact' | 'blog' | 'admin' | 'cv' | 'stats' | 'experience'>('home');
+  const [view, setView] = useState<'home' | 'about' | 'portfolio' | 'store' | 'contact' | 'blog' | 'insight' | 'admin' | 'cv' | 'stats' | 'experience'>('home');
   const [isAppLoading, setIsAppLoading] = useState(true);
   const [isSecondHalfLoaded, setIsSecondHalfLoaded] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -264,7 +265,7 @@ export default function App() {
   useEffect(() => {
     const handleHash = () => {
       const rawHash = window.location.hash.replace('#', '').trim();
-      const validViews = ['about', 'portfolio', 'store', 'contact', 'blog', 'admin', 'cv', 'stats', 'experience'];
+      const validViews = ['about', 'portfolio', 'store', 'contact', 'blog', 'insight', 'admin', 'cv', 'stats', 'experience'];
       if (validViews.includes(rawHash)) {
         setIsSecondHalfLoaded(true);
         setView(rawHash as any);
@@ -325,6 +326,12 @@ export default function App() {
         description: 'Artikel, tips desain grafis, inspirasi tipografi modern, dan wawasan proses kreatif.',
         image: '/images/banner_promo_bca_1788696791480.jpg',
         hash: '#blog',
+      },
+      insight: {
+        title: 'Insight & Tanya Jawab Desain – Alfreelnc Design',
+        description: 'Wawasan terkurasi seputar tren warna, tren desain, tips branding, dan panduan order karya.',
+        image: '/images/editing_tools_3d_1787123977793.jpg',
+        hash: '#insight',
       },
       contact: {
         title: 'Hubungi & Konsultasi Proyek Desain – Muhammad Albiansyah',
@@ -864,8 +871,6 @@ export default function App() {
                         className="w-full"
                       >
                         <SectionDivider />
-                        <Blog isSecondHalfLoaded={true} />
-                        <SectionDivider />
                         <Stats />
                         <SectionDivider />
                         <Experience />
@@ -902,15 +907,17 @@ export default function App() {
               </motion.div>
             )}
 
-            {view === 'blog' && (
+            {(view === 'insight' || view === 'blog') && (
               <motion.div
-                key="blog"
+                key="insight"
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.12, ease: [0.25, 1, 0.5, 1] }}
               >
-                <div className="min-h-screen"><Blog isSecondHalfLoaded={true} /></div>
+                <div className="min-h-screen">
+                  <SectionInsight isSecondHalfLoaded={true} isDedicatedPage={true} />
+                </div>
               </motion.div>
             )}
 

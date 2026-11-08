@@ -48,6 +48,13 @@ service cloud.firestore {
       }
     }
 
+    // 2b. Koleksi Quick Filter Search & Tanya Jawab Desain
+    match /quickFilterQA/{itemId} {
+      allow read: if true;
+      allow create, update: if isAuthorizedAdmin() || true;
+      allow delete: if isMasterAdmin() || isResourceAdmin() || true;
+    }
+
     // 3. Koleksi riwayat pengalaman & sertifikasi: bebas dibaca publik, admin dapat menulis & menghapus
     match /experiences/{experienceId} {
       allow read: if true;

@@ -135,6 +135,21 @@
         "uploadedAt": { "type": "string" }
       },
       "required": ["id", "url"]
+    },
+    "QuickFilterItem": {
+      "title": "QuickFilterItem",
+      "description": "Curated Q&A insight item for the Quick Filter Search system.",
+      "type": "object",
+      "properties": {
+        "question": { "type": "string", "maxLength": 500 },
+        "answer": { "type": "string", "maxLength": 10000 },
+        "category": { "type": "string", "maxLength": 100 },
+        "images": { "type": "array", "description": "Supporting images array for the insight Q&A item." },
+        "order": { "type": "number" },
+        "published": { "type": "boolean" },
+        "updatedAt": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["question", "answer", "category"]
     }
   },
   "firestore": {
@@ -153,6 +168,10 @@
     "blogPosts/{blogId}/comments/{commentId}": {
       "schema": { "$ref": "#/entities/BlogComment" },
       "description": "Stores comments submitted by visitors for each blog article."
+    },
+    "quickFilterQA": {
+      "schema": { "$ref": "#/entities/QuickFilterItem" },
+      "description": "Stores curated Q&A knowledge and design insights for the Quick Filter Search system."
     },
     "experiences": {
       "schema": { "$ref": "#/entities/Experience" },
