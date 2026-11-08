@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { Project, categories } from '../data/projects';
 import { Edit, Trash, EyeOff, Eye, Plus, X, Check, Upload, Loader2, Link as LinkIcon, Archive, AlertCircle, Handshake } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { getStoredProjects, saveStoredProjects, cleanProjects, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { SiteSettings } from '../data/settings';
 import { getOptimizedImageUrl } from "../lib/cloudinary";
@@ -73,14 +73,23 @@ export default function PortfolioAdmin() {
 
     const docId = editingProject.id.toString();
 
-    // Pastikan payload yang dikirim HANYA BERISI TEXT STRING (kumpulan URL gambar, judul, dan deskripsi)
-    // Tanpa Base64 raksasa agar proses simpan instan (< 2 detik)
+    // Pastikan HANYA URL publik permanen dari Firebase Storage yang disimpan ke database
+    // Filter ketat: hilangkan data base64 mentah dan local blob URL
+    const rawImages = editingProject.images || (editingProject.image ? [editingProject.image] : []);
+    const cleanImages = rawImages
+      .map(img => (img || '').trim())
+      .filter(img => img.length > 0 && !img.startsWith('data:') && !img.startsWith('blob:'));
+
+    const cleanMainImage = editingProject.image && !editingProject.image.startsWith('data:') && !editingProject.image.startsWith('blob:')
+      ? editingProject.image.trim()
+      : (cleanImages[0] || '');
+
     const savedProj: Project = {
       id: docId,
       title: editingProject.title.trim(),
       category: editingProject.category.trim() || 'UI/UX',
-      image: (editingProject.image || '').trim(),
-      images: editingProject.images || (editingProject.image ? [editingProject.image.trim()] : []),
+      image: cleanMainImage,
+      images: cleanImages,
       description: (editingProject.description || '').trim(),
       date: (editingProject.date || '').trim() || new Date().toISOString().split('T')[0],
       role: (editingProject.role || '').trim(),
@@ -346,33 +355,73 @@ export default function PortfolioAdmin() {
 
     try {
       if (fileList.length === 1) {
-        setUploadStatusText("Mengompres & Mengunggah Gambar...");
-        const cleanUrl = await compressAndUpload(firstFile, 'portfolio');
-        setEditingProject(prev => prev ? ({
-          ...prev,
-          image: cleanUrl,
-          images: [cleanUrl, ...(prev.images || []).filter(img => img !== cleanUrl)]
-        }) : null);
-        showToast("Gambar berhasil diunggah!");
+        setUploadStatusText("Mengompres & Mengunggah Gambar ke Firebase Storage (/works/)...");
+        const cleanUrl = await compressAndUpload(firstFile, 'works');
+        
+        setEditingProject(prev => {
+          if (!prev) return null;
+          const prevImages = (prev.images || []).filter(img => !img.startsWith('data:') && !img.startsWith('blob:'));
+          const merged = [cleanUrl, ...prevImages.filter(img => img !== cleanUrl)];
+          return {
+            ...prev,
+            image: cleanUrl,
+            images: merged
+          };
+        });
+
+        // Jika dokumen karya sudah tersimpan di Firestore, langsung sinkronkan URL permanen via arrayUnion()
+        if (editingProject?.id) {
+          try {
+            const projectRef = doc(db, 'projects', editingProject.id.toString());
+            await updateDoc(projectRef, {
+              image: cleanUrl,
+              images: arrayUnion(cleanUrl),
+              updatedAt: new Date().toISOString()
+            });
+          } catch (syncErr) {
+            console.warn("Direct arrayUnion project sync notice:", syncErr);
+          }
+        }
+
+        showToast("Gambar berhasil diunggah permanen ke Firebase Storage (/works/)!");
       } else {
-        setUploadStatusText(`Mengunggah Gambar (0/${fileList.length})...`);
+        setUploadStatusText(`Mengunggah Gambar ke Firebase Storage (/works/) (0/${fileList.length})...`);
         const cleanUrls = await uploadMultipleImagesInParallel(
           fileList,
-          'portfolio',
-          (done, total) => setUploadStatusText(`Mengunggah Gambar (${done}/${total})...`)
+          'works',
+          (done, total) => setUploadStatusText(`Mengunggah ke Firebase Storage (${done}/${total})...`)
         );
         if (cleanUrls.length > 0) {
-          setEditingProject(prev => prev ? ({
-            ...prev,
-            image: cleanUrls[0],
-            images: cleanUrls
-          }) : null);
-          showToast(`${cleanUrls.length} gambar berhasil diunggah!`);
+          setEditingProject(prev => {
+            if (!prev) return null;
+            const prevImages = (prev.images || []).filter(img => !img.startsWith('data:') && !img.startsWith('blob:'));
+            const merged = [...cleanUrls, ...prevImages.filter(img => !cleanUrls.includes(img))];
+            return {
+              ...prev,
+              image: prev.image && !prev.image.startsWith('data:') && !prev.image.startsWith('blob:') ? prev.image : cleanUrls[0],
+              images: merged
+            };
+          });
+
+          // Sinkronkan seluruh foto ke dokumen Firestore via arrayUnion()
+          if (editingProject?.id) {
+            try {
+              const projectRef = doc(db, 'projects', editingProject.id.toString());
+              await updateDoc(projectRef, {
+                images: arrayUnion(...cleanUrls),
+                updatedAt: new Date().toISOString()
+              });
+            } catch (syncErr) {
+              console.warn("Direct arrayUnion project batch sync notice:", syncErr);
+            }
+          }
+
+          showToast(`${cleanUrls.length} gambar berhasil diunggah permanen ke Firebase Storage!`);
         }
       }
     } catch (err: any) {
       console.error("Upload portfolio image error:", err);
-      showToast(err?.message || "Gagal mengunggah gambar. Batas waktu 10 detik terlampaui.", "error");
+      showToast(err?.message || "Gagal mengunggah gambar ke Firebase Storage.", "error");
     } finally {
       setUploading(false);
       setUploadStatusText('');

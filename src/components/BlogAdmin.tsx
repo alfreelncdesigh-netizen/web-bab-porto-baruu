@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { BlogPost } from '../types/blog';
 import { Edit, Trash, Plus, X, Check, Cloud, Upload, Loader2, Image as ImageIcon, Archive, AlertCircle, Handshake } from 'lucide-react';
 import { db, ensureFreshAuthToken } from '../lib/firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { getStoredBlogs, saveStoredBlogs, cleanBlogs, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { SiteSettings } from '../data/settings';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
@@ -69,13 +69,17 @@ export default function BlogAdmin() {
 
     setSavingPost(true);
 
-    // Pastikan payload HANYA berisi text string (URL gambar, judul, konten, kategori, tanggal)
-    // Tidak ada Base64 mentah yang dikirim ke database
+    // Pastikan payload HANYA berisi URL publik permanen dari Firebase Storage
+    // Tidak ada Base64 mentah atau blob lokal yang dikirim ke database
+    const cleanImage = editingPost.image && !editingPost.image.startsWith('data:') && !editingPost.image.startsWith('blob:')
+      ? editingPost.image.trim()
+      : '';
+
     const payloadToSave: BlogPost = {
       id: editingPost.id,
       title: editingPost.title.trim(),
       content: editingPost.content || '',
-      image: (editingPost.image || '').trim(),
+      image: cleanImage,
       date: editingPost.date || new Date().toISOString(),
       category: editingPost.category || 'Umum',
       published: Boolean(editingPost.published),
@@ -234,30 +238,55 @@ export default function BlogAdmin() {
 
     try {
       if (fileList.length === 1) {
-        setUploadStatusText("Mengompres & Mengunggah Gambar...");
-        // max-width: 1200px, quality: 0.75, fast upload
-        const cleanUrl = await compressAndUpload(fileList[0], 'blog_posts', 1200, 0.75, 8000);
+        setUploadStatusText("Mengompres & Mengunggah Gambar ke Firebase Storage (/blogs/)...");
+        const cleanUrl = await compressAndUpload(fileList[0], 'blogs', 1200, 0.75, 25000);
         setEditingPost(prev => prev ? ({ ...prev, image: cleanUrl }) : null);
-        showToast("Gambar berhasil diunggah!");
+
+        // Jika dokumen blog sudah tersimpan di Firestore, langsung sinkronkan URL gambar permanen
+        if (editingPost?.id) {
+          try {
+            const docRef = doc(db, 'blogPosts', editingPost.id);
+            await updateDoc(docRef, {
+              image: cleanUrl,
+              updatedAt: new Date().toISOString()
+            });
+          } catch (syncErr) {
+            console.warn("Direct blog image sync notice:", syncErr);
+          }
+        }
+
+        showToast("Gambar berhasil diunggah permanen ke Firebase Storage (/blogs/)!");
       } else {
-        // Multiple upload parallel
-        setUploadStatusText(`Mengunggah Gambar (0/${fileList.length})...`);
+        setUploadStatusText(`Mengunggah Gambar ke Firebase Storage (/blogs/) (0/${fileList.length})...`);
         const cleanUrls = await uploadMultipleImagesInParallel(
           fileList,
-          'blog_posts',
-          (done, total) => setUploadStatusText(`Mengunggah Gambar (${done}/${total})...`),
+          'blogs',
+          (done, total) => setUploadStatusText(`Mengunggah ke Firebase Storage (${done}/${total})...`),
           1200,
           0.75,
-          10000
+          25000
         );
         if (cleanUrls.length > 0) {
           setEditingPost(prev => prev ? ({ ...prev, image: cleanUrls[0] }) : null);
-          showToast(`${cleanUrls.length} gambar berhasil diunggah!`);
+
+          if (editingPost?.id) {
+            try {
+              const docRef = doc(db, 'blogPosts', editingPost.id);
+              await updateDoc(docRef, {
+                image: cleanUrls[0],
+                updatedAt: new Date().toISOString()
+              });
+            } catch (syncErr) {
+              console.warn("Direct blog image sync notice:", syncErr);
+            }
+          }
+
+          showToast(`${cleanUrls.length} gambar berhasil diunggah permanen ke Firebase Storage!`);
         }
       }
     } catch (err: any) {
       console.error("Upload blog image error:", err);
-      showToast("Gagal mengunggah gambar, silakan coba lagi", "error");
+      showToast(err?.message || "Gagal mengunggah gambar ke Firebase Storage.", "error");
     } finally {
       setUploadingImage(false);
       setUploadStatusText('');

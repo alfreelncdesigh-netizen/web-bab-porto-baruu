@@ -176,42 +176,22 @@ export default function PromoAdmin() {
     setUploadingIndex(index);
 
     try {
-      // 1. Kompresi instan via Canvas ke WebP 4:5
+      // 1. Kompresi via Canvas ke format WebP proporsional
       const dataUrl = await compressToWebP(file);
-
-      // 2. Unggah langsung ke server API (/api/upload)
       const cleanFileName = `promo_poster_${Date.now()}_slot${index + 1}.webp`;
-      let uploadedUrl = '';
+      const blob = base64ToBlob(dataUrl);
 
-      try {
-        const uploadRes = await fetch('/api/upload', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-admin-token': 'alfreelnc_admin_auth_verified'
-          },
-          body: JSON.stringify({ file: dataUrl, filename: cleanFileName })
-        });
-        if (uploadRes.ok) {
-          const jsonRes = await uploadRes.json();
-          if (jsonRes.url) uploadedUrl = jsonRes.url;
-        }
-      } catch (errUpload) {
-        console.warn("Direct upload fallback:", errUpload);
+      // 2. Unggah langsung ke Firebase Storage (folder /promos/)
+      const uploadedUrl = await uploadImageToStorage(blob, cleanFileName, undefined, 'promos');
+      if (!uploadedUrl || uploadedUrl.startsWith('data:') || uploadedUrl.startsWith('blob:')) {
+        throw new Error("Gagal memperoleh URL permanen dari Firebase Storage");
       }
 
-      if (!uploadedUrl) {
-        const blob = base64ToBlob(dataUrl);
-        uploadedUrl = await uploadImageToStorage(blob, cleanFileName, dataUrl, 'promos');
-      }
-
-      const finalUrl = uploadedUrl || dataUrl;
-
-      // 3. Simpan dan perbarui UI seketika (Responsivitas instan < 300ms)
+      // 3. Simpan dan perbarui UI seketika
       const updated = [...posters];
       updated[index] = { 
         ...updated[index], 
-        image: finalUrl,
+        image: uploadedUrl,
         active: true 
       };
       setPosters(updated);
@@ -222,7 +202,7 @@ export default function PromoAdmin() {
         ...currentStored,
         promoWidgetActive: isGlobalActive,
         promoPosters: updated,
-        promoWidgetImage: updated.find(p => p.image)?.image || '',
+        promoWidgetImage: updated.find(p => p.image && !p.image.startsWith('data:'))?.image || uploadedUrl,
         promoWidgetLink: updated.find(p => p.link)?.link || '#store',
         promoWidgetCtaText: updated.find(p => p.ctaText)?.ctaText || 'Ambil Diskon',
       };
@@ -231,13 +211,13 @@ export default function PromoAdmin() {
       saveStoredSettings(updatedSettings).catch(() => {});
       window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
 
-      // 5. Catat media secara permanen di background
-      recordMediaPermanently(finalUrl, cleanFileName, dataUrl.length, 'promos').catch(() => {});
+      // 5. Catat media secara permanen di database
+      recordMediaPermanently(uploadedUrl, cleanFileName, blob.size, 'promos').catch(() => {});
 
-      showNotification(`Poster #${index + 1} berhasil diunggah & langsung aktif!`);
+      showNotification(`Poster #${index + 1} berhasil diunggah permanen ke Firebase Storage!`);
     } catch (err: any) {
       console.error("Upload poster error:", err);
-      showNotification("Gagal memproses gambar poster. Silakan coba lagi.", "info");
+      showNotification(err?.message || "Gagal mengunggah gambar poster ke Firebase Storage.", "info");
     } finally {
       setUploadingIndex(null);
     }

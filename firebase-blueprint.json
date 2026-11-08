@@ -41,6 +41,18 @@
       },
       "required": ["title", "content"]
     },
+    "BlogComment": {
+      "title": "BlogComment",
+      "description": "Visitor comment submitted on a specific blog article.",
+      "type": "object",
+      "properties": {
+        "blogId": { "type": "string", "maxLength": 100 },
+        "name": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["name", "message"]
+    },
     "Experience": {
       "title": "Experience",
       "description": "A work experience and achievement record.",
@@ -137,6 +149,10 @@
     "blogPosts": {
       "schema": { "$ref": "#/entities/BlogPost" },
       "description": "Stores blog articles."
+    },
+    "blogPosts/{blogId}/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/BlogComment" },
+      "description": "Stores comments submitted by visitors for each blog article."
     },
     "experiences": {
       "schema": { "$ref": "#/entities/Experience" },

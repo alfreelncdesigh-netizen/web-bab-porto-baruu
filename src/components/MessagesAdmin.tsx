@@ -24,15 +24,28 @@ export default function MessagesAdmin() {
             if (raw) localDeleted = new Set(JSON.parse(raw));
           } catch {}
 
+          const DUMMY_COMMENT_NAMES = new Set(['Rahmat Hidayat', 'Siti Nurhaliza', 'Dimas Pratama', 'Putri Ayu Lestari']);
+          const DUMMY_COMMENT_IDS = new Set(['msg_1730000101', 'msg_1730000102', 'msg_1730000103', 'msg_1730000104']);
+
           setMessages(prev => {
             const map = new Map<string, any>();
             apiData.forEach((m: any) => {
-              if (!localDeleted.has(String(m.id)) && m.isDeleted !== true) {
+              if (
+                !localDeleted.has(String(m.id)) && 
+                m.isDeleted !== true &&
+                !DUMMY_COMMENT_IDS.has(String(m.id)) &&
+                !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
+              ) {
                 map.set(String(m.id), m);
               }
             });
             prev.forEach((m: any) => {
-              if (!localDeleted.has(String(m.id)) && m.isDeleted !== true) {
+              if (
+                !localDeleted.has(String(m.id)) && 
+                m.isDeleted !== true &&
+                !DUMMY_COMMENT_IDS.has(String(m.id)) &&
+                !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
+              ) {
                 map.set(String(m.id), m);
               }
             });
@@ -45,9 +58,13 @@ export default function MessagesAdmin() {
             return list;
           });
           setLoading(false);
+        } else {
+          setLoading(false);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        setLoading(false);
+      });
 
     // 2. Berlangganan pesan dari Firestore jika tersedia
     const unsubscribe = onSnapshot(
@@ -59,28 +76,39 @@ export default function MessagesAdmin() {
           if (raw) localDeleted = new Set(JSON.parse(raw));
         } catch {}
 
+        const DUMMY_COMMENT_NAMES = new Set(['Rahmat Hidayat', 'Siti Nurhaliza', 'Dimas Pratama', 'Putri Ayu Lestari']);
+        const DUMMY_COMMENT_IDS = new Set(['msg_1730000101', 'msg_1730000102', 'msg_1730000103', 'msg_1730000104']);
+
         const msgData: any[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
-          if (data.isDeleted === true || data.status === 'deleted' || localDeleted.has(docSnap.id)) {
+          if (
+            data.isDeleted === true || 
+            data.status === 'deleted' || 
+            localDeleted.has(docSnap.id) ||
+            DUMMY_COMMENT_IDS.has(docSnap.id) ||
+            DUMMY_COMMENT_NAMES.has(String(data.name || '').trim())
+          ) {
             return;
           }
           msgData.push({ id: docSnap.id, ...data });
         });
-        if (msgData.length > 0) {
-          setMessages(prev => {
-            const map = new Map<string, any>();
-            prev.forEach((m: any) => map.set(String(m.id), m));
-            msgData.forEach((m: any) => map.set(String(m.id), m));
-            const list = Array.from(map.values()).filter(m => !localDeleted.has(String(m.id)));
-            list.sort((a, b) => {
-              const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
-              const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
-              return timeB - timeA;
-            });
-            return list;
+        setMessages(prev => {
+          const map = new Map<string, any>();
+          prev.forEach((m: any) => {
+            if (!DUMMY_COMMENT_IDS.has(String(m.id)) && !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())) {
+              map.set(String(m.id), m);
+            }
           });
-        }
+          msgData.forEach((m: any) => map.set(String(m.id), m));
+          const list = Array.from(map.values()).filter(m => !localDeleted.has(String(m.id)));
+          list.sort((a, b) => {
+            const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+            const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+            return timeB - timeA;
+          });
+          return list;
+        });
         setLoading(false);
       },
       (err) => {

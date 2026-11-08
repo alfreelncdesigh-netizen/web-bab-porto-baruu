@@ -78,8 +78,6 @@ export function cleanBlogs(blogs: BlogPost[]): BlogPost[] {
     if (!titleStr && !idStr) return false;
     if (DUMMY_BLOG_IDS.has(idStr)) return false;
     if (DUMMY_BLOG_TITLES.has(titleStr)) return false;
-    const rawImg = b.image || (b as any).coverImage;
-    if (!rawImg || typeof rawImg !== 'string' || !rawImg.trim()) return false;
     if (idStr && seenIds.has(idStr)) return false;
     if (idStr) seenIds.add(idStr);
     return true;
@@ -358,7 +356,6 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
         }
       } catch {}
 
-      const heroBackup = merged.heroImageDataUrl || (typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image_backup') || '') : '');
       const heroPayload: Record<string, any> = {
         heroImage: merged.heroImage.trim(),
         savedAt: merged.savedAt || Date.now(),
@@ -366,22 +363,10 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
         _adminAuth: 'alfreelnc_admin_auth_verified',
         updatedByAdmin: true
       };
-      if (heroBackup && heroBackup.length <= 800000) {
-        heroPayload.heroImageDataUrl = heroBackup;
-      }
 
       firestoreTasks.push(
         setDoc(doc(db, 'settings', 'hero'), cleanForFirestore(heroPayload), { merge: true })
       );
-
-      // Sinkronkan ke server endpoint /api/hero-image
-      try {
-        fetch('/api/hero-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ heroImage: merged.heroImage.trim(), imageBase64: heroBackup || '' })
-        }).catch(() => {});
-      } catch {}
     }
 
     if (merged.cvSections || merged.cvPdfFile || merged.cvRole) {

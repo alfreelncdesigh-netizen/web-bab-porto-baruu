@@ -40,6 +40,12 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isAuthorizedAdmin() || true;
       allow delete: if isMasterAdmin() || isResourceAdmin() || true;
+
+      // Komentar pengunjung pada artikel blog
+      match /comments/{commentId} {
+        allow read, create: if true;
+        allow update, delete: if isAuthorizedAdmin() || isMasterAdmin() || true;
+      }
     }
 
     // 3. Koleksi riwayat pengalaman & sertifikasi: bebas dibaca publik, admin dapat menulis & menghapus

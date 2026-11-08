@@ -771,9 +771,11 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                 : 'columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 lg:gap-8 [column-fill:_balance]'
             }
           >
-            {/* Tampilkan seluruh karya yang terfilter secara instan */}
+            {/* Tampilkan karya terfilter dengan dukungan lazy batching jika mode 50% aktif */}
             {(() => {
-              const visibleProjects = filteredProjects;
+              const is50Limited = !isSecondHalfLoaded;
+              const displayLimit = is50Limited ? Math.max(1, Math.ceil(filteredProjects.length / 2)) : filteredProjects.length;
+              const visibleProjects = is50Limited ? filteredProjects.slice(0, displayLimit) : filteredProjects;
 
               return (
                 <>

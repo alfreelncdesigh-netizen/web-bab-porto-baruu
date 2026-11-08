@@ -82,9 +82,9 @@ try {
 }
 export const auth = authInstance;
 
-export const storage = getStorage(app);
-storage.maxUploadRetryTime = 5000;
-storage.maxOperationRetryTime = 5000;
+export const storage = getStorage(app, (firebaseConfig as any).storageBucket || undefined);
+storage.maxUploadRetryTime = 60000;
+storage.maxOperationRetryTime = 60000;
 
 const provider = new GoogleAuthProvider();
 provider.addScope('https://www.googleapis.com/auth/drive');

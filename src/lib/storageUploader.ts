@@ -1,5 +1,5 @@
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { storage, ensureFreshAuthToken, db } from './firebase';
+import { storage, db } from './firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { compressImageToWebP } from './imageCompressor';
 import { renderPdfFirstPageToImage } from './pdfHelper';
@@ -11,39 +11,75 @@ export interface StoredMediaRecord {
   filename: string;
   folder: string;
   size: number;
-  dataUrl?: string;
   uploadedAt: string;
   timestamp: number;
   savedPermanently: boolean;
 }
 
 /**
- * Menyimpan tautan, file data base64, dan metadata gambar secara aman dan permanen:
+ * Normalisasi nama folder penyimpanan khusus aset di Firebase Storage:
+ * - /works/ untuk karya & portofolio
+ * - /experiences/ untuk riwayat pengalaman & sertifikat
+ * - /blogs/ untuk artikel & berita
+ * - /promos/ untuk poster promosi
+ * - /cv/ untuk dokumen CV & foto riwayat hidup
+ * - /about/ untuk foto profil tentang saya
+ */
+export function normalizeStorageFolder(folder?: string): string {
+  if (!folder) return 'works';
+  const f = folder.toLowerCase().trim().replace(/^\/+|\/+$/g, '');
+  if (f === 'portfolio' || f === 'portofolio' || f === 'work' || f === 'works' || f === 'karya') {
+    return 'works';
+  }
+  if (f === 'experience' || f === 'experiences' || f === 'pengalaman') {
+    return 'experiences';
+  }
+  if (f === 'blog' || f === 'blogs' || f === 'blog_posts') {
+    return 'blogs';
+  }
+  if (f === 'promo' || f === 'promos' || f === 'poster' || f === 'posters') {
+    return 'promos';
+  }
+  if (f === 'cv' || f === 'resume') {
+    return 'cv';
+  }
+  if (f === 'about' || f === 'profile') {
+    return 'about';
+  }
+  if (f === 'settings' || f === 'banners' || f === 'hero') {
+    return 'settings';
+  }
+  return f || 'works';
+}
+
+/**
+ * Menyimpan tautan publik permanen dan metadata gambar secara aman ke Cloud Firestore:
  * 1. Database Cloud Firestore (collection: uploadedMedia) dengan ID filename
  * 2. Server Disk Registry (/api/media-registry)
  * 3. LocalStorage browser (uploaded_media_links)
- * Menjamin link gambar tertanam dan tersimpan di Firebase tanpa pernah hilang.
+ * TIDAK MENYIMPAN string base64 mentah ke database agar hemat kuota dan cepat dimuat.
  */
 export async function recordMediaPermanently(
   url: string, 
   filename?: string, 
   size = 0, 
-  folder = 'general',
-  dataUrl?: string
+  folder = 'works',
+  _dataUrlIgnored?: string
 ): Promise<void> {
   if (!url || typeof url !== 'string') return;
   const cleanUrl = url.trim();
-  if (!cleanUrl) return;
+  // Cegah penyimpanan URL data base64 mentah atau blob lokal
+  if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.startsWith('blob:')) return;
 
-  const safeFilename = filename || cleanUrl.split('/').pop() || `img_${Date.now()}`;
+  const targetFolder = normalizeStorageFolder(folder);
+  const safeFilename = filename || cleanUrl.split('/').pop()?.split('?')[0] || `img_${Date.now()}`;
   const safeDocId = safeFilename.replace(/[^a-zA-Z0-9_-]/g, '_');
   const record: StoredMediaRecord = {
     id: safeDocId,
     url: cleanUrl,
     filename: safeFilename,
-    folder,
+    folder: targetFolder,
     size,
-    dataUrl: dataUrl || '',
     uploadedAt: new Date().toISOString(),
     timestamp: Date.now(),
     savedPermanently: true
@@ -60,7 +96,7 @@ export async function recordMediaPermanently(
     localStorage.setItem('uploaded_media_links', JSON.stringify(list));
   } catch {}
 
-  // 2. Simpan di server disk registry (/api/media-registry)
+  // 2. Simpan di server disk registry jika tersedia (/api/media-registry)
   try {
     fetch('/api/media-registry', {
       method: 'POST',
@@ -72,17 +108,12 @@ export async function recordMediaPermanently(
     }).catch(() => {});
   } catch {}
 
-  // 3. Simpan di Cloud Firestore (uploadedMedia) dengan fallback ID bersih jika kuota tersedia
+  // 3. Simpan tautan permanen di Cloud Firestore (uploadedMedia)
   try {
     if (isQuotaExhausted()) return;
-    
-    // Firestore memiliki batas dokumen 1 MiB (~1.048.576 byte).
-    // Pastikan dataUrl yang ditanam ke dokumen Firestore aman di bawah 800 KB.
-    const safeDataUrl = (dataUrl && dataUrl.length <= 800000) ? dataUrl : '';
 
     const firestoreData: Record<string, any> = {
       ...record,
-      dataUrl: safeDataUrl,
       _adminAuth: 'alfreelnc_admin_auth_verified',
       updatedByAdmin: true
     };
@@ -91,8 +122,8 @@ export async function recordMediaPermanently(
       await setDoc(doc(db, 'uploadedMedia', safeFilename), firestoreData, { merge: true }).catch(() => {});
     }
 
-    // Jika file ini adalah foto cover beranda utama, tanam langsung ke doc settings/hero
-    if (folder === 'hero' || safeFilename.includes('cover_web') || safeFilename.includes('hero_main')) {
+    // Jika file ini adalah foto cover beranda utama, perbarui doc settings/hero
+    if (targetFolder === 'settings' && (safeFilename.includes('cover_web') || safeFilename.includes('hero_main'))) {
       const heroPayload: Record<string, any> = {
         heroImage: cleanUrl,
         savedAt: Date.now(),
@@ -100,9 +131,6 @@ export async function recordMediaPermanently(
         _adminAuth: 'alfreelnc_admin_auth_verified',
         updatedByAdmin: true
       };
-      if (safeDataUrl) {
-        heroPayload.heroImageDataUrl = safeDataUrl;
-      }
       await setDoc(doc(db, 'settings', 'hero'), heroPayload, { merge: true }).catch(() => {});
     }
   } catch (err: any) {
@@ -126,13 +154,11 @@ export function getStoredUploadedMedia(): StoredMediaRecord[] {
 
 /**
  * Universal timeout wrapper
- * Membatalkan proses jika melebihi batas waktu (default: 15 detik)
- * Mencegah halaman stuck loading selamanya
  */
 export async function withTimeout<T>(
   promise: Promise<T>,
-  ms = 15000,
-  errorMessage = "Gagal mengunggah gambar, silakan coba lagi"
+  ms = 25000,
+  errorMessage = "Gagal mengunggah gambar ke cloud storage, batas waktu terlampaui."
 ): Promise<T> {
   let timer: any;
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -149,17 +175,19 @@ export async function withTimeout<T>(
 }
 
 /**
- * Mengunggah file/blob gambar ke Cloud Storage (Local API, Firebase Storage, atau Cloudinary)
- * untuk menghasilkan URL HTTP publik yang bersih.
- * Menjamin HANYA URL teks yang dikembalikan, BUKAN string Base64 raksasa.
+ * Mengunggah file/blob gambar secara permanen ke Firebase Storage:
+ * 1. Menggunakan folder khusus aset (/works/, /experiences/, /blogs/, /promos/, /cv/, /about/)
+ * 2. Mengambil URL publik permanen (download URL HTTPS) dari Firebase Storage
+ * 3. Menjamin HANYA URL permanen yang dikembalikan, BUKAN Base64 atau local blob
  */
 export async function uploadImageToStorage(
   fileOrBlob: Blob | File,
   filename?: string,
-  fallbackBase64?: string,
-  folder = 'blog_posts',
-  timeoutMs = 15000
+  _fallbackBase64Ignored?: string,
+  folder = 'works',
+  timeoutMs = 25000
 ): Promise<string> {
+  const targetFolder = normalizeStorageFolder(folder);
   const rawFileName = filename || (fileOrBlob instanceof File ? fileOrBlob.name : '');
   const isSvg = (fileOrBlob instanceof File && fileOrBlob.name.toLowerCase().endsWith('.svg')) ||
                 fileOrBlob.type === 'image/svg+xml' ||
@@ -170,259 +198,167 @@ export async function uploadImageToStorage(
   
   const ext = isSvg ? '.svg' : isPdf ? '.pdf' : '.webp';
   const baseOnly = rawFileName ? rawFileName.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_') : `img_${Date.now()}`;
-  const cleanName = `${baseOnly}_${Math.random().toString(36).substring(2, 8)}${ext}`;
-  const abortController = new AbortController();
+  const cleanName = `${baseOnly}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}${ext}`;
+  const mimeType = isSvg ? 'image/svg+xml' : isPdf ? 'application/pdf' : 'image/webp';
 
-  const doUpload = async (): Promise<string> => {
-    // 1. Jalur Cepat & Super Instan: Jika dataUrl/Base64 sudah dikompresi di client, kirim via JSON
-    if (fallbackBase64 && typeof fallbackBase64 === 'string' && fallbackBase64.startsWith('data:')) {
-      try {
-        const jsonRes = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-admin-token': 'alfreelnc_admin_auth_verified'
-          },
-          body: JSON.stringify({ file: fallbackBase64, filename: cleanName }),
-          signal: abortController.signal,
-        });
-        if (jsonRes.ok) {
-          const resData = await jsonRes.json();
-          if (resData.url) {
-            return resData.url;
-          }
-        }
-      } catch (jsonFastErr) {
-        console.warn("Fast JSON upload notice:", jsonFastErr);
-      }
+  // 1. PRIORITAS UTAMA: Firebase Storage resmi (Folder khusus /works/, /experiences/, dll.)
+  let firebaseStorageError: any = null;
+  try {
+    const storageRef = ref(storage, `${targetFolder}/${cleanName}`);
+    const metadata = {
+      contentType: fileOrBlob.type || mimeType,
+      cacheControl: 'public, max-age=31536000, immutable',
+    };
+
+    const uploadTask = uploadBytes(storageRef, fileOrBlob, metadata);
+    const snapshot = await withTimeout(
+      uploadTask,
+      timeoutMs,
+      `Batas waktu upload Firebase Storage (${targetFolder}) terlampaui.`
+    );
+    const downloadUrl = await getDownloadURL(snapshot.ref);
+
+    if (downloadUrl && typeof downloadUrl === 'string' && downloadUrl.startsWith('http')) {
+      // Simpan catatan media permanen ke Firestore (hanya link HTTP bersih, tanpa base64)
+      recordMediaPermanently(downloadUrl, cleanName, fileOrBlob.size, targetFolder).catch(() => {});
+      return downloadUrl;
     }
+  } catch (err: any) {
+    firebaseStorageError = err;
+    console.warn(`[Firebase Storage] Upload ke /${targetFolder}/ gagal:`, err?.code || err?.message || err);
+  }
 
-    // 2. Jalur Multipart Upload ke server API (/api/upload)
+  // 2. CADANGAN CLOUD: Cloudinary (hanya jika sudah dikonfigurasi)
+  const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+  const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'ml_default';
+
+  if (cloudName && cloudName !== 'your_cloud_name') {
     try {
       const formData = new FormData();
       formData.append('file', fileOrBlob, cleanName);
+      formData.append('upload_preset', uploadPreset);
+      formData.append('folder', targetFolder);
 
-      const serverRes = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 
-          'x-admin-token': 'alfreelnc_admin_auth_verified' 
-        },
-        body: formData,
-        signal: abortController.signal,
-      });
-
-      if (serverRes.ok) {
-        const resData = await serverRes.json();
-        if (resData.url) {
-          return resData.url;
-        }
-      }
-    } catch (apiErr: any) {
-      console.warn("Local multipart upload notice, mencoba fallback:", apiErr?.message || apiErr);
-    }
-
-    // 3. Cadangan JSON Base64 sekunder jika belum dikirim sebelumnya
-    try {
-      let base64 = fallbackBase64;
-      if (!base64 && typeof window !== 'undefined') {
-        base64 = await new Promise<string>((res) => {
-          const reader = new FileReader();
-          reader.onload = () => res((reader.result as string) || '');
-          reader.onerror = () => res('');
-          reader.readAsDataURL(fileOrBlob);
-        });
-      }
-      if (base64) {
-        const jsonRes = await fetch('/api/upload', {
+      const response = await withTimeout(
+        fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
           method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-admin-token': 'alfreelnc_admin_auth_verified'
-          },
-          body: JSON.stringify({ file: base64, filename: cleanName }),
-          signal: abortController.signal,
-        });
-        if (jsonRes.ok) {
-          const resData = await jsonRes.json();
-          if (resData.url) {
-            return resData.url;
-          }
+          body: formData,
+        }),
+        8000
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.secure_url) {
+          recordMediaPermanently(data.secure_url, cleanName, fileOrBlob.size, targetFolder).catch(() => {});
+          return data.secure_url;
         }
       }
-    } catch (jsonErr) {
-      console.warn("Secondary JSON upload notice:", jsonErr);
+    } catch (cloudinaryErr: any) {
+      console.warn("[Cloudinary] Upload cadangan gagal:", cloudinaryErr?.message || cloudinaryErr);
     }
-
-    // 3. Cadangan Cloud Firebase Storage (Timeout dipersingkat ke 2 detik agar tidak menghambat)
-    try {
-      const storageRef = ref(storage, `${folder}/${cleanName}`);
-      const metadata = {
-        contentType: fileOrBlob.type || (isSvg ? 'image/svg+xml' : isPdf ? 'application/pdf' : 'image/webp'),
-        cacheControl: 'public, max-age=31536000',
-      };
-
-      const uploadTask = uploadBytes(storageRef, fileOrBlob, metadata);
-      const snapshot = await withTimeout(uploadTask, 2000, "Firebase Storage timeout");
-      const downloadUrl = await getDownloadURL(snapshot.ref);
-      if (downloadUrl && downloadUrl.startsWith('http')) {
-        return downloadUrl;
-      }
-    } catch (firebaseErr: any) {
-      console.warn("Firebase Storage fallback:", firebaseErr?.message || firebaseErr);
-    }
-
-    // 4. Cadangan Cloudinary (jika dikonfigurasi)
-    const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-    const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'ml_default';
-
-    if (cloudName && cloudName !== 'your_cloud_name') {
-      try {
-        const formData = new FormData();
-        formData.append('file', fileOrBlob, cleanName);
-        formData.append('upload_preset', uploadPreset);
-        formData.append('folder', folder);
-
-        const response = await withTimeout(
-          fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
-            method: 'POST',
-            body: formData,
-            signal: abortController.signal,
-          }),
-          2500
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.secure_url) {
-            return data.secure_url;
-          }
-        }
-      } catch (cloudinaryErr: any) {
-        console.warn("Cloudinary fallback:", cloudinaryErr?.message || cloudinaryErr);
-      }
-    }
-
-    // 5. Fallback instan aman: gunakan dataUrl yang sudah dikompresi
-    if (fallbackBase64) {
-      return fallbackBase64;
-    }
-
-    throw new Error("Gagal mengunggah gambar, silakan coba lagi");
-  };
-
-  // Pastikan dataUrl selalu tersedia untuk ditanam ke Firebase Firestore
-  let effectiveDataUrl = fallbackBase64;
-  if (!effectiveDataUrl && typeof window !== 'undefined') {
-    try {
-      effectiveDataUrl = await new Promise<string>((res) => {
-        const reader = new FileReader();
-        reader.onload = () => res((reader.result as string) || '');
-        reader.onerror = () => res('');
-        reader.readAsDataURL(fileOrBlob);
-      });
-    } catch {}
   }
 
-  try {
-    const finalResultUrl = await withTimeout(
-      doUpload(),
-      timeoutMs,
-      "Gagal mengunggah gambar, silakan coba lagi"
+  // Jika Firebase Storage mengembalikan error bucket belum siap
+  const errMsg = firebaseStorageError?.message || '';
+  if (firebaseStorageError?.code === 'storage/unknown' || errMsg.includes('404') || errMsg.includes('notFound')) {
+    throw new Error(
+      `Firebase Storage untuk folder /${targetFolder}/ belum aktif di Firebase Console. Pastikan Firebase Storage sudah diaktifkan di https://console.firebase.google.com/project/portofolio-c368b/storage`
     );
-    if (finalResultUrl) {
-      recordMediaPermanently(finalResultUrl, cleanName, fileOrBlob.size, folder, effectiveDataUrl).catch(() => {});
-    }
-    return finalResultUrl;
-  } catch (err: any) {
-    abortController.abort();
-    if (effectiveDataUrl) {
-      recordMediaPermanently(effectiveDataUrl, cleanName, fileOrBlob.size, folder, effectiveDataUrl).catch(() => {});
-      return effectiveDataUrl;
-    }
-    throw new Error("Gagal mengunggah gambar, silakan coba lagi");
   }
+
+  if (firebaseStorageError?.code === 'storage/unauthorized' || errMsg.includes('permission')) {
+    throw new Error(
+      `Izin Firebase Storage ditolak pada folder /${targetFolder}/. Periksa aturan keamanan (security rules) Storage di Firebase Console.`
+    );
+  }
+
+  throw new Error(
+    `Gagal mengunggah file ke Firebase Storage (folder /${targetFolder}/): ${errMsg || 'Koneksi jaringan terputus'}`
+  );
 }
 
 /**
  * 1. Kompresi otomatis di sisi client (HTML5 Canvas, WebP/PNG, max-width: 1200px)
- * 2. Langsung mengunggah ke storage di latar belakang (background upload)
- * 3. Batas waktu aman dan kembalikan URL HTTP bersih
+ * 2. Langsung mengunggah ke Firebase Storage di latar belakang
+ * 3. Menghasilkan URL HTTP publik permanen bersih untuk Firestore
  */
 export async function compressAndUpload(
   file: File,
-  folder = 'blog_posts',
+  folder = 'works',
   maxWidth = 1200,
   quality = 0.8,
-  timeoutMs = 15000,
+  timeoutMs = 25000,
   onFinish?: () => void
 ): Promise<string> {
+  const targetFolder = normalizeStorageFolder(folder);
+
   // Dukungan Format PDF: Render halaman 1 PDF ke format gambar WebP beresolusi tinggi
   if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
     try {
       const rendered = await renderPdfFirstPageToImage(file);
       if (rendered) {
-        const url = await uploadImageToStorage(rendered.blob, rendered.name, undefined, folder, timeoutMs);
+        const url = await uploadImageToStorage(rendered.blob, rendered.name, undefined, targetFolder, timeoutMs);
         if (onFinish) onFinish();
         return url;
       }
     } catch (e) {
       console.warn("PDF rasterization skipped, uploading raw PDF:", e);
     }
-    const url = await uploadImageToStorage(file, file.name, undefined, folder, timeoutMs);
+    const url = await uploadImageToStorage(file, file.name, undefined, targetFolder, timeoutMs);
     if (onFinish) onFinish();
     return url;
   }
 
   // Kompresi di sisi client untuk file gambar PNG / JPG / WebP
   let blobToUpload: Blob;
-  let dataUrlFallback: string | undefined = undefined;
   if (file.type.startsWith('image/') && !file.type.includes('svg')) {
     const compressed = await compressImageToWebP(file, maxWidth, quality);
     blobToUpload = compressed.blob;
-    dataUrlFallback = compressed.dataUrl;
   } else {
     blobToUpload = file;
   }
 
-  // Upload langsung dengan timeout dan dataUrl fallback
-  const url = await uploadImageToStorage(blobToUpload, file.name, dataUrlFallback, folder, timeoutMs);
+  // Upload langsung ke Firebase Storage dan dapatkan URL permanen
+  const url = await uploadImageToStorage(blobToUpload, file.name, undefined, targetFolder, timeoutMs);
   if (onFinish) onFinish();
   return url;
 }
 
 /**
- * Mengunggah banyak gambar secara paralel (Promise.all)
- * dengan timeout 15 detik per upload dan progress callback
+ * Mengunggah banyak gambar secara paralel (Promise.all) ke Firebase Storage
+ * dengan timeout per upload dan progress callback
  */
 export async function uploadMultipleImagesInParallel(
   files: File[],
-  folder = 'blog_posts',
+  folder = 'works',
   onProgress?: (completed: number, total: number) => void,
   maxWidth = 1200,
   quality = 0.75,
-  timeoutMs = 15000
+  timeoutMs = 25000
 ): Promise<string[]> {
   const total = files.length;
   if (total === 0) return [];
+  const targetFolder = normalizeStorageFolder(folder);
 
   let completed = 0;
 
   const uploadPromises = files.map(async (file) => {
     try {
-      const url = await compressAndUpload(file, folder, maxWidth, quality, timeoutMs);
+      const url = await compressAndUpload(file, targetFolder, maxWidth, quality, timeoutMs);
       completed++;
       if (onProgress) onProgress(completed, total);
       return url;
-    } catch (err) {
-      console.error(`Gagal upload file ${file.name}:`, err);
-      throw new Error("Gagal mengunggah gambar, silakan coba lagi");
+    } catch (err: any) {
+      console.error(`Gagal upload file ${file.name} ke /${targetFolder}/:`, err);
+      throw err;
     }
   });
 
   return withTimeout(
     Promise.all(uploadPromises),
-    timeoutMs,
-    "Gagal mengunggah gambar, silakan coba lagi"
+    timeoutMs * Math.min(files.length, 3),
+    "Gagal mengunggah berkas gambar ke Firebase Storage, batas waktu terlampaui."
   );
 }
 

@@ -15,6 +15,9 @@ import {
   childGridCardItem 
 } from '../lib/animationVariants';
 
+const DUMMY_COMMENT_NAMES = new Set(['Rahmat Hidayat', 'Siti Nurhaliza', 'Dimas Pratama', 'Putri Ayu Lestari']);
+const DUMMY_COMMENT_IDS = new Set(['msg_1730000101', 'msg_1730000102', 'msg_1730000103', 'msg_1730000104']);
+
 export default function Contact() {
  const [formData, setFormData] = useState({ name: '', email: '', message: '' });
  const [isSubmitting, setIsSubmitting] = useState(false);
@@ -24,21 +27,20 @@ export default function Contact() {
      const raw = typeof window !== 'undefined' ? localStorage.getItem('user_messages') : null;
      if (raw) {
        const parsed = JSON.parse(raw);
-       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+       if (Array.isArray(parsed) && parsed.length > 0) {
+         const filtered = parsed.filter((m: any) => 
+           m && 
+           !DUMMY_COMMENT_IDS.has(String(m.id)) && 
+           !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
+         );
+         try { localStorage.setItem('user_messages', JSON.stringify(filtered)); } catch {}
+         return filtered;
+       }
      }
    } catch {}
    return [];
  });
- const [loadingMessages, setLoadingMessages] = useState(() => {
-   try {
-     const raw = typeof window !== 'undefined' ? localStorage.getItem('user_messages') : null;
-     if (raw) {
-       const parsed = JSON.parse(raw);
-       if (Array.isArray(parsed) && parsed.length > 0) return false;
-     }
-   } catch {}
-   return true;
- });
+ const [loadingMessages, setLoadingMessages] = useState(true);
  const [showAllComments, setShowAllComments] = useState(false);
  const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
  const [toast, setToast] = useState<{ show: boolean; type: 'success' | 'error'; title: string; text: string } | null>(null);
@@ -116,12 +118,22 @@ export default function Contact() {
         setMessages(prev => {
           const map = new Map<string, any>();
           apiData.forEach((m: any) => {
-            if (!localDeleted.has(String(m.id)) && m.isDeleted !== true) {
+            if (
+              !localDeleted.has(String(m.id)) && 
+              m.isDeleted !== true &&
+              !DUMMY_COMMENT_IDS.has(String(m.id)) &&
+              !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
+            ) {
               map.set(String(m.id), m);
             }
           });
           prev.forEach((m: any) => {
-            if (!localDeleted.has(String(m.id)) && m.isDeleted !== true) {
+            if (
+              !localDeleted.has(String(m.id)) && 
+              m.isDeleted !== true &&
+              !DUMMY_COMMENT_IDS.has(String(m.id)) &&
+              !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
+            ) {
               map.set(String(m.id), m);
             }
           });
@@ -137,9 +149,13 @@ export default function Contact() {
           return merged;
         });
         setLoadingMessages(false);
+      } else {
+        setLoadingMessages(false);
       }
     })
-    .catch(() => {});
+    .catch(() => {
+      setLoadingMessages(false);
+    });
 
   // 2. Berlangganan data seluruh komentar secara publik untuk sinkronisasi cloud jika tersedia
   const unsubscribeMessages = onSnapshot(
@@ -158,29 +174,37 @@ export default function Contact() {
       const msgData: any[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        if (data.isDeleted === true || data.status === 'deleted' || deletedSet.has(docSnap.id)) {
+        if (
+          data.isDeleted === true || 
+          data.status === 'deleted' || 
+          deletedSet.has(docSnap.id) ||
+          DUMMY_COMMENT_IDS.has(docSnap.id) ||
+          DUMMY_COMMENT_NAMES.has(String(data.name || '').trim())
+        ) {
           return;
         }
         msgData.push({ id: docSnap.id, ...data });
       });
 
-      if (msgData.length > 0) {
-        setMessages(prev => {
-          const map = new Map<string, any>();
-          prev.forEach((m: any) => map.set(String(m.id), m));
-          msgData.forEach((m: any) => map.set(String(m.id), m));
-          const merged = Array.from(map.values()).filter(m => !deletedSet.has(String(m.id)));
-          merged.sort((a, b) => {
-            const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
-            const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
-            return timeB - timeA;
-          });
-          try {
-            localStorage.setItem('user_messages', JSON.stringify(merged));
-          } catch {}
-          return merged;
+      setMessages(prev => {
+        const map = new Map<string, any>();
+        prev.forEach((m: any) => {
+          if (!DUMMY_COMMENT_IDS.has(String(m.id)) && !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())) {
+            map.set(String(m.id), m);
+          }
         });
-      }
+        msgData.forEach((m: any) => map.set(String(m.id), m));
+        const merged = Array.from(map.values()).filter(m => !deletedSet.has(String(m.id)));
+        merged.sort((a, b) => {
+          const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+          const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+          return timeB - timeA;
+        });
+        try {
+          localStorage.setItem('user_messages', JSON.stringify(merged));
+        } catch {}
+        return merged;
+      });
       setLoadingMessages(false);
     },
     (err) => {
@@ -188,6 +212,10 @@ export default function Contact() {
       setLoadingMessages(false);
     }
   );
+
+  const commentsTimeout = setTimeout(() => {
+    setLoadingMessages(false);
+  }, 2000);
 
   const docRef = doc(db, 'settings', 'global');
   const unsubscribe = onSnapshot(
@@ -208,6 +236,7 @@ export default function Contact() {
    }
   );
   return () => {
+    clearTimeout(commentsTimeout);
     unsubscribe();
     unsubscribeMessages();
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);

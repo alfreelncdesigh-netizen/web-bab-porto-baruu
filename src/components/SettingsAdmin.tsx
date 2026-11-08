@@ -163,38 +163,26 @@ export default function SettingsAdmin() {
         finalUrl = await uploadImageToStorage(fileToUpload, fileToUpload.name, undefined, 'settings');
       }
 
-      let compressedHeroDataUrl = '';
-      // Khusus foto hero utama: simpan cadangan kompresi WebP & link permanen
+      if (!finalUrl || finalUrl.startsWith('data:') || finalUrl.startsWith('blob:')) {
+        throw new Error("Gagal memperoleh URL publik permanen dari Firebase Storage.");
+      }
+
       if (field === 'heroImage') {
         try {
-          compressedHeroDataUrl = await compressImage(fileToUpload);
-          if (compressedHeroDataUrl) {
-            localStorage.setItem('app_custom_hero_image_backup', compressedHeroDataUrl);
-          }
           localStorage.setItem('app_custom_hero_image', finalUrl);
-          // Simpan ke disk cadangan server
-          fetch('/api/hero-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ heroImage: finalUrl, imageBase64: compressedHeroDataUrl || '' }),
-          }).catch(() => {});
-        } catch (e) {
-          console.warn('Backup hero image error:', e);
-        }
+        } catch {}
       }
 
       const updated: SiteSettings = {
         ...settings,
         [field]: finalUrl,
-        heroImageDataUrl: field === 'heroImage' ? (compressedHeroDataUrl || settings.heroImageDataUrl) : settings.heroImageDataUrl,
         savedAt: Date.now()
       };
       setSettings(updated);
       
-      // Auto-save instan dan aman ke database Firestore, server, dan local storage
+      // Auto-save instan ke database Firestore
       await saveStoredSettings(updated);
 
-      // Tanam langsung ke doc settings/hero di Firestore agar gambar tidak pernah hilang
       if (field === 'heroImage') {
         try {
           const heroPayload: Record<string, any> = {
@@ -204,9 +192,6 @@ export default function SettingsAdmin() {
             _adminAuth: 'alfreelnc_admin_auth_verified',
             updatedByAdmin: true
           };
-          if (compressedHeroDataUrl && compressedHeroDataUrl.length <= 800000) {
-            heroPayload.heroImageDataUrl = compressedHeroDataUrl;
-          }
           await setDoc(doc(db, 'settings', 'hero'), heroPayload, { merge: true });
         } catch (hErr) {
           console.warn("Direct hero doc sync notice:", hErr);
@@ -214,35 +199,13 @@ export default function SettingsAdmin() {
       }
 
       window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-      showToast("Foto utama beranda berhasil diunggah & tertanam permanen di Firebase!");
+      showToast("Foto berhasil diunggah & tertanam permanen di Firebase Storage!");
     } catch (err: any) {
-      try {
-        const compressed = await compressImage(fileToUpload);
-        if (field === 'heroImage') {
-          localStorage.setItem('app_custom_hero_image_backup', compressed);
-          localStorage.setItem('app_custom_hero_image', compressed);
-          fetch('/api/hero-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ heroImage: compressed, imageBase64: compressed }),
-          }).catch(() => {});
-        }
-        const updated: SiteSettings = {
-          ...settings,
-          [field]: compressed,
-          heroImageDataUrl: field === 'heroImage' ? compressed : settings.heroImageDataUrl,
-          savedAt: Date.now()
-        };
-        setSettings(updated);
-        await saveStoredSettings(updated);
-        window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-        showToast("Foto utama beranda berhasil disimpan permanen ke Firebase & website!");
-      } catch {
-        console.warn(err);
-        showToast("Gagal memproses gambar", "error");
-      }
+      console.error("Upload settings image failed:", err);
+      showToast(err.message || "Gagal mengunggah gambar ke Firebase Storage. Pastikan Firebase Storage aktif di Firebase Console.", "error");
     } finally {
       setUploading(false);
+      if (e.target) e.target.value = '';
     }
   };
 
@@ -368,19 +331,18 @@ export default function SettingsAdmin() {
         finalUrl = await uploadImageToStorage(fileToUpload, fileToUpload.name, undefined, 'banners');
       }
 
-      await handleUpdateBanner(bannerId, { image: finalUrl });
-      showToast("Gambar banner berhasil diunggah & tersimpan permanen!");
-    } catch (err: any) {
-      try {
-        const compressed = await compressBannerImage(fileToUpload);
-        await handleUpdateBanner(bannerId, { image: compressed });
-        showToast("Gambar banner disimpan (Lokal & Terproteksi)");
-      } catch {
-        console.warn(err);
-        showToast("Gagal memproses gambar banner", "error");
+      if (!finalUrl || finalUrl.startsWith('data:') || finalUrl.startsWith('blob:')) {
+        throw new Error("Gagal memperoleh URL publik permanen dari Firebase Storage.");
       }
+
+      await handleUpdateBanner(bannerId, { image: finalUrl });
+      showToast("Gambar banner berhasil diunggah & tersimpan permanen di Firebase Storage!");
+    } catch (err: any) {
+      console.error("Upload banner failed:", err);
+      showToast(err.message || "Gagal mengunggah banner ke Firebase Storage.", "error");
     } finally {
       setUploading(false);
+      if (e.target) e.target.value = '';
     }
   };
 

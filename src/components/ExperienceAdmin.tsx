@@ -179,9 +179,10 @@ export default function ExperienceAdmin() {
     const docId = editingItem.id.toString();
     const isNew = Boolean(editingItem.isNew);
 
-    // Payload yang dikirim ke database HANYA BERISI TEXT STRING & URL GAMBAR BERSIH
+    // Payload yang dikirim ke database HANYA BERISI TEXT STRING & URL GAMBAR BERSIH DARI FIREBASE STORAGE
+    // Memastikan tidak ada data sementara (base64 mentah atau blob lokal) yang tersimpan
     const cleanImages = (editingItem.images || [])
-      .filter((img: string) => typeof img === 'string' && img.trim() !== '')
+      .filter((img: string) => typeof img === 'string' && img.trim() !== '' && !img.startsWith('data:') && !img.startsWith('blob:'))
       .map((img: string) => img.trim());
 
     const toFirestore: Record<string, any> = {
@@ -320,15 +321,15 @@ export default function ExperienceAdmin() {
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-      setUploadProgressText(`Mengompres & Mengunggah Gambar (${i + 1}/${fileList.length})...`);
+      setUploadProgressText(`Mengompres & Mengunggah ke Firebase Storage (/experiences/) (${i + 1}/${fileList.length})...`);
       try {
-        const url = await compressAndUpload(file, 'experiences', 1200, 0.8, 12000);
-        if (url && typeof url === 'string' && url.trim()) {
+        const url = await compressAndUpload(file, 'experiences', 1200, 0.8, 25000);
+        if (url && typeof url === 'string' && url.trim() && !url.startsWith('data:') && !url.startsWith('blob:')) {
           newUrls.push(url.trim());
           successCount++;
         }
       } catch (err: any) {
-        console.warn(`Gagal mengunggah file ${file.name}:`, err);
+        console.warn(`Gagal mengunggah file ${file.name} ke Firebase Storage:`, err);
       }
     }
 
@@ -339,6 +340,7 @@ export default function ExperienceAdmin() {
           const docRef = doc(db, 'experiences', editingItem.id.toString());
           await updateDoc(docRef, {
             images: arrayUnion(...newUrls),
+            image: editingItem.image || newUrls[0],
             updatedAt: new Date().toISOString()
           });
         } catch (syncErr) {

@@ -610,9 +610,26 @@ export default function App() {
               }
             }).catch(e => console.warn("Cloud projects sync fallback:", e));
 
-            // Blogs
-            const blogsPromise = getDocs(collection(db, 'blogPosts')).then(async (snap) => {
-              if (!snap.empty) {
+            // Blogs: Sinkronisasi server disk (/api/blogs) & Cloud Firestore
+            const serverBlogsPromise = fetch('/api/blogs')
+              .then(res => res.ok ? res.json() : null)
+              .then(async serverBlogs => {
+                if (Array.isArray(serverBlogs) && serverBlogs.length > 0) {
+                  const cleaned = cleanBlogs(serverBlogs);
+                  if (cleaned.length > 0) {
+                    saveStoredBlogs(cleaned);
+                    syncFirestoreSnapshotToSW('blogPosts', cleaned);
+                    window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: cleaned }));
+                    await Promise.all(cleaned.slice(0, 2).map(b => b.image ? preloadImage(b.image) : Promise.resolve()));
+                  }
+                }
+              }).catch(() => {});
+
+            const blogsPromise = Promise.all([
+              serverBlogsPromise,
+              getDocs(collection(db, 'blogPosts'))
+            ]).then(async ([, snap]) => {
+              if (snap && !snap.empty) {
                 const posts: any[] = [];
                 snap.forEach(d => { if(!d.data().isArchived) posts.push({ id: d.id, ...d.data() }) });
                 const cleanedPosts = cleanBlogs(posts);
@@ -623,6 +640,26 @@ export default function App() {
                   const img = b.image || (b as any).coverImage;
                   return img ? preloadImage(img) : Promise.resolve();
                 }));
+              } else {
+                // Jika koleksi Firestore masih kosong, sinkronkan artikel dari server lokal
+                try {
+                  const localRes = await fetch('/api/blogs');
+                  if (localRes.ok) {
+                    const localBlogs = await localRes.json();
+                    if (Array.isArray(localBlogs) && localBlogs.length > 0) {
+                      for (const lb of localBlogs) {
+                        if (lb && lb.id) {
+                          setDoc(doc(db, 'blogPosts', String(lb.id)), {
+                            ...lb,
+                            _adminAuth: 'alfreelnc_admin_auth_verified',
+                            updatedByAdmin: true,
+                            createdAt: lb.date || new Date().toISOString()
+                          }, { merge: true }).catch(() => {});
+                        }
+                      }
+                    }
+                  }
+                } catch {}
               }
             }).catch(e => console.warn("Cloud blogs sync fallback:", e));
 

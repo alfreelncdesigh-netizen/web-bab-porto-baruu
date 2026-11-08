@@ -114,26 +114,14 @@ export default function CvAdmin() {
     setUploading(true);
     try {
       const cleanUrl = await uploadImageToStorage(file, file.name, undefined, 'cv');
-      if (cleanUrl) {
+      if (cleanUrl && !cleanUrl.startsWith('data:') && !cleanUrl.startsWith('blob:')) {
         setSettings((prev: any) => ({ ...prev, cvPdfFile: cleanUrl }));
-        showToast(isPng ? "File CV (PNG) berhasil diunggah & tersimpan permanen!" : "File CV (PDF) berhasil diunggah & tersimpan permanen!");
+        showToast(isPng ? "File CV (PNG) berhasil diunggah permanen ke Firebase Storage!" : "File CV (PDF) berhasil diunggah permanen ke Firebase Storage!");
         return;
       }
-      throw new Error("Gagal mengunggah file CV");
+      throw new Error("Gagal mengunggah file CV ke Firebase Storage");
     } catch (err: any) {
-      if (isPng) {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const value = reader.result as string;
-          setSettings((prev: any) => ({ ...prev, cvPdfFile: value }));
-          showToast("File CV (PNG) disimpan (Offline/Base64)");
-          setUploading(false);
-        };
-        reader.readAsDataURL(file);
-        return;
-      } else {
-        showToast(err.message || "Gagal mengunggah file CV.", "error");
-      }
+      showToast(err.message || "Gagal mengunggah file CV ke Firebase Storage.", "error");
     } finally {
       e.target.value = '';
       setUploading(false);
@@ -178,19 +166,19 @@ export default function CvAdmin() {
                 if (typeof img === 'string' && img.startsWith('data:image/')) {
                   try {
                     // Kompresi WebP client-side (max-width 800px, kualitas 75-80%)
-                    const { blob, file: webpFile, dataUrl } = await compressImageToWebP(img, 800, 0.78);
+                    const { blob, file: webpFile } = await compressImageToWebP(img, 800, 0.78);
                     const filename = `cv_sec${secIdx}_${imgIdx}_${Date.now()}.webp`;
-                    const uploadedUrl = await uploadImageToStorage(blob || webpFile, filename, dataUrl);
+                    const uploadedUrl = await uploadImageToStorage(blob || webpFile, filename, undefined, 'cv');
                     converted++;
                     setSaveProgressText(`Memproses & Menyimpan Gambar (${converted}/${totalBase64})...`);
-                    return uploadedUrl;
+                    return (uploadedUrl && !uploadedUrl.startsWith('data:') && !uploadedUrl.startsWith('blob:')) ? uploadedUrl : '';
                   } catch (err) {
                     converted++;
                     setSaveProgressText(`Memproses & Menyimpan Gambar (${converted}/${totalBase64})...`);
-                    return img;
+                    return '';
                   }
                 }
-                return img;
+                return (typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('blob:')) ? img : '';
               })
             );
 
@@ -290,24 +278,24 @@ export default function CvAdmin() {
       const fileList = Array.from(files);
       let completedCount = 0;
 
-      // 1 & 2. KOMPRESI CLIENT-SIDE (WebP, 75-80%, max-width 800px) & PARALLEL UPLOAD VIA Promise.all
+      // 1 & 2. KOMPRESI CLIENT-SIDE (WebP, 75-80%, max-width 800px) & PARALLEL UPLOAD VIA Promise.all ke Firebase Storage (/cv/)
       const uploadPromises = fileList.map(async (file, idx) => {
         // Kompresi otomatis di browser dengan Canvas toBlob WebP
-        const { blob, file: webpFile, dataUrl } = await compressImageToWebP(file, 800, 0.78);
+        const { blob, file: webpFile } = await compressImageToWebP(file, 800, 0.78);
 
-        // Upload ke storage (Firebase Storage / Cloudinary) untuk mendapatkan URL bersih
+        // Upload ke Firebase Storage (folder /cv/) untuk mendapatkan URL publik permanen
         const filename = `cv_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}.webp`;
-        const uploadedUrl = await uploadImageToStorage(blob || webpFile, filename, dataUrl);
+        const uploadedUrl = await uploadImageToStorage(blob || webpFile, filename, undefined, 'cv');
 
         completedCount++;
-        setUploadStatusText(`Memproses & Mengunggah Foto (${completedCount}/${fileList.length})...`);
-        setSaveProgressText(`Memproses & Menyimpan Gambar (${completedCount}/${fileList.length})...`);
+        setUploadStatusText(`Mengunggah Foto ke Firebase Storage (${completedCount}/${fileList.length})...`);
+        setSaveProgressText(`Menyimpan Foto ke Firebase Storage (${completedCount}/${fileList.length})...`);
 
         return uploadedUrl;
       });
 
       const uploadedUrls = await Promise.all(uploadPromises);
-      const validUrls = uploadedUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0);
+      const validUrls = uploadedUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0 && !u.startsWith('data:') && !u.startsWith('blob:'));
 
       if (validUrls.length > 0) {
         setUploadStatusText("Menyimpan ke database...");
