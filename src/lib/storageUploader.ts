@@ -49,6 +49,9 @@ export function normalizeStorageFolder(folder?: string): string {
   if (f === 'settings' || f === 'banners' || f === 'hero') {
     return 'settings';
   }
+  if (f === 'insight' || f === 'insights' || f === 'quick_filter' || f === 'qfa') {
+    return 'insight';
+  }
   return f || 'works';
 }
 
@@ -213,7 +216,7 @@ export async function uploadImageToStorage(
     const uploadTask = uploadBytes(storageRef, fileOrBlob, metadata);
     const snapshot = await withTimeout(
       uploadTask,
-      timeoutMs,
+      Math.min(timeoutMs, 6000),
       `Batas waktu upload Firebase Storage (${targetFolder}) terlampaui.`
     );
     const downloadUrl = await getDownloadURL(snapshot.ref);
@@ -225,10 +228,46 @@ export async function uploadImageToStorage(
     }
   } catch (err: any) {
     firebaseStorageError = err;
-    console.warn(`[Firebase Storage] Upload ke /${targetFolder}/ gagal:`, err?.code || err?.message || err);
+    console.warn(`[Firebase Storage] Upload ke /${targetFolder}/ gagal atau timeout:`, err?.code || err?.message || err);
   }
 
-  // 2. CADANGAN CLOUD: Cloudinary (hanya jika sudah dikonfigurasi)
+  // 2. CADANGAN PERMANEN SERVER LOKAL (/api/upload): Sangat cepat & handal
+  try {
+    const base64Data = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(fileOrBlob);
+    });
+
+    const serverRes = await withTimeout(
+      fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': 'alfreelnc_admin_auth_verified'
+        },
+        body: JSON.stringify({
+          data: base64Data,
+          filename: cleanName
+        })
+      }),
+      8000,
+      'Batas waktu upload server lokal terlampaui'
+    );
+
+    if (serverRes.ok) {
+      const serverData = await serverRes.json();
+      if (serverData && serverData.url) {
+        recordMediaPermanently(serverData.url, cleanName, fileOrBlob.size, targetFolder).catch(() => {});
+        return serverData.url;
+      }
+    }
+  } catch (serverErr) {
+    console.warn("[Server Disk Upload] Cadangan upload lokal gagal:", serverErr);
+  }
+
+  // 3. CADANGAN CLOUD: Cloudinary (hanya jika sudah dikonfigurasi)
   const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
   const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'ml_default';
 
@@ -259,22 +298,10 @@ export async function uploadImageToStorage(
     }
   }
 
-  // Jika Firebase Storage mengembalikan error bucket belum siap
+  // Jika semua jalur upload gagal, berikan pesan kesalahan yang informatif
   const errMsg = firebaseStorageError?.message || '';
-  if (firebaseStorageError?.code === 'storage/unknown' || errMsg.includes('404') || errMsg.includes('notFound')) {
-    throw new Error(
-      `Firebase Storage untuk folder /${targetFolder}/ belum aktif di Firebase Console. Pastikan Firebase Storage sudah diaktifkan di https://console.firebase.google.com/project/portofolio-c368b/storage`
-    );
-  }
-
-  if (firebaseStorageError?.code === 'storage/unauthorized' || errMsg.includes('permission')) {
-    throw new Error(
-      `Izin Firebase Storage ditolak pada folder /${targetFolder}/. Periksa aturan keamanan (security rules) Storage di Firebase Console.`
-    );
-  }
-
   throw new Error(
-    `Gagal mengunggah file ke Firebase Storage (folder /${targetFolder}/): ${errMsg || 'Koneksi jaringan terputus'}`
+    `Gagal mengunggah file gambar ke penyimpanan: ${errMsg || 'Koneksi jaringan atau server terputus'}`
   );
 }
 
