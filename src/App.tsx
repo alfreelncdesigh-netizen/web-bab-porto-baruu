@@ -17,6 +17,7 @@ import PromoPosterWidget from './components/PromoPosterWidget';
 import CookieBanner from './components/CookieBanner';
 declare global { interface Window { hasRecordedView?: boolean; } }
 import { ThemeProvider } from './contexts/ThemeContext';
+import { LanguageProvider } from './contexts/LanguageContext';
 import { ArrowLeft } from 'lucide-react';
 import { db } from './lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, increment, collection, getDocs } from 'firebase/firestore';
@@ -776,7 +777,8 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <TopProgressBar trigger={view} />
+      <LanguageProvider>
+        <TopProgressBar trigger={view} />
 
       {/* Global High-Fidelity Skeleton Screen */}
       <AnimatePresence>
@@ -974,6 +976,7 @@ export default function App() {
         <Footer />
         <OfflineIndicator />
       </div>
+      </LanguageProvider>
     </ThemeProvider>
   );
 }

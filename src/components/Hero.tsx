@@ -8,6 +8,7 @@ import { getStoredSettings, cleanSettings } from '../lib/contentStorage';
 import HeroBannerCarousel from './HeroBannerCarousel';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import heroAlbiImg from '../assets/images/hero-albi.png';
+import { useLanguage } from '../contexts/LanguageContext';
 
 export default function Hero() {
   const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
@@ -122,28 +123,27 @@ export default function Hero() {
       .replace(/desigh/gi, 'Design');
   };
 
-  const badgeText = (settings.heroBadge && settings.heroBadge.trim().length > 0)
-    ? sanitizeTypography(settings.heroBadge, "PORTFOLIO DESIGN")
-    : "PORTFOLIO DESIGN";
+  const { t, language } = useLanguage();
 
-  const title1Text = (settings.heroTitle1 && settings.heroTitle1.trim().length > 0)
+  const isDefaultBadge = !settings.heroBadge || settings.heroBadge === 'PORTFOLIO DESIGN' || settings.heroBadge === 'DESAINER GRAFIS & UI/UX';
+  const badgeText = (!isDefaultBadge && language === 'id')
+    ? sanitizeTypography(settings.heroBadge, t('hero.badge'))
+    : t('hero.badge');
+
+  const isDefaultTitle1 = !settings.heroTitle1 || settings.heroTitle1 === 'WELCOME' || settings.heroTitle1 === 'SELAMAT DATANG';
+  const title1Text = (!isDefaultTitle1 && language === 'id')
     ? settings.heroTitle1
-    : "WELCOME";
+    : t('hero.title1');
 
-  const title2Text = (settings.heroTitle2 && settings.heroTitle2.trim().length > 0)
-    ? sanitizeTypography(settings.heroTitle2, "My Portfolio Design")
-    : "My Portfolio Design";
+  const isDefaultTitle2 = !settings.heroTitle2 || settings.heroTitle2 === 'My Portfolio Design' || settings.heroTitle2 === 'KARYA & DESAIN SAYA';
+  const title2Text = (!isDefaultTitle2 && language === 'id')
+    ? sanitizeTypography(settings.heroTitle2, t('hero.title2'))
+    : t('hero.title2');
 
   return (
     <section id="home" className="relative w-full overflow-hidden bg-[var(--bg-main,#ffffff)] dark:bg-[#0a0a0a]">
       {/* ========================================================
           1. TAMPILAN MOBILE (< 768px): VERTICAL STACKING LAYOUT
-          - Elemen ditumpuk berurutan dari atas ke bawah:
-            1. Header navigasi (fixed di atas)
-            2. Area teks judul, sub-judul ("Creative Designer • UI/UX"), dan tombol CTA
-               dengan latar belakang terang solid untuk 100% keterbacaan & kontras tinggi.
-            3. Foto desainer dengan elemen lingkaran & garis biru abstrak
-               diposisikan di BAWAH teks & tombol, BUKAN di belakangnya.
           ======================================================== */}
       <div className="block md:hidden w-full bg-white dark:bg-[#0a0a0a] pt-20 sm:pt-24 pb-0 transition-colors">
         {/* Area Teks & Tombol CTA: Latar belakang bersih, solid, high-contrast */}
@@ -153,11 +153,11 @@ export default function Hero() {
           transition={{ duration: 0.5, ease: "easeOut" }}
           className="w-full px-6 sm:px-8 flex flex-col items-start text-left bg-white dark:bg-[#0a0a0a]"
         >
-          {/* Subtitle ("Creative Designer • UI/UX") - diturunkan sedikit sesuai permintaan */}
+          {/* Subtitle Mobile */}
           <div className="flex items-center gap-2 mt-2 sm:mt-3 mb-2 select-none">
             <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
             <p className="text-[11px] sm:text-xs font-bold tracking-[0.18em] uppercase text-zinc-600 dark:text-zinc-400">
-              Creative Designer • UI/UX
+              {badgeText}
             </p>
           </div>
 
@@ -168,25 +168,25 @@ export default function Hero() {
               letterSpacing: '-0.025em',
               lineHeight: 1.04,
             }}
-            className="font-black text-[42px] sm:text-[48px] text-zinc-950 dark:text-white mt-2 sm:mt-2.5 mb-1 select-none w-full"
+            className="font-black text-[38px] sm:text-[46px] text-zinc-950 dark:text-white mt-2 sm:mt-2.5 mb-1 select-none w-full"
           >
             <span className="block text-zinc-950 dark:text-white font-black">{title1Text}</span>
             <span className="block text-zinc-950 dark:text-white font-black mt-1">{title2Text}</span>
           </h1>
 
-          {/* Group Tombol CTA Mobile: Diturunkan sedikit dengan proporsi rapi */}
+          {/* Group Tombol CTA Mobile */}
           <div className="inline-flex items-center p-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-3.5 sm:mt-4 max-w-full select-none">
             <button 
               onClick={() => scrollTo('portfolio')}
               className="h-[34px] sm:h-[36px] px-4 sm:px-4.5 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-xs font-bold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
             >
-              Lihat Karya <ArrowRight className="w-3 h-3 shrink-0" />
+              {t('hero.view_works')} <ArrowRight className="w-3 h-3 shrink-0" />
             </button>
             <button 
               onClick={() => scrollTo('contact')}
               className="h-[34px] sm:h-[36px] px-4 sm:px-4.5 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-xs font-bold cursor-pointer active:scale-95 transition-all shrink-0"
             >
-              Kontak
+              {t('hero.contact_btn')}
             </button>
           </div>
         </motion.div>
@@ -262,14 +262,14 @@ export default function Hero() {
                 onClick={() => scrollTo('portfolio')}
                 className="h-[36px] md:h-[40px] px-5 md:px-6 inline-flex items-center justify-center gap-2 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-full text-xs md:text-sm font-bold shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
               >
-                Lihat Karya <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                {t('hero.view_works')} <ArrowRight className="w-3.5 h-3.5 shrink-0" />
               </button>
 
               <button 
                 onClick={() => scrollTo('contact')}
                 className="h-[36px] md:h-[40px] px-5 md:px-6 inline-flex items-center justify-center gap-1.5 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 border border-zinc-200/80 dark:bg-zinc-900 dark:text-white dark:border-zinc-800 dark:hover:bg-zinc-800 rounded-full text-xs md:text-sm font-bold shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
               >
-                Kontak
+                {t('hero.contact_btn')}
               </button>
             </div>
           </motion.div>

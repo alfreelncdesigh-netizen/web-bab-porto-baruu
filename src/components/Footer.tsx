@@ -1,7 +1,9 @@
+import { useLanguage } from '../contexts/LanguageContext';
 import { Instagram, Mail, MessageCircle, ArrowUp } from 'lucide-react';
 import BrandLogo from './BrandLogo';
 
 export default function Footer() {
+  const { t } = useLanguage();
   const currentYear = new Date().getFullYear();
 
   const scrollToSection = (e: React.MouseEvent, sectionId: string) => {
@@ -155,7 +157,7 @@ export default function Footer() {
             title="Masuk ke Mode Admin"
             aria-label="Masuk ke Mode Admin"
           >
-            © {currentYear} ALFREELNC. HAK CIPTA DILINDUNGI.
+            © {currentYear} ALFREELNC. {t('common.rights')}
           </button>
 
           <div className="flex items-center gap-4">

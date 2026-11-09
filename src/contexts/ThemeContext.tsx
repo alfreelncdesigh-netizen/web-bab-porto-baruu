@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { getCookie, setCookie } from '../lib/cookies';
 
-type ThemeName = 'light' | 'dark' | 'tiffany' | 'charcoal' | 'cyprus';
+type ThemeName = 'light' | 'dark';
 
 interface ThemeContextType {
   theme: ThemeName;
@@ -15,37 +15,34 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<ThemeName>(() => {
     const fromCookie = getCookie('app-theme') as ThemeName | null;
-    if (fromCookie && ['light', 'dark', 'tiffany', 'charcoal', 'cyprus'].includes(fromCookie)) {
+    if (fromCookie && (fromCookie === 'light' || fromCookie === 'dark')) {
       return fromCookie;
     }
     const saved = localStorage.getItem('app-theme');
-    return (saved as ThemeName) || 'light';
+    if (saved === 'light' || saved === 'dark') {
+      return saved;
+    }
+    return 'light';
   });
 
-  // Calculate isDark for backward compatibility in components
-  const isDark = theme !== 'light';
+  const isDark = theme === 'dark';
 
   useEffect(() => {
     localStorage.setItem('app-theme', theme);
     setCookie('app-theme', theme, { days: 365 });
     const root = document.documentElement;
     
-    // Always add dark class for dark, tiffany, charcoal, cyprus
-    if (theme !== 'light') {
+    if (theme === 'dark') {
       root.classList.add('dark');
     } else {
       root.classList.remove('dark');
     }
 
-    // Handle custom themes
     root.setAttribute('data-theme', theme);
   }, [theme]);
 
   const toggleTheme = () => {
-    const themes: ThemeName[] = ['light', 'dark', 'tiffany', 'charcoal', 'cyprus'];
-    const currentIndex = themes.indexOf(theme);
-    const nextIndex = (currentIndex + 1) % themes.length;
-    setTheme(themes[nextIndex]);
+    setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   };
 
   return (

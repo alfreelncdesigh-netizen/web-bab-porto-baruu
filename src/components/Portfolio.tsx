@@ -9,6 +9,7 @@ import { resolveImageUrl, handleImageError, FALLBACK_IMAGE } from '../lib/imageR
 import { logFirestoreError, OperationType, isQuotaExhausted } from '../lib/firestoreErrorHandler';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import ShareProjectModal from './ShareProjectModal';
+import { useLanguage } from '../contexts/LanguageContext';
 import { 
   sectionStaggerContainer, 
   sectionHeaderItem, 
@@ -236,6 +237,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
   const [activeCategory, setActiveCategory] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
+  const { t } = useLanguage();
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [showProjectMetrics, setShowProjectMetrics] = useState(false);
@@ -640,10 +642,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           <motion.div variants={sectionHeaderItem} className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-4 md:mb-6">
             <div>
               <h2 className="text-3xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-black dark:text-white">
-                Karya <span className="text-black dark:text-zinc-600">Saya</span>
+                {t('portfolio.title')}
               </h2>
               <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                Jelajahi portofolio desain grafis, visual identity, dan kreasi visual interaktif.
+                {t('portfolio.subtitle')}
               </p>
             </div>
 
@@ -656,14 +658,14 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Cari karya atau kata kunci..."
+                    placeholder={t('portfolio.search')}
                     className="w-full pl-9 pr-8 py-2 md:py-2.5 text-xs md:text-sm rounded-full bg-zinc-50 dark:bg-[#111111] border border-zinc-200/80 dark:border-zinc-800 text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all shadow-xs"
                   />
                   {searchQuery && (
                     <button
                       onClick={() => setSearchQuery('')}
                       className="absolute right-3 p-0.5 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
-                      title="Hapus pencarian"
+                      title="Hapus"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -686,7 +688,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                   onClick={() => setActiveCategory(cat)} 
                   className={`px-3.5 py-1.5 md:px-4 md:py-2 rounded-full text-[10px] md:text-xs font-semibold transition-all shadow-sm border shrink-0 whitespace-nowrap active:scale-95 cursor-pointer ${btnClass}`}
                 >
-                  {cat}
+                  {cat === 'Semua' ? t('portfolio.all') : cat}
                 </button>
               );
             })}

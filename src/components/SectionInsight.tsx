@@ -1,3 +1,4 @@
+import { useLanguage } from '../contexts/LanguageContext';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -194,6 +195,7 @@ const InsightImageWithFallback = ({
 };
 
 export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedPage = false }: SectionInsightProps) {
+  const { t } = useLanguage();
   const { theme } = useTheme();
   const [items, setItems] = useState<QuickFilterItem[]>(() => getStoredQuickFilterItems());
   const [activeCategory, setActiveCategory] = useState<string>(() => {
@@ -441,12 +443,12 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
           </div>
 
           <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-black dark:text-white leading-tight">
-            Wawasan Desain Grafis & Tanya Jawab
+            {t('insight.title')}
           </h2>
           <p className="mt-2 text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
             {selectedItem 
               ? 'Detail penjelasan terkurasi seputar tren warna, filosofi visual, tips branding, dan proses pemesanan.' 
-              : 'Klik salah satu pertanyaan di bawah untuk membuka ulasan lengkap beserta gambar referensi pendukung.'}
+              : t('insight.subtitle')}
           </p>
         </div>
 
@@ -547,7 +549,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
                     className="inline-flex items-center gap-2 px-3.5 py-2 rounded-full bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-bold text-black dark:text-white transition-all active:scale-95 cursor-pointer shadow-2xs group"
                   >
                     <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-1" />
-                    <span>Kembali ke Daftar Pertanyaan</span>
+                    <span>{t('insight.back_btn')}</span>
                   </button>
 
                   <div className="flex items-center gap-2">

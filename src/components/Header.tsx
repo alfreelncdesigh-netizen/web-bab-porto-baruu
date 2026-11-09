@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { Menu, X, Sun, Moon, Palette, Search, Sparkles, ChevronRight, HelpCircle, ArrowRight } from 'lucide-react';
+import { Menu, X, Sun, Moon, Search, Sparkles, ChevronRight, HelpCircle, ArrowRight, Globe, Check } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import { motion, AnimatePresence } from 'motion/react';
 import BrandLogo from './BrandLogo';
 import { SiteSettings } from '../data/settings';
@@ -20,9 +21,10 @@ export default function Header({ setView, currentView }: HeaderProps) {
  const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
  const [isScrolled, setIsScrolled] = useState(false);
  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
- const [isThemeDropdownOpen, setIsThemeDropdownOpen] = useState(false);
+ const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
  const [isSearchSlideOpen, setIsSearchSlideOpen] = useState(false);
  const [insightItems, setInsightItems] = useState<QuickFilterItem[]>(() => getStoredQuickFilterItems());
+ const { language, setLanguage, t, languages, currentLangInfo } = useLanguage();
 
  useEffect(() => {
    const handleSettingsUpdate = (e: any) => {
@@ -40,22 +42,22 @@ export default function Header({ setView, currentView }: HeaderProps) {
  }, []);
 
  const [activeSection, setActiveSection] = useState('home');
- const { theme, isDark, toggleTheme, setTheme } = useTheme();
+ const { theme, toggleTheme } = useTheme();
 
  // Refs for detecting click outside
  const mobileMenuRef = useRef<HTMLDivElement>(null);
  const mobileToggleRef = useRef<HTMLButtonElement>(null);
- const desktopThemeDropdownRef = useRef<HTMLDivElement>(null);
- const desktopThemeToggleRef = useRef<HTMLButtonElement>(null);
- const mobileThemeDropdownRef = useRef<HTMLDivElement>(null);
- const mobileThemeToggleRef = useRef<HTMLButtonElement>(null);
+ const desktopLangDropdownRef = useRef<HTMLDivElement>(null);
+ const desktopLangToggleRef = useRef<HTMLButtonElement>(null);
+ const mobileLangDropdownRef = useRef<HTMLDivElement>(null);
+ const mobileLangToggleRef = useRef<HTMLButtonElement>(null);
  const searchSlideRef = useRef<HTMLDivElement>(null);
  const desktopSearchTriggerRef = useRef<HTMLButtonElement>(null);
  const mobileSearchTriggerRef = useRef<HTMLButtonElement>(null);
 
  // Handle click outside or tap on blank screen to auto-close dropdowns
  useEffect(() => {
-  if (!isMobileMenuOpen && !isThemeDropdownOpen && !isSearchSlideOpen) return;
+  if (!isMobileMenuOpen && !isLanguageDropdownOpen && !isSearchSlideOpen) return;
 
   const handlePointerDown = (e: MouseEvent | TouchEvent) => {
     const target = e.target as Node | null;
@@ -70,15 +72,15 @@ export default function Header({ setView, currentView }: HeaderProps) {
       }
     }
 
-    // Check if clicked outside theme dropdown (desktop or mobile)
-    if (isThemeDropdownOpen) {
-      const insideDesktopMenu = desktopThemeDropdownRef.current?.contains(target);
-      const insideDesktopToggle = desktopThemeToggleRef.current?.contains(target);
-      const insideMobileMenu = mobileThemeDropdownRef.current?.contains(target);
-      const insideMobileToggle = mobileThemeToggleRef.current?.contains(target);
+    // Check if clicked outside language dropdown (desktop or mobile)
+    if (isLanguageDropdownOpen) {
+      const insideDesktopMenu = desktopLangDropdownRef.current?.contains(target);
+      const insideDesktopToggle = desktopLangToggleRef.current?.contains(target);
+      const insideMobileMenu = mobileLangDropdownRef.current?.contains(target);
+      const insideMobileToggle = mobileLangToggleRef.current?.contains(target);
 
       if (!insideDesktopMenu && !insideDesktopToggle && !insideMobileMenu && !insideMobileToggle) {
-        setIsThemeDropdownOpen(false);
+        setIsLanguageDropdownOpen(false);
       }
     }
 
@@ -97,7 +99,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
       setIsMobileMenuOpen(false);
-      setIsThemeDropdownOpen(false);
+      setIsLanguageDropdownOpen(false);
       setIsSearchSlideOpen(false);
     }
   };
@@ -111,7 +113,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
     document.removeEventListener('touchstart', handlePointerDown);
     window.removeEventListener('keydown', handleKeyDown);
   };
- }, [isMobileMenuOpen, isThemeDropdownOpen, isSearchSlideOpen]);
+ }, [isMobileMenuOpen, isLanguageDropdownOpen, isSearchSlideOpen]);
 
  useEffect(() => {
   const handleScroll = () => {
@@ -120,7 +122,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
     // Auto-close open menus on significant scroll
     if (window.scrollY > 50) {
       if (isMobileMenuOpen) setIsMobileMenuOpen(false);
-      if (isThemeDropdownOpen) setIsThemeDropdownOpen(false);
+      if (isLanguageDropdownOpen) setIsLanguageDropdownOpen(false);
       if (isSearchSlideOpen) setIsSearchSlideOpen(false);
     }
 
@@ -142,21 +144,21 @@ export default function Header({ setView, currentView }: HeaderProps) {
   };
   window.addEventListener('scroll', handleScroll);
   return () => window.removeEventListener('scroll', handleScroll);
- }, [currentView, isMobileMenuOpen, isThemeDropdownOpen]);
+ }, [currentView, isMobileMenuOpen, isLanguageDropdownOpen, language]);
 
  const navLinks = [
-  { name: 'Tentang Saya', id: 'about', view: 'about' },
-  { name: 'Beranda', id: 'home', view: 'home' },
-  { name: 'Karya', id: 'portfolio', view: 'portfolio' },
-  { name: 'Pengalaman', id: 'experience', view: 'experience' },
-  { name: 'Order', id: 'store', view: 'store' },
-  { name: 'Statistik', id: 'stats', view: 'stats' },
+  { name: t('nav.about'), id: 'about', view: 'about' },
+  { name: t('nav.home'), id: 'home', view: 'home' },
+  { name: t('nav.portfolio'), id: 'portfolio', view: 'portfolio' },
+  { name: t('nav.experience'), id: 'experience', view: 'experience' },
+  { name: t('nav.order'), id: 'store', view: 'store' },
+  { name: t('nav.stats'), id: 'stats', view: 'stats' },
  ];
 
  const handleNavClick = (e: React.MouseEvent<HTMLButtonElement>, link: any) => {
   e.preventDefault();
   setIsMobileMenuOpen(false);
-  setIsThemeDropdownOpen(false);
+  setIsLanguageDropdownOpen(false);
   setIsSearchSlideOpen(false);
   setView(link.view);
  };
@@ -164,7 +166,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
  const handleSelectPresetQuestion = (itemOrCat: QuickFilterItem | string) => {
   setIsSearchSlideOpen(false);
   setIsMobileMenuOpen(false);
-  setIsThemeDropdownOpen(false);
+  setIsLanguageDropdownOpen(false);
 
   const isObject = typeof itemOrCat === 'object';
   const questionId = isObject ? itemOrCat.id : undefined;
@@ -209,7 +211,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
   <>
    {/* Transparent Backdrop to detect taps on empty screen / anywhere else */}
    <AnimatePresence>
-    {(isMobileMenuOpen || isThemeDropdownOpen || isSearchSlideOpen) && (
+    {(isMobileMenuOpen || isLanguageDropdownOpen || isSearchSlideOpen) && (
       <motion.div
         key="dropdown-backdrop"
         initial={{ opacity: 0 }}
@@ -219,12 +221,12 @@ export default function Header({ setView, currentView }: HeaderProps) {
         className="fixed inset-0 z-40 bg-black/15 dark:bg-black/35 backdrop-blur-[1px] md:bg-transparent md:backdrop-blur-none pointer-events-auto"
         onClick={() => {
           setIsMobileMenuOpen(false);
-          setIsThemeDropdownOpen(false);
+          setIsLanguageDropdownOpen(false);
           setIsSearchSlideOpen(false);
         }}
         onTouchStart={() => {
           setIsMobileMenuOpen(false);
-          setIsThemeDropdownOpen(false);
+          setIsLanguageDropdownOpen(false);
           setIsSearchSlideOpen(false);
         }}
       />
@@ -281,7 +283,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
       <button
         ref={desktopSearchTriggerRef}
         onClick={() => {
-          setIsThemeDropdownOpen(false);
+          setIsLanguageDropdownOpen(false);
           setIsSearchSlideOpen(!isSearchSlideOpen);
         }}
         className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-semibold shadow-2xs transition-all hover:scale-102 cursor-pointer mr-1 lg:mr-1.5 ${
@@ -310,55 +312,101 @@ export default function Header({ setView, currentView }: HeaderProps) {
        )
       })}
       
-      {/* Desktop Theme Toggle Dropdown */}
+      {/* Desktop Language Switcher (Diletakkan berdampingan dekat tombol Tema) */}
       <div className="relative">
-        <button 
-         ref={desktopThemeToggleRef}
-         onClick={() => {
-           setIsThemeDropdownOpen(!isThemeDropdownOpen);
-         }} 
-         className="text-black hover:opacity-70 dark:text-white dark:hover:opacity-70 transition-colors p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 focus:outline-none flex items-center justify-center cursor-pointer"
-         aria-label="Ganti Tema" 
-         title={`Tema Saat Ini: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`}
+        <button
+          ref={desktopLangToggleRef}
+          onClick={() => {
+            setIsSearchSlideOpen(false);
+            setIsLanguageDropdownOpen(!isLanguageDropdownOpen);
+          }}
+          className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+            isLanguageDropdownOpen
+              ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+              : 'border-zinc-200/80 dark:border-zinc-800 bg-zinc-100/80 hover:bg-zinc-200/80 dark:bg-zinc-800/70 dark:hover:bg-zinc-700/80 text-zinc-700 dark:text-zinc-200'
+          }`}
+          aria-label={t('nav.lang_toggle')}
+          title={`${t('nav.lang_toggle')}: ${currentLangInfo.nativeName}`}
         >
-         {theme === 'light' ? <Moon size={20} /> : theme === 'dark' ? <Sun size={20} /> : <Palette size={20} />}
+          <Globe className="w-3.5 h-3.5 shrink-0" />
+          <span className="text-[11px] uppercase tracking-wider">{language}</span>
+          <span className="text-[12px]">{currentLangInfo.flag}</span>
         </button>
-        
+
         <AnimatePresence>
-         {isThemeDropdownOpen && (
-          <motion.div 
-           ref={desktopThemeDropdownRef}
-           initial={{ opacity: 0, y: 10, scale: 0.95 }}
-           animate={{ opacity: 1, y: 0, scale: 1 }}
-           exit={{ opacity: 0, y: 10, scale: 0.95 }}
-           transition={{ duration: 0.15 }}
-           className="absolute right-0 mt-2 w-44 bg-white/95 dark:bg-[#111111]/95 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl p-2 flex flex-col gap-1 shadow-xl z-50 pointer-events-auto"
-          >
-            {['light', 'dark', 'tiffany', 'charcoal', 'cyprus'].map((t) => (
-              <button
-                key={t}
-                onClick={() => { setTheme(t as any); setIsThemeDropdownOpen(false); }}
-                className={`text-left text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer ${theme === t ? 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white' : 'text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900'}`}
-              >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-              </button>
-            ))}
-          </motion.div>
-         )}
+          {isLanguageDropdownOpen && (
+            <motion.div
+              ref={desktopLangDropdownRef}
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+              className="absolute right-0 mt-2 w-56 bg-white/98 dark:bg-[#111111]/98 backdrop-blur-2xl border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl p-2 shadow-2xl z-50 pointer-events-auto"
+            >
+              <div className="px-2.5 py-1.5 border-b border-zinc-100 dark:border-zinc-800/80 mb-1 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                  {t('nav.lang_toggle')} (10)
+                </span>
+                <span className="text-[11px]">{currentLangInfo.flag}</span>
+              </div>
+              <div className="max-h-[300px] overflow-y-auto no-scrollbar space-y-0.5">
+                {languages.map((item) => {
+                  const isSelected = item.code === language;
+                  return (
+                    <button
+                      key={item.code}
+                      onClick={() => {
+                        setLanguage(item.code);
+                        setIsLanguageDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-bold'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{item.flag}</span>
+                        <span className="truncate">{item.nativeName}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
+
+      {/* Desktop Direct 1-Click Theme Toggle: Light / Dark Mode */}
+      <button 
+        onClick={() => {
+          setIsLanguageDropdownOpen(false);
+          toggleTheme();
+        }} 
+        className="text-black hover:opacity-70 dark:text-white dark:hover:opacity-70 transition-colors p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 focus:outline-none flex items-center justify-center cursor-pointer active:scale-95"
+        aria-label={t('nav.theme_toggle')} 
+        title={`${t('nav.theme_toggle')}: ${theme === 'light' ? t('nav.theme_light') : t('nav.theme_dark')}`}
+      >
+        {theme === 'light' ? (
+          <Moon className="w-5 h-5 text-zinc-700" />
+        ) : (
+          <Sun className="w-5 h-5 text-amber-400" />
+        )}
+      </button>
 
       <PWAInstallButton />
 
       <button 
        onClick={() => {
         setIsMobileMenuOpen(false);
-        setIsThemeDropdownOpen(false);
+        setIsLanguageDropdownOpen(false);
         setView('contact'); 
        }} 
        className="bg-black text-white dark:bg-white dark:text-black px-5.5 py-2.5 rounded-full text-xs sm:text-[14px] font-bold hover:opacity-90 transition-opacity active:scale-95 duration-200 shadow-xs cursor-pointer"
       >
-       Kontak
+       {t('nav.contact')}
       </button>
      </nav>
 
@@ -369,7 +417,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
         ref={mobileSearchTriggerRef}
         onClick={() => {
           setIsMobileMenuOpen(false);
-          setIsThemeDropdownOpen(false);
+          setIsLanguageDropdownOpen(false);
           setIsSearchSlideOpen(!isSearchSlideOpen);
         }} 
         className={`p-2 rounded-full transition-colors flex items-center justify-center focus:outline-none cursor-pointer ${
@@ -383,48 +431,95 @@ export default function Header({ setView, currentView }: HeaderProps) {
         <GoogleGIcon className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
       </button>
 
+      {/* Mobile Language Selector Dropdown (tepat dekat menu tema) */}
       <div className="relative">
-        <button 
-         ref={mobileThemeToggleRef}
-         onClick={() => {
-           setIsMobileMenuOpen(false);
-           setIsThemeDropdownOpen(!isThemeDropdownOpen);
-         }} 
-         className="text-black dark:text-white p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors flex items-center justify-center focus:outline-none cursor-pointer"
-         aria-label="Ganti Tema"
+        <button
+          ref={mobileLangToggleRef}
+          onClick={() => {
+            setIsMobileMenuOpen(false);
+            setIsSearchSlideOpen(false);
+            setIsLanguageDropdownOpen(!isLanguageDropdownOpen);
+          }}
+          className={`p-2 rounded-full transition-colors flex items-center justify-center focus:outline-none cursor-pointer ${
+            isLanguageDropdownOpen
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
+          }`}
+          aria-label={t('nav.lang_toggle')}
+          title={`${t('nav.lang_toggle')}: ${currentLangInfo.nativeName}`}
         >
-         {theme === 'light' ? <Moon className="w-6 h-6" /> : theme === 'dark' ? <Sun className="w-6 h-6" /> : <Palette className="w-6 h-6" />}
+          <Globe className="w-5 h-5" />
         </button>
 
         <AnimatePresence>
-         {isThemeDropdownOpen && (
-          <motion.div 
-           ref={mobileThemeDropdownRef}
-           initial={{ opacity: 0, y: 10, scale: 0.95 }}
-           animate={{ opacity: 1, y: 0, scale: 1 }}
-           exit={{ opacity: 0, y: 10, scale: 0.95 }}
-           transition={{ duration: 0.15 }}
-           className="absolute right-0 mt-2 w-40 bg-white/95 dark:bg-[#111111]/95 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 rounded-xl p-2 flex flex-col gap-1 shadow-xl z-50 pointer-events-auto"
-          >
-            {['light', 'dark', 'tiffany', 'charcoal', 'cyprus'].map((t) => (
-              <button
-                key={t}
-                onClick={() => { setTheme(t as any); setIsThemeDropdownOpen(false); }}
-                className={`text-left text-xs font-bold px-3 py-2 rounded-lg transition-colors cursor-pointer ${theme === t ? 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white' : 'text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900'}`}
-              >
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-              </button>
-            ))}
-          </motion.div>
-         )}
+          {isLanguageDropdownOpen && (
+            <motion.div
+              ref={mobileLangDropdownRef}
+              initial={{ opacity: 0, y: 10, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.95 }}
+              transition={{ duration: 0.15 }}
+              className="absolute right-0 mt-2 w-52 bg-white/98 dark:bg-[#111111]/98 backdrop-blur-2xl border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl p-2 shadow-2xl z-50 pointer-events-auto"
+            >
+              <div className="px-2.5 py-1.5 border-b border-zinc-100 dark:border-zinc-800/80 mb-1 flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                  {t('nav.lang_toggle')} (10)
+                </span>
+                <span className="text-[11px]">{currentLangInfo.flag}</span>
+              </div>
+              <div className="max-h-[260px] overflow-y-auto no-scrollbar space-y-0.5">
+                {languages.map((item) => {
+                  const isSelected = item.code === language;
+                  return (
+                    <button
+                      key={item.code}
+                      onClick={() => {
+                        setLanguage(item.code);
+                        setIsLanguageDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-bold'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">{item.flag}</span>
+                        <span className="truncate">{item.nativeName}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
 
+      {/* Mobile Direct 1-Click Theme Toggle: Light / Dark Mode */}
+      <button 
+        onClick={() => {
+          setIsLanguageDropdownOpen(false);
+          toggleTheme();
+        }} 
+        className="text-black dark:text-white p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors flex items-center justify-center focus:outline-none cursor-pointer active:scale-95"
+        aria-label={t('nav.theme_toggle')}
+        title={`${t('nav.theme_toggle')}: ${theme === 'light' ? t('nav.theme_light') : t('nav.theme_dark')}`}
+      >
+        {theme === 'light' ? (
+          <Moon className="w-5.5 h-5.5 text-zinc-700" />
+        ) : (
+          <Sun className="w-5.5 h-5.5 text-amber-400" />
+        )}
+      </button>
+
+      {/* Mobile Hamburger Menu Toggle */}
       <button 
        ref={mobileToggleRef}
-       className="text-black dark:text-white p-2.5 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors focus:outline-none flex items-center justify-center cursor-pointer" 
+       className="text-black dark:text-white p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors focus:outline-none flex items-center justify-center cursor-pointer" 
        onClick={() => {
-         setIsThemeDropdownOpen(false);
+         setIsLanguageDropdownOpen(false);
          setIsMobileMenuOpen(!isMobileMenuOpen);
        }}
        aria-label={isMobileMenuOpen ? "Tutup Menu" : "Buka Menu"}
@@ -473,7 +568,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
           }}
           className="w-full bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 py-3.5 rounded-2xl text-[13px] sm:text-[14px] font-bold shadow-md transition-all active:scale-95 cursor-pointer"
          >
-          Hubungi Saya
+          {t('nav.contact')}
          </button>
          <PWAInstallButton className="w-full justify-center py-2.5" />
        </div>

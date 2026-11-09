@@ -44,34 +44,18 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
 
   // Helper styling latar belakang abu-abu dengan efek kaca buram per tema
   const getCardBgByTheme = (currentTheme: string) => {
-    switch (currentTheme) {
-      case 'tiffany':
-        return 'bg-[#1f1f1f]/65 hover:bg-[#1f1f1f]/85 border-[#2e2e2e]/80 backdrop-blur-md shadow-lg shadow-black/20';
-      case 'charcoal':
-        return 'bg-[#3C1A47]/50 hover:bg-[#3C1A47]/70 border-[#5a276b]/70 backdrop-blur-md shadow-lg shadow-[#3C1A47]/20';
-      case 'cyprus':
-        return 'bg-[#004741]/50 hover:bg-[#004741]/70 border-[#007369]/70 backdrop-blur-md shadow-lg shadow-[#004741]/20';
-      case 'dark':
-        return 'bg-zinc-800/50 hover:bg-zinc-800/70 border-zinc-700/60 backdrop-blur-md shadow-lg shadow-black/25';
-      default:
-        return 'bg-zinc-200/60 hover:bg-zinc-200/80 border-zinc-300/70 backdrop-blur-md shadow-sm hover:shadow-md';
+    if (currentTheme === 'dark') {
+      return 'bg-zinc-800/50 hover:bg-zinc-800/70 border-zinc-700/60 backdrop-blur-md shadow-lg shadow-black/25';
     }
+    return 'bg-zinc-200/60 hover:bg-zinc-200/80 border-zinc-300/70 backdrop-blur-md shadow-sm hover:shadow-md';
   };
 
   // Helper styling khusus tombol "Baca Artikel"
   const getButtonClassByTheme = (currentTheme: string) => {
-    switch (currentTheme) {
-      case 'tiffany':
-        return 'bg-[#21F1A8] hover:bg-[#1de09b] text-black shadow-md shadow-[#21F1A8]/20';
-      case 'charcoal':
-        return 'bg-[#B6FF00] hover:bg-[#a4e600] text-black shadow-md shadow-[#B6FF00]/20';
-      case 'cyprus':
-        return 'bg-[#F0EDE4] hover:bg-white text-[#004741] shadow-md shadow-white/10';
-      case 'dark':
-        return 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/30';
-      default:
-        return 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/25';
+    if (currentTheme === 'dark') {
+      return 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-900/30';
     }
+    return 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/25';
   };
 
   // Refs untuk auto-scroll ke paling atas modal saat artikel dibuka

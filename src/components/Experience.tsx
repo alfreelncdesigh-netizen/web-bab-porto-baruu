@@ -19,6 +19,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { useLanguage } from '../contexts/LanguageContext';
 import { 
   sectionStaggerContainer, 
   sectionHeaderItem, 
@@ -27,6 +28,7 @@ import {
 } from '../lib/animationVariants';
 
 export default function Experience() {
+  const { t } = useLanguage();
   const [experiences, setExperiences] = useState<any[]>(() => getStoredExperiences());
   const [loading, setLoading] = useState(() => getStoredExperiences().length === 0);
   const [selectedExp, setSelectedExp] = useState<any | null>(null);
@@ -276,13 +278,13 @@ export default function Experience() {
     >
       <motion.div variants={sectionHeaderItem} className="mb-4 md:mb-6">
         <h4 className="text-[9px] md:text-xs font-bold text-black dark:text-zinc-400 mb-3 flex items-center gap-2 tracking-widest uppercase">
-          Jejak Langkah & Karir
+          {t('nav.experience')}
         </h4>
         <h2 className="text-3xl md:text-5xl font-semibold tracking-tight text-black dark:text-white leading-[1.1] max-w-2xl">
-          Pengalaman & <span className="text-zinc-500">Prestasi</span>
+          {t('experience.title')}
         </h2>
         <p className="mt-3 md:mt-4 text-sm md:text-base text-zinc-600 dark:text-zinc-400 max-w-2xl leading-relaxed">
-          Kumpulan cerita dan pengalaman saya di bidang desain — mulai dari penanganan proyek visual, pencapaian sertifikasi, hingga kolaborasi tim.
+          {t('experience.subtitle')}
         </p>
       </motion.div>
 

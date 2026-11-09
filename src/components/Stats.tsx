@@ -20,6 +20,7 @@ import {
   childGridContainer, 
   childGridCardItem 
 } from '../lib/animationVariants';
+import { useLanguage } from '../contexts/LanguageContext';
 
 // Wrapper khusus untuk memastikan Recharts selalu menerima dimensi pixel valid saat detail dibuka/tutup berkali-kali
 function ChartWrapper({ 
@@ -68,6 +69,7 @@ export default function Stats({
   isAdmin?: boolean;
   isFullView?: boolean;
 }) {
+  const { t } = useLanguage();
   const statsRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [showCharts, setShowCharts] = useState(false);
@@ -470,17 +472,17 @@ export default function Stats({
         <motion.div variants={sectionHeaderItem} id="stats-normal-header" className="flex flex-col md:flex-row md:items-end justify-between gap-3 mb-4 md:mb-6">
           <div>
             <h4 className="text-[9px] md:text-xs font-bold text-black dark:text-zinc-400 mb-3 flex items-center gap-2 tracking-widest uppercase">
-              Ringkasan & Aktivitas
+              {t('nav.stats')}
             </h4>
             <h2 className="text-3xl md:text-5xl font-semibold tracking-tight text-black dark:text-white leading-[1.1]">
-              Aktivitas & <span className="text-zinc-500">Statistik</span>
+              {t('stats.title')}
             </h2>
           </div>
           
           {statsError && (
             <div className="w-full mt-2 p-3 bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs rounded-xl flex items-center justify-between">
               <span>{statsError}</span>
-              <button type="button" onClick={() => setStatsError(null)} className="text-xs underline ml-2">Tutup</button>
+              <button type="button" onClick={() => setStatsError(null)} className="text-xs underline ml-2">{t('common.close')}</button>
             </div>
           )}
           
@@ -515,7 +517,7 @@ export default function Stats({
               {/* 1. Pengunjung (Data Agregat Publik) */}
               <motion.div variants={childGridCardItem} className="bg-white dark:bg-[#0A0A0A] p-2.5 md:p-6 rounded-lg md:rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-sm flex flex-col justify-center items-center text-center">
                 <Eye className="w-4 h-4 md:w-6 md:h-6 text-blue-500 mb-2 md:mb-4" />
-                <h5 className="text-[9px] md:text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Pengunjung</h5>
+                <h5 className="text-[9px] md:text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">{t('stats.visits')}</h5>
                 <p className="text-xl md:text-4xl font-bold text-black dark:text-white">{pageViews}</p>
               </motion.div>
 

@@ -12,12 +12,14 @@ import { PAYMENT_METHODS, BriLogo, BrimoLogo, DanaLogo, GopayLogo, OvoLogo, Shop
 import { getCookie, setCookie, deleteCookie } from '../lib/cookies';
 import { compressAndUpload } from '../lib/storageUploader';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface StoreProps {
   isOrderView?: boolean;
 }
 
 export default function Store({ isOrderView = false }: StoreProps) {
+  const { t } = useLanguage();
   const getCleanPhone = (phoneStr?: string) => {
     let phone = (phoneStr || '628112345678').replace(/\D/g, '');
     if (phone.startsWith('0')) {
@@ -494,7 +496,7 @@ Terima kasih.`;
         >
           <div className="flex items-center justify-center gap-2 mb-2 md:mb-4 w-full relative">
             <div className="inline-flex items-center justify-center px-2.5 md:px-4 py-1 md:py-1.5 rounded-full bg-zinc-100 dark:bg-[#111111] border border-zinc-200 dark:border-zinc-800 text-[9px] md:text-xs font-bold text-zinc-500 tracking-wider uppercase">
-              Pemesanan Desain
+              {t('nav.order')}
             </div>
             {isDraftLoaded && (
               <div className="inline-flex items-center justify-center px-2.5 md:px-4 py-1 md:py-1.5 rounded-full bg-blue-100 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 text-[9px] md:text-xs font-bold text-blue-600 dark:text-blue-400 tracking-wider uppercase">
@@ -504,10 +506,10 @@ Terima kasih.`;
             
           </div>
           <h2 className="text-xl md:text-5xl font-black text-black dark:text-white tracking-tight mb-1 md:mb-3">
-            Pesan Desain Khusus
+            {t('store.title')}
           </h2>
           <p className="text-[11px] md:text-lg text-zinc-500 dark:text-zinc-400 max-w-2xl mx-auto leading-relaxed">
-            Ceritakan konsep atau kebutuhan desainmu di sini, nanti kita diskusikan bersama sampai cocok.
+            {t('store.subtitle')}
           </p>
           <div className="mt-2.5 sm:mt-3 flex justify-center">
             <a

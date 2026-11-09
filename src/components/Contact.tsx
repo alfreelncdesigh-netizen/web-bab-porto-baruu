@@ -7,6 +7,7 @@ import { defaultSettings, SiteSettings } from '../data/settings';
 import { getStoredSettings } from '../lib/contentStorage';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
 import { FastInput, FastTextarea } from './FastInput';
+import { useLanguage } from '../contexts/LanguageContext';
 import { 
   sectionStaggerContainer, 
   sectionHeaderItem, 
@@ -19,6 +20,7 @@ const DUMMY_COMMENT_NAMES = new Set(['Rahmat Hidayat', 'Siti Nurhaliza', 'Dimas 
 const DUMMY_COMMENT_IDS = new Set(['msg_1730000101', 'msg_1730000102', 'msg_1730000103', 'msg_1730000104']);
 
 export default function Contact() {
+ const { t } = useLanguage();
  const [formData, setFormData] = useState({ name: '', email: '', message: '' });
  const [isSubmitting, setIsSubmitting] = useState(false);
  const [isSuccess, setIsSuccess] = useState(false);
@@ -322,13 +324,13 @@ export default function Contact() {
      className="text-left md:text-center mb-5 md:mb-7"
     >
      <div className="inline-block px-3.5 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800/50 text-[11px] md:text-xs font-semibold tracking-widest text-black dark:text-zinc-400 mb-3 uppercase">
-      Yuk Ngobrol & Diskusi
+      {t('nav.contact')}
      </div>
      <h2 className="text-2xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-black dark:text-white leading-[1.15] mb-3">
-      Punya Ide atau Proyek Seru? <span className="text-black dark:text-zinc-500">Mari Kolaborasi</span>
+      {t('contact.title')}
      </h2>
      <p className="text-xs sm:text-sm md:text-base text-zinc-600 dark:text-zinc-400 max-w-2xl mx-auto leading-relaxed">
-      Lagi butuh bantuan visual, desain branding, atau sekadar ingin bertukar ide? Silakan hubungi langsung lewat WhatsApp agar lebih cepat, atau tinggalkan pesan lewat formulir di bawah.
+      {t('contact.subtitle')}
      </p>
     </motion.div>
 
@@ -387,7 +389,7 @@ export default function Contact() {
      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5 text-left">
       <div>
        <label className="block text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-black dark:text-zinc-300 mb-2">
-        Nama
+        {t('contact.name')}
        </label>
        <FastInput 
         type="text" 
@@ -402,7 +404,7 @@ export default function Contact() {
       
       <div>
        <label className="block text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-black dark:text-zinc-300 mb-2">
-        Email
+        {t('contact.email')}
        </label>
        <FastInput 
         type="email" 
@@ -417,7 +419,7 @@ export default function Contact() {
       
       <div>
        <label className="block text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-black dark:text-zinc-300 mb-2">
-        Pesan
+        {t('contact.message')}
        </label>
        <FastTextarea 
         name="message" 
@@ -442,9 +444,9 @@ export default function Contact() {
        {isSubmitting ? (
         'Mengirim...'
        ) : isSuccess ? (
-        <><Check size={16} /> Pesan Terkirim!</>
+        <><Check size={16} /> {t('contact.success')}</>
        ) : (
-        <><Send size={15} /> Kirim Pesan</>
+        <><Send size={15} /> {t('contact.send')}</>
        )}
       </button>
      </form>
