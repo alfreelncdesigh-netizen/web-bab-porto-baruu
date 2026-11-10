@@ -24,7 +24,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
  const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
  const [isSearchSlideOpen, setIsSearchSlideOpen] = useState(false);
  const [insightItems, setInsightItems] = useState<QuickFilterItem[]>(() => getStoredQuickFilterItems());
- const { language, setLanguage, t, languages, currentLangInfo } = useLanguage();
+ const { language, setLanguage, t, languages, currentLangInfo, translateDynamic } = useLanguage();
 
  useEffect(() => {
    const handleSettingsUpdate = (e: any) => {
@@ -612,7 +612,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
        {/* Preset Topic Buttons */}
        <div className="mb-4">
         <span className="block text-[10px] font-mono uppercase font-bold text-zinc-400 dark:text-zinc-500 mb-2 tracking-wider">
-         Topik Kurasi Populer:
+         {translateDynamic('Topik Kurasi Populer:')}
         </span>
         <div className="flex flex-wrap gap-1.5 sm:gap-2">
          {['Tren Warna', 'Tren Desain', 'Tips Branding', 'Jasa & Order'].map((cat) => (
@@ -622,7 +622,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
            className="px-3 py-1.5 rounded-full text-xs font-semibold bg-zinc-100 hover:bg-blue-50 dark:bg-zinc-800 dark:hover:bg-blue-950/40 text-zinc-700 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400 border border-zinc-200/60 dark:border-zinc-700/60 transition-colors cursor-pointer flex items-center gap-1.5 active:scale-95"
           >
            <Sparkles size={11} className="text-blue-500" />
-           <span>{cat}</span>
+           <span>{translateDynamic(cat)}</span>
           </button>
          ))}
         </div>
@@ -631,7 +631,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
        {/* List of Curated Questions */}
        <div>
         <span className="block text-[10px] font-mono uppercase font-bold text-zinc-400 dark:text-zinc-500 mb-2 tracking-wider">
-         Pertanyaan Umum (Klik untuk Membuka Jawaban):
+         {translateDynamic('Pertanyaan Umum (Klik untuk Membuka Jawaban):')}
         </span>
         <div className="max-h-[240px] sm:max-h-[280px] overflow-y-auto space-y-1.5 pr-1 no-scrollbar">
          {insightItems.slice(0, 8).map((qItem) => (
@@ -643,11 +643,11 @@ export default function Header({ setView, currentView }: HeaderProps) {
            <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
              <span className="px-2 py-0.5 rounded-md text-[9.5px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-              {qItem.category}
+              {translateDynamic(qItem.category)}
              </span>
             </div>
             <p className="text-xs sm:text-[13px] font-semibold text-zinc-800 dark:text-zinc-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-1">
-             {qItem.question}
+             {translateDynamic(qItem.question)}
             </p>
            </div>
            <ChevronRight size={15} className="text-zinc-400 group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all shrink-0 mt-1" />
@@ -658,12 +658,12 @@ export default function Header({ setView, currentView }: HeaderProps) {
 
        {/* Footer link to Section Insight */}
        <div className="mt-3.5 pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-500">
-        <span>Akses Menu Insight Khusus</span>
+        <span>{translateDynamic('Akses Menu Insight Khusus')}</span>
         <button
          onClick={() => handleSelectPresetQuestion('Semua')}
          className="font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
         >
-         <span>Buka Semua Topik Insight</span>
+         <span>{translateDynamic('Buka Semua Topik Insight')}</span>
          <ArrowRight size={12} />
         </button>
        </div>

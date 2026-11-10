@@ -678,6 +678,81 @@ app.post('/api/messages', (req: Request, res: Response): void => {
   }
 });
 
+// ============================================================================
+// DYNAMIC TRANSLATION SERVICE (MULTI-LANGUAGE REALTIME SUPPORT)
+// ============================================================================
+const serverTranslationCache = new Map<string, string>();
+
+app.post('/api/translate', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { text, texts, targetLang, sourceLang = 'id' } = req.body;
+    if (!targetLang) {
+      res.status(400).json({ error: 'targetLang is required' });
+      return;
+    }
+
+    if (targetLang === 'id' || targetLang === sourceLang) {
+      if (Array.isArray(texts)) {
+        res.json({ translations: texts });
+      } else {
+        res.json({ translatedText: text || '' });
+      }
+      return;
+    }
+
+    const langMap: Record<string, string> = {
+      'zh': 'zh-CN',
+      'id': 'id-ID',
+      'en': 'en-GB',
+      'ja': 'ja-JP',
+      'es': 'es-ES',
+      'ar': 'ar-SA',
+      'fr': 'fr-FR',
+      'de': 'de-DE',
+      'pt': 'pt-PT',
+      'ko': 'ko-KR'
+    };
+    const targetCode = langMap[targetLang] || targetLang;
+    const sourceCode = langMap[sourceLang] || sourceLang;
+
+    const translateSingle = async (inputStr: string): Promise<string> => {
+      const trimmed = (inputStr || '').trim();
+      if (!trimmed) return inputStr || '';
+      const cacheKey = `${sourceCode}|${targetCode}|${trimmed}`;
+      if (serverTranslationCache.has(cacheKey)) {
+        return serverTranslationCache.get(cacheKey)!;
+      }
+
+      try {
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(trimmed)}&langpair=${sourceCode}|${targetCode}`;
+        const fetchRes = await fetch(url, { signal: AbortSignal.timeout(6000) });
+        if (fetchRes.ok) {
+          const json: any = await fetchRes.json();
+          const translated = json?.responseData?.translatedText;
+          if (translated && typeof translated === 'string' && !translated.includes('MYMEMORY WARNING')) {
+            serverTranslationCache.set(cacheKey, translated);
+            return translated;
+          }
+        }
+      } catch (err: any) {
+        console.warn('[TRANSLATE ERR]', err?.message || err);
+      }
+      return trimmed;
+    };
+
+    if (Array.isArray(texts)) {
+      const results = await Promise.all(texts.map(t => translateSingle(t)));
+      res.json({ translations: results });
+    } else {
+      const result = await translateSingle(text);
+      res.json({ translatedText: result });
+    }
+  } catch (error: any) {
+    console.error('Translation handler error:', error);
+    res.status(500).json({ error: 'Translation failed' });
+  }
+});
+
 app.delete('/api/messages/:id', (req: Request, res: Response): void => {
   try {
     const { id } = req.params;

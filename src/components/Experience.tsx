@@ -28,7 +28,7 @@ import {
 } from '../lib/animationVariants';
 
 export default function Experience() {
-  const { t } = useLanguage();
+  const { t, translateDynamic } = useLanguage();
   const [experiences, setExperiences] = useState<any[]>(() => getStoredExperiences());
   const [loading, setLoading] = useState(() => getStoredExperiences().length === 0);
   const [selectedExp, setSelectedExp] = useState<any | null>(null);
@@ -322,14 +322,14 @@ export default function Experience() {
                   {/* Text Content */}
                   <div className="w-full md:w-1/2 flex flex-col justify-center text-left">
                     <h3 className="text-sm sm:text-base md:text-2xl font-bold text-black dark:text-white mb-0.5 sm:mb-1 leading-snug md:leading-tight tracking-tight">
-                      {exp.header}
+                      {translateDynamic(exp.header)}
                     </h3>
                     
                     {exp.subtheme && (
                       <div className="flex flex-wrap items-center gap-2 mb-1.5 sm:mb-2 md:mb-3">
                         <p className="text-[11px] sm:text-[13px] font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
                           <Briefcase className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-                          <span>{exp.subtheme}</span>
+                          <span>{translateDynamic(exp.subtheme)}</span>
                         </p>
                         {(exp.isCollaboration || exp.collaborationPartner) && (
                           <span className="bg-indigo-600/90 text-white border border-indigo-400/30 px-2 py-0.5 rounded-full text-[9px] font-bold shadow-xs flex items-center gap-1.5">
@@ -345,7 +345,7 @@ export default function Experience() {
                             ) : (
                               <Handshake size={10} />
                             )}
-                            <span>{exp.collaborationPartner ? `Kolaborasi: ${exp.collaborationPartner}` : 'Kolaborasi'}</span>
+                            <span>{exp.collaborationPartner ? `${translateDynamic('Kolaborasi')}: ${translateDynamic(exp.collaborationPartner)}` : translateDynamic('Kolaborasi')}</span>
                           </span>
                         )}
                       </div>
@@ -354,7 +354,7 @@ export default function Experience() {
                     {/* Deskripsi Pengalaman di Card */}
                     {exp.description && (
                       <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed md:leading-[1.75] mb-3 line-clamp-3 md:line-clamp-4">
-                        {exp.description}
+                        {translateDynamic(exp.description)}
                       </p>
                     )}
 
@@ -722,7 +722,7 @@ export default function Experience() {
                   )}
 
                   <h3 className="text-xl md:text-2xl lg:text-3xl font-semibold tracking-tight mb-2.5 leading-[1.2] text-black dark:text-white">
-                    {selectedExp.header}
+                    {translateDynamic(selectedExp.header)}
                   </h3>
 
                   {/* Metadata Bar */}
@@ -730,7 +730,7 @@ export default function Experience() {
                     {selectedExp.subtheme && (
                       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full shadow-sm border bg-zinc-50 dark:bg-[#111111] border-zinc-100 dark:border-zinc-800/50">
                         <Briefcase className="w-3.5 h-3.5 text-black dark:text-white" />
-                        <span>{selectedExp.subtheme}</span>
+                        <span>{translateDynamic(selectedExp.subtheme)}</span>
                       </div>
                     )}
                   </div>
@@ -739,7 +739,7 @@ export default function Experience() {
                   {selectedExp.description && (
                     <div className="mb-5 w-full">
                       <p className="text-[11px] md:text-[11.5px] leading-[1.7] text-zinc-600 dark:text-zinc-300 font-normal whitespace-pre-wrap text-justify [text-justify:inter-word] [text-align-last:left]">
-                        {selectedExp.description}
+                        {translateDynamic(selectedExp.description)}
                       </p>
                     </div>
                   )}
@@ -766,10 +766,10 @@ export default function Experience() {
                         )}
                         <div className="min-w-0">
                           <span className="text-[9.5px] md:text-[10px] font-mono uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold block">
-                            {selectedExp.collaborationText || 'Kolaborasi Bersama'}
+                            {translateDynamic(selectedExp.collaborationText || 'Kolaborasi Bersama')}
                           </span>
                           <h4 className="text-xs sm:text-[13px] font-semibold text-black dark:text-white truncate">
-                            {selectedExp.collaborationPartner ? `Kolaborasi dengan ${selectedExp.collaborationPartner}` : 'Pengalaman Kolaborasi Mitra'}
+                            {selectedExp.collaborationPartner ? `${translateDynamic('Kolaborasi dengan')} ${translateDynamic(selectedExp.collaborationPartner)}` : translateDynamic('Pengalaman Kolaborasi Mitra')}
                           </h4>
                         </div>
                       </div>

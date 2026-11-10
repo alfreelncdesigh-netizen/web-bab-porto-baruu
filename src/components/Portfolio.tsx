@@ -237,7 +237,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
   const [activeCategory, setActiveCategory] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
-  const { t } = useLanguage();
+  const { t, translateDynamic } = useLanguage();
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [showProjectMetrics, setShowProjectMetrics] = useState(false);
@@ -688,7 +688,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                   onClick={() => setActiveCategory(cat)} 
                   className={`px-3.5 py-1.5 md:px-4 md:py-2 rounded-full text-[10px] md:text-xs font-semibold transition-all shadow-sm border shrink-0 whitespace-nowrap active:scale-95 cursor-pointer ${btnClass}`}
                 >
-                  {cat === 'Semua' ? t('portfolio.all') : cat}
+                  {cat === 'Semua' ? t('portfolio.all') : translateDynamic(cat)}
                 </button>
               );
             })}
@@ -697,7 +697,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           {/* Bar Kontrol Pilihan Kisi Layout Karya (di bawah kategori, sebelah kanan) */}
           <div className="flex items-center justify-between pt-2.5 pb-2">
             <span className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-medium select-none">
-              {filteredProjects.length} karya ditemukan
+              {filteredProjects.length} {translateDynamic('karya ditemukan')}
             </span>
 
             {/* Pilihan Kisi di Sebelah Kanan */}
@@ -827,7 +827,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                             >
                               <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 mb-1 sm:mb-1.5">
                                 <span className={`inline-block ${layoutMode === 'grid-2' ? 'px-2 py-0.5 text-[8.5px] sm:text-[10px]' : 'px-2.5 py-0.5 text-[9px] md:text-[10px]'} bg-white/20 backdrop-blur-md rounded-full font-bold tracking-wider uppercase border border-white/10 shadow-sm`}>
-                                  {project.category}
+                                  {translateDynamic(project.category)}
                                 </span>
                                 {Boolean(project.isCollaboration) && (
                                   <span className={`inline-flex items-center gap-1 sm:gap-1.5 ${layoutMode === 'grid-2' ? 'px-2 py-0.5 text-[8.5px] sm:text-[10px]' : 'px-2.5 py-0.5 text-[9px] md:text-[10px]'} bg-indigo-600/90 backdrop-blur-md rounded-full font-bold tracking-wider uppercase border border-indigo-400/30 text-white shadow-sm`}>
@@ -843,24 +843,24 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                     ) : (
                                       <Handshake size={layoutMode === 'grid-2' ? 10 : 12} />
                                     )}
-                                    <span>{project.collaborationPartner || 'Kolaborasi'}</span>
+                                    <span>{translateDynamic(project.collaborationPartner || 'Kolaborasi')}</span>
                                   </span>
                                 )}
                               </div>
                               <h3 className={`${layoutMode === 'grid-2' ? 'text-xs sm:text-base md:text-xl leading-[1.25]' : 'text-base sm:text-lg md:text-xl leading-[1.25]'} font-bold tracking-tight mb-0 line-clamp-2`}>
-                                {project.title}
+                                {translateDynamic(project.title)}
                               </h3>
                               <div className="mt-2 sm:mt-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
                                 <div className={`flex items-center ${layoutMode === 'grid-2' ? 'text-[9.5px] sm:text-xs px-2.5 sm:px-3.5 py-1 sm:py-1.5' : 'text-[10px] md:text-xs px-3.5 py-1.5'} font-semibold gap-1 sm:gap-1.5 bg-white text-black rounded-full w-fit shadow-xl shadow-black/20`}>
-                                  <Eye size={layoutMode === 'grid-2' ? 12 : 14} /> Quick View
+                                  <Eye size={layoutMode === 'grid-2' ? 12 : 14} /> {t('portfolio.quickView') || 'Quick View'}
                                 </div>
                                 <button
                                   type="button"
                                   onClick={(e) => handleShareProject(project, e)}
                                   className={`flex items-center ${layoutMode === 'grid-2' ? 'text-[9.5px] sm:text-xs px-2.5 sm:px-3.5 py-1 sm:py-1.5' : 'text-[10px] md:text-xs px-3.5 py-1.5'} font-semibold gap-1 bg-white/20 hover:bg-white/35 backdrop-blur-md text-white rounded-full border border-white/20 shadow-xl transition-all active:scale-95 cursor-pointer`}
-                                  title="Bagikan Karya"
+                                  title={translateDynamic('Bagikan Karya')}
                                 >
-                                  <Share2 size={layoutMode === 'grid-2' ? 11 : 13} /> Bagikan
+                                  <Share2 size={layoutMode === 'grid-2' ? 11 : 13} /> {t('portfolio.share') || translateDynamic('Bagikan')}
                                 </button>
                               </div>
                             </motion.div>
@@ -1125,15 +1125,15 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                 <div className="w-full">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="text-[9px] md:text-[10px] font-bold tracking-widest uppercase border px-3 py-1 rounded-full inline-block shadow-sm text-black dark:text-zinc-300 bg-zinc-100 dark:bg-[#18181b] border-transparent dark:border-zinc-800/50 w-fit">
-                      {selectedProject.category}
+                      {translateDynamic(selectedProject.category)}
                     </span>
                     <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
-                      Quick View
+                      {t('portfolio.quickView') || 'Quick View'}
                     </span>
                   </div>
                   
                   <h3 className="text-xl md:text-2xl lg:text-3xl font-semibold tracking-tight mb-2.5 leading-[1.2] text-black dark:text-white">
-                    {selectedProject.title}
+                    {translateDynamic(selectedProject.title)}
                   </h3>
                   
                   {/* Metadata Bar */}
@@ -1147,7 +1147,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                     {selectedProject.role && (
                       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full shadow-sm border bg-zinc-50 dark:bg-[#111111] border-zinc-100 dark:border-zinc-800/50">
                         <User size={13} className="text-black dark:text-white" />
-                        <span>{selectedProject.role}</span>
+                        <span>{translateDynamic(selectedProject.role)}</span>
                       </div>
                     )}
                   </div>
@@ -1156,7 +1156,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                   {selectedProject.description && (
                     <div className="mb-5 w-full">
                       <p className="text-[11px] md:text-[11.5px] leading-[1.7] text-zinc-600 dark:text-zinc-300 font-normal whitespace-pre-wrap text-justify [text-justify:inter-word] [text-align-last:left]">
-                        {selectedProject.description}
+                        {translateDynamic(selectedProject.description)}
                       </p>
                     </div>
                   )}
@@ -1183,10 +1183,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                         )}
                         <div className="min-w-0">
                           <span className="text-[9.5px] md:text-[10px] font-mono uppercase tracking-wider text-indigo-600 dark:text-indigo-400 font-bold block">
-                            {selectedProject.collaborationText || 'Kolaborasi Bersama'}
+                            {translateDynamic(selectedProject.collaborationText || 'Kolaborasi Bersama')}
                           </span>
                           <h4 className="text-xs sm:text-[13px] font-semibold text-black dark:text-white truncate">
-                            {selectedProject.collaborationPartner ? `Kolaborasi dengan ${selectedProject.collaborationPartner}` : 'Karya Kolaborasi Mitra'}
+                            {selectedProject.collaborationPartner ? `${translateDynamic('Kolaborasi dengan')} ${translateDynamic(selectedProject.collaborationPartner)}` : translateDynamic('Karya Kolaborasi Mitra')}
                           </h4>
                         </div>
                       </div>
@@ -1209,10 +1209,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                         >
                           <div className="flex items-center gap-2">
                             <Activity size={15} className="text-blue-500 shrink-0" />
-                            <span>Metrik Proyek (Project Metrics)</span>
+                            <span>{translateDynamic('Metrik Proyek (Project Metrics)')}</span>
                           </div>
                           <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-                            <span>{showProjectMetrics ? 'Sembunyikan' : 'Lihat Metrik Proyek'}</span>
+                            <span>{showProjectMetrics ? translateDynamic('Sembunyikan') : translateDynamic('Lihat Metrik Proyek')}</span>
                             <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${showProjectMetrics ? 'rotate-180' : ''}`} />
                           </div>
                         </button>
@@ -1230,11 +1230,11 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                 <div className="flex items-center justify-between mb-3 pb-2.5 border-b border-zinc-200/60 dark:border-zinc-800/60">
                                   <div className="flex items-center gap-1.5 text-[10.5px] md:text-[11px] font-bold tracking-wider uppercase text-black dark:text-white">
                                     <Activity size={14} className="text-blue-500 shrink-0" />
-                                    <span>Detail Metrik Proyek</span>
+                                    <span>{translateDynamic('Detail Metrik Proyek')}</span>
                                   </div>
                                   <span className="text-[9.5px] md:text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/60 px-2 py-0.5 rounded-full flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                    Selesai & Terkirim
+                                    {translateDynamic('Selesai & Terkirim')}
                                   </span>
                                 </div>
 
@@ -1243,13 +1243,13 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                   <div className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col justify-between shadow-2xs">
                                     <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 mb-1">
                                       <Clock size={13} className="text-blue-500 shrink-0" />
-                                      <span className="text-[10px] font-medium uppercase tracking-wider">Total Waktu</span>
+                                      <span className="text-[10px] font-medium uppercase tracking-wider">{translateDynamic('Total Waktu')}</span>
                                     </div>
                                     <div className="text-xs sm:text-sm font-bold text-black dark:text-white">
                                       {metrics.hours}
                                     </div>
                                     <span className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                                      Total Hours Spent
+                                      {translateDynamic('Total Hours Spent')}
                                     </span>
                                   </div>
 
@@ -1257,7 +1257,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                   <div className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col justify-between shadow-2xs">
                                     <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 mb-1">
                                       <Wrench size={13} className="text-purple-500 shrink-0" />
-                                      <span className="text-[10px] font-medium uppercase tracking-wider">Alat / Software</span>
+                                      <span className="text-[10px] font-medium uppercase tracking-wider">{translateDynamic('Alat / Software')}</span>
                                     </div>
                                     <div className="flex flex-wrap gap-1 mt-0.5">
                                       {metrics.tools.slice(0, 3).map((tool, tIdx) => (
@@ -1275,7 +1275,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                       )}
                                     </div>
                                     <span className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                                      Tools Used
+                                      {translateDynamic('Tools Used')}
                                     </span>
                                   </div>
 
@@ -1283,13 +1283,13 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                   <div className="p-2.5 rounded-xl bg-white dark:bg-[#18181b] border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col justify-between shadow-2xs">
                                     <div className="flex items-center gap-1.5 text-zinc-500 dark:text-zinc-400 mb-1">
                                       <CalendarCheck size={13} className="text-emerald-500 shrink-0" />
-                                      <span className="text-[10px] font-medium uppercase tracking-wider">Waktu Selesai</span>
+                                      <span className="text-[10px] font-medium uppercase tracking-wider">{translateDynamic('Waktu Selesai')}</span>
                                     </div>
                                     <div className="text-xs sm:text-sm font-bold text-black dark:text-white truncate" title={metrics.completionDate}>
                                       {metrics.completionDate}
                                     </div>
                                     <span className="text-[9px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                                      Completion Date
+                                      {translateDynamic('Completion Date')}
                                     </span>
                                   </div>
                                 </div>
@@ -1310,7 +1310,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                       rel="noopener noreferrer"
                       className="py-2.5 px-4 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"
                     >
-                      <MessageCircle size={15} /> Diskusi Proyek
+                      <MessageCircle size={15} /> {translateDynamic('Diskusi Proyek')}
                     </a>
 
                     {/* Tombol Buka Link Langsung jika ada */}

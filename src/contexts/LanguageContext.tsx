@@ -896,10 +896,14 @@ export const translations: Record<LanguageCode, Record<string, string>> = {
   },
 };
 
+import { translateDynamicSync, fetchDynamicTranslation } from '../lib/dynamicTranslator';
+
 interface LanguageContextType {
   language: LanguageCode;
   setLanguage: (lang: LanguageCode) => void;
   t: (key: string, fallback?: string) => string;
+  translateDynamic: (text: string) => string;
+  translateAsync: (text: string) => Promise<string>;
   languages: LanguageInfo[];
   currentLangInfo: LanguageInfo;
 }
@@ -919,6 +923,16 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     }
     return 'id';
   });
+
+  const [, setTranslationVersion] = useState(0);
+
+  useEffect(() => {
+    const handleTransUpdate = () => {
+      setTranslationVersion(v => v + 1);
+    };
+    window.addEventListener('app_translation_updated', handleTransUpdate);
+    return () => window.removeEventListener('app_translation_updated', handleTransUpdate);
+  }, []);
 
   const setLanguage = (lang: LanguageCode) => {
     setLanguageState(lang);
@@ -949,10 +963,28 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     return fallback !== undefined ? fallback : key;
   };
 
+  const translateDynamic = (text: string): string => {
+    if (!text || language === 'id') return text;
+    return translateDynamicSync(text, language);
+  };
+
+  const translateAsync = async (text: string): Promise<string> => {
+    if (!text || language === 'id') return text;
+    return fetchDynamicTranslation(text, language);
+  };
+
   const currentLangInfo = SUPPORTED_LANGUAGES.find(l => l.code === language) || SUPPORTED_LANGUAGES[0];
 
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t, languages: SUPPORTED_LANGUAGES, currentLangInfo }}>
+    <LanguageContext.Provider value={{
+      language,
+      setLanguage,
+      t,
+      translateDynamic,
+      translateAsync,
+      languages: SUPPORTED_LANGUAGES,
+      currentLangInfo
+    }}>
       {children}
     </LanguageContext.Provider>
   );
@@ -965,3 +997,4 @@ export const useLanguage = () => {
   }
   return context;
 };
+

@@ -195,7 +195,7 @@ const InsightImageWithFallback = ({
 };
 
 export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedPage = false }: SectionInsightProps) {
-  const { t } = useLanguage();
+  const { t, translateDynamic, language } = useLanguage();
   const { theme } = useTheme();
   const [items, setItems] = useState<QuickFilterItem[]>(() => getStoredQuickFilterItems());
   const [activeCategory, setActiveCategory] = useState<string>(() => {
@@ -471,7 +471,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
                     </span>
                     {activeCategory !== 'Semua' && (
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                        {activeCategory}
+                        {translateDynamic(activeCategory)}
                       </span>
                     )}
                   </div>
@@ -513,7 +513,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
                       ) : (
                         <Layers className="w-3.5 h-3.5 opacity-70 shrink-0" />
                       )}
-                      <span>{category}</span>
+                      <span>{translateDynamic(category)}</span>
                     </button>
                   );
                 })}
@@ -591,7 +591,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
                     <div className="flex items-center gap-2.5 mb-3.5">
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
                         <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
-                        {selectedItem.category}
+                        {translateDynamic(selectedItem.category)}
                       </span>
                       <span className="text-[11px] font-mono text-zinc-400 dark:text-zinc-500">
                         Topik #{selectedItem.order ?? 1}
@@ -600,7 +600,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
 
                     {/* Judul Pertanyaan */}
                     <h3 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight text-black dark:text-white leading-snug mb-5">
-                      {selectedItem.question}
+                      {translateDynamic(selectedItem.question)}
                     </h3>
 
                     {/* Aksen Pembatas Halus */}
@@ -608,7 +608,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
 
                     {/* Jawaban Lengkap */}
                     <div className="text-sm sm:text-base text-zinc-700 dark:text-zinc-300 leading-relaxed space-y-4">
-                      {selectedItem.answer.split('\n\n').map((paragraph, pIdx) => (
+                      {translateDynamic(selectedItem.answer).split('\n\n').map((paragraph, pIdx) => (
                         <p key={pIdx} className="leading-relaxed">
                           {paragraph}
                         </p>
@@ -623,7 +623,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
                             key={tIdx}
                             className="px-2.5 py-1 rounded-lg text-xs font-medium bg-zinc-100 dark:bg-zinc-850 text-zinc-600 dark:text-zinc-400 border border-zinc-200/60 dark:border-zinc-800"
                           >
-                            #{tag}
+                            #{translateDynamic(tag)}
                           </span>
                         ))}
                       </div>
@@ -637,7 +637,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
                           className="flex items-center gap-2 text-xs font-bold text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white transition-colors cursor-pointer"
                         >
                           <ChevronLeft size={16} />
-                          <span className="hidden sm:inline line-clamp-1 max-w-[200px]">{prevItem.question}</span>
+                          <span className="hidden sm:inline line-clamp-1 max-w-[200px]">{translateDynamic(prevItem.question)}</span>
                           <span className="sm:hidden">Sebelumnya</span>
                         </button>
                       ) : <div />}
@@ -647,7 +647,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
                           onClick={() => handleOpenQuestion(nextItem.id)}
                           className="flex items-center gap-2 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline transition-colors cursor-pointer ml-auto"
                         >
-                          <span className="hidden sm:inline line-clamp-1 max-w-[200px]">{nextItem.question}</span>
+                          <span className="hidden sm:inline line-clamp-1 max-w-[200px]">{translateDynamic(nextItem.question)}</span>
                           <span className="sm:hidden">Selanjutnya</span>
                           <ChevronRight size={16} />
                         </button>
@@ -730,7 +730,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
               <div className="text-center py-14 px-4 bg-zinc-50 dark:bg-zinc-900/40 rounded-3xl border border-zinc-200/80 dark:border-zinc-800">
                 <HelpCircle className="w-10 h-10 mx-auto text-zinc-400 mb-3" />
                 <p className="text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                  Belum ada pertanyaan pada topik "{activeCategory}"
+                  Belum ada pertanyaan pada topik "{translateDynamic(activeCategory)}"
                 </p>
                 <p className="text-xs text-zinc-500 mt-1">
                   Pilih topik kurasi lainnya atau kelola data melalui Mode Admin.
@@ -765,7 +765,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100/80 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                            {item.category}
+                            {translateDynamic(item.category)}
                           </span>
 
                           {hasImages && (
@@ -777,7 +777,7 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
                         </div>
 
                         <h3 className="text-sm sm:text-base font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors line-clamp-2 leading-snug">
-                          {item.question}
+                          {translateDynamic(item.question)}
                         </h3>
                       </div>
                     </div>

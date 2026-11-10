@@ -22,7 +22,7 @@ export default function About() {
  const [copied, setCopied] = useState(false);
  const [showToast, setShowToast] = useState(false);
  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
- const { t } = useLanguage();
+ const { t, translateDynamic } = useLanguage();
 
  const phoneDisplay = settings.contactPhone && settings.contactPhone !== '+62 811 2345 678'
    ? settings.contactPhone 
@@ -126,14 +126,18 @@ export default function About() {
      >
       <motion.div variants={sectionHeaderItem}>
        <h2 className="text-xl sm:text-3xl md:text-5xl font-semibold tracking-tight mb-4 md:mb-5 text-black dark:text-white leading-[1.1]">
-        {settings.aboutTitle1} <br className="hidden sm:block"/>
-        <span className="text-zinc-500 dark:text-zinc-400">{settings.aboutTitle2}</span>
+        {translateDynamic(settings.aboutTitle1)} <br className="hidden sm:block"/>
+        <span className="text-zinc-500 dark:text-zinc-400">{translateDynamic(settings.aboutTitle2)}</span>
        </h2>
       </motion.div>
       
       <motion.div variants={sectionContentItem} className="space-y-4 md:space-y-5 text-zinc-600 dark:text-zinc-300 text-sm md:text-base leading-relaxed font-medium mb-5 md:mb-6 max-w-none">
-       <p className={`whitespace-pre-wrap ${(settings.aboutDescription1 || '').includes('\n') ? 'text-left' : 'text-justify'}`} dangerouslySetInnerHTML={{ __html: settings.aboutDescription1 || '' }} />
-       <p className={`whitespace-pre-wrap ${(settings.aboutDescription2 || '').includes('\n') ? 'text-left' : 'text-justify'}`} dangerouslySetInnerHTML={{ __html: settings.aboutDescription2 || '' }} />
+       <p className={`whitespace-pre-wrap ${(settings.aboutDescription1 || '').includes('\n') ? 'text-left' : 'text-justify'}`}>
+        {translateDynamic(settings.aboutDescription1 || '')}
+       </p>
+       <p className={`whitespace-pre-wrap ${(settings.aboutDescription2 || '').includes('\n') ? 'text-left' : 'text-justify'}`}>
+        {translateDynamic(settings.aboutDescription2 || '')}
+       </p>
       </motion.div>
       
        {/* Bento Grid Minimalist: Informasi Kontak & Tombol CV */}
@@ -204,7 +208,7 @@ export default function About() {
          variants={childGridCardItem}
          className="px-3 py-1.5 md:px-4 md:py-2 bg-white dark:bg-[#1A1A1A] border border-zinc-200/60 dark:border-zinc-800 rounded-full text-[11px] md:text-xs font-semibold text-black dark:text-zinc-300 cursor-default shadow-sm hover:border-zinc-300 dark:hover:border-zinc-600 hover:shadow-md transition-all"
         >
-         {skill}
+         {translateDynamic(skill)}
         </motion.span>
        ))}
       </motion.div>
