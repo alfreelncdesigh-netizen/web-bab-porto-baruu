@@ -1,0 +1,44 @@
+User-agent: *
+Allow: /
+Allow: /images/
+Allow: /uploads/
+
+User-agent: WhatsApp
+Allow: /
+Allow: /images/
+Allow: /uploads/
+
+User-agent: facebookexternalhit
+Allow: /
+Allow: /images/
+Allow: /uploads/
+
+User-agent: Facebot
+Allow: /
+Allow: /images/
+Allow: /uploads/
+
+User-agent: Twitterbot
+Allow: /
+Allow: /images/
+Allow: /uploads/
+
+User-agent: LinkedInBot
+Allow: /
+Allow: /images/
+Allow: /uploads/
+
+User-agent: TelegramBot
+Allow: /
+Allow: /images/
+Allow: /uploads/
+
+User-agent: Applebot
+Allow: /
+Allow: /images/
+Allow: /uploads/
+
+User-agent: Googlebot
+Allow: /
+Allow: /images/
+Allow: /uploads/

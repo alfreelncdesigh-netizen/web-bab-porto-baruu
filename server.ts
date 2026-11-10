@@ -378,6 +378,54 @@ app.get('/manifest.json', (_req: Request, res: Response) => {
   }
 });
 
+// Dedicated Robots.txt endpoint for crawlers (WhatsApp, Facebook, Twitter, Google)
+app.get('/robots.txt', (_req: Request, res: Response) => {
+  const robotsPath = path.join(publicDir, 'robots.txt');
+  if (fs.existsSync(robotsPath)) {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.sendFile(robotsPath);
+  } else {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send('User-agent: *\nAllow: /\nAllow: /images/\nAllow: /uploads/\n');
+  }
+});
+
+// Dedicated direct thumbnail endpoints for crawlers
+app.get(['/og-image', '/og-image.jpg', '/thumbnail.jpg'], (_req: Request, res: Response) => {
+  const cover = getPrimaryCoverImage();
+  const filePath = path.join(publicDir, cover.imagePath);
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', cover.mimeType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.sendFile(filePath);
+  } else {
+    const fallbackPath = path.join(publicDir, 'images/hero-albi.png');
+    if (fs.existsSync(fallbackPath)) {
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.sendFile(fallbackPath);
+    } else {
+      res.status(404).end();
+    }
+  }
+});
+
+app.get(['/thumbnail.png', '/hero-thumbnail.png'], (_req: Request, res: Response) => {
+  const filePath = path.join(publicDir, 'images/hero-albi.png');
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.sendFile(filePath);
+  } else {
+    res.status(404).end();
+  }
+});
+
+
 app.use(express.static(publicDir, {
   setHeaders: (res, filePath) => {
     if (/\.(?:png|jpe?g|webp|svg|gif|avif|ico)$/i.test(filePath)) {
@@ -971,17 +1019,26 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction): void => {
 // ============================================================================
 // 5. DYNAMIC METADATA & OPENGRAPH INJECTOR (WHATSAPP & SOCIAL SHARING)
 // ============================================================================
+const KNOWN_PUBLIC_ORIGIN = process.env.PUBLIC_URL || process.env.VITE_APP_URL || 'https://ais-pre-m55vh2eazot5s2owza5ozo-535307665475.asia-southeast1.run.app';
+
 function getRequestOrigin(req: Request): string {
   const forwardedProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim();
   const forwardedHost = (req.headers['x-forwarded-host'] as string)?.split(',')[0]?.trim();
-  const rawHost = forwardedHost || req.headers['host'] || 'localhost:3000';
-  const isLocal = rawHost.includes('localhost') || rawHost.includes('127.0.0.1');
-  const proto = forwardedProto || (isLocal ? (req.secure ? 'https' : 'http') : 'https');
-  return `${proto}://${rawHost}`;
+  const hostHeader = (req.headers['host'] as string)?.split(',')[0]?.trim();
+  const candidateHost = forwardedHost || hostHeader || '';
+
+  // If host is a real public domain (not localhost or internal pod IP)
+  if (candidateHost && !candidateHost.includes('localhost') && !candidateHost.includes('127.0.0.1') && !candidateHost.startsWith('10.') && !candidateHost.startsWith('172.')) {
+    const proto = forwardedProto || (req.secure ? 'https' : 'https');
+    return `${proto}://${candidateHost}`;
+  }
+
+  // Fallback to the production/preview HTTPS domain so social crawlers always receive a fully valid, resolvable URL
+  return KNOWN_PUBLIC_ORIGIN;
 }
 
 function getPrimaryCoverImage(): { imagePath: string; mimeType: string; width: number; height: number } {
-  let imagePath = '/images/hero-albi.png';
+  let imagePath = '/images/hero-albi-og.jpg';
   try {
     if (fs.existsSync(settingsFilePath)) {
       const data = JSON.parse(fs.readFileSync(settingsFilePath, 'utf-8'));
@@ -993,12 +1050,16 @@ function getPrimaryCoverImage(): { imagePath: string; mimeType: string; width: n
           return {
             imagePath: candidate,
             mimeType: isWebp ? 'image/webp' : isJpg ? 'image/jpeg' : 'image/png',
-            width: 1408,
-            height: 768,
+            width: 1200,
+            height: 630,
           };
         }
         if (candidate.includes('hero-albi')) {
-          imagePath = '/images/hero-albi.png';
+          if (fs.existsSync(path.join(publicDir, 'images/hero-albi-og.jpg'))) {
+            imagePath = '/images/hero-albi-og.jpg';
+          } else {
+            imagePath = '/images/hero-albi.png';
+          }
         } else if (!candidate.includes('cover_web_') && !candidate.includes('editing_tools_3d')) {
           const rel = candidate.startsWith('/') ? candidate : `/${candidate}`;
           const localFile = path.join(publicDir, rel);
@@ -1017,8 +1078,8 @@ function getPrimaryCoverImage(): { imagePath: string; mimeType: string; width: n
   return {
     imagePath,
     mimeType: isWebp ? 'image/webp' : isJpg ? 'image/jpeg' : 'image/png',
-    width: 1408,
-    height: 768,
+    width: 1200,
+    height: 630,
   };
 }
 
@@ -1267,6 +1328,16 @@ async function injectDynamicMeta(html: string, req: Request): Promise<string> {
       /<link\s+rel=["']canonical["']\s+href=["'][^"']*["'][^>]*>/i,
       `<link rel="canonical" href="${fullUrl}" id="canonical-url" />`
     );
+  }
+
+  // Replace or inject link rel="image_src" (for WhatsApp / Facebook legacy parsers)
+  if (/<link\s+rel=["']image_src["'][^>]*>/i.test(modified)) {
+    modified = modified.replace(
+      /<link\s+rel=["']image_src["']\s+href=["'][^"']*["'][^>]*>/i,
+      `<link rel="image_src" href="${absoluteImageUrl}" id="link-image-src" />`
+    );
+  } else {
+    modified = modified.replace('</head>', `    <link rel="image_src" href="${absoluteImageUrl}" id="link-image-src" />\n  </head>`);
   }
 
   return modified;

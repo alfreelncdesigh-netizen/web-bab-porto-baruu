@@ -283,7 +283,7 @@ export default function App() {
     const currentSettings = getStoredSettings();
     const heroImage = (currentSettings.heroImage && !currentSettings.heroImage.includes('cover_web_') && !currentSettings.heroImage.includes('editing_tools_3d'))
       ? currentSettings.heroImage
-      : '/images/hero-albi.png';
+      : '/images/hero-albi-og.jpg';
 
     const metaMap: Record<string, { title: string; description: string; image: string; hash: string }> = {
       home: {
