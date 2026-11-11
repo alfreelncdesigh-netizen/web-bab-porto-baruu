@@ -56,7 +56,12 @@ export async function testConnection(): Promise<boolean> {
       return true;
     }
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
+    if (error instanceof Error && (
+      error.message.includes('the client is offline') ||
+      error.message.includes('Quota') ||
+      error.message.includes('resource-exhausted') ||
+      error.message.includes('429')
+    )) {
       console.warn('Firebase status: running in resilient offline/local cache mode.');
     }
     return false;

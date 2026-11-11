@@ -21,7 +21,7 @@ export default function BrandLogo({
   if (variant === 'black') {
     return (
       <img 
-        src="/assets/aistudio/logo_text_hitam_f9421bca.png" 
+        src="/assets/aistudio/logo_text_hitam_b7dab56d.png" 
         alt="ALFREELNC" 
         className={`${className} w-auto object-contain select-none`}
         loading="eager"
@@ -33,7 +33,7 @@ export default function BrandLogo({
   if (variant === 'white') {
     return (
       <img 
-        src="/assets/aistudio/logo_text_putih_65332fb0.png" 
+        src="/assets/aistudio/logo_text_putih_60d2d29e.png" 
         alt="ALFREELNC" 
         className={`${className} w-auto object-contain select-none`}
         loading="eager"
@@ -47,7 +47,7 @@ export default function BrandLogo({
     <div className={`inline-flex items-center select-none ${className}`}>
       {/* Tampil di Light Mode (Logo 1: Teks Hitam Asli dari User) */}
       <img 
-        src="/assets/aistudio/logo_text_hitam_f9421bca.png" 
+        src="/assets/aistudio/logo_text_hitam_b7dab56d.png" 
         alt="ALFREELNC" 
         className="dark:hidden h-full w-auto object-contain select-none"
         loading="eager"
@@ -55,7 +55,7 @@ export default function BrandLogo({
       />
       {/* Tampil di Dark & Themed Mode (Logo 2: Teks Putih Asli dari User) */}
       <img 
-        src="/assets/aistudio/logo_text_putih_65332fb0.png" 
+        src="/assets/aistudio/logo_text_putih_60d2d29e.png" 
         alt="ALFREELNC" 
         className="hidden dark:block h-full w-auto object-contain select-none"
         loading="eager"

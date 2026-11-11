@@ -215,31 +215,36 @@ export async function uploadImageToStorage(
     }
   }
 
-  // 1. PRIORITAS UTAMA: SIMPAN LANGSUNG KE ASET WEBSITE (/api/upload)
-  // Kecepatan sangat tinggi (< 100ms), tersimpan di direktori /public/uploads/ server secara permanen
+  // Konversi uploadBlob ke dataUrl sekali untuk fallback anti-gagal
+  let base64Data = '';
   try {
-    const base64Data = await new Promise<string>((resolve, reject) => {
+    base64Data = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = reject;
       reader.readAsDataURL(uploadBlob);
     });
+  } catch {}
 
-    const serverRes = await withTimeout(
-      fetch('/api/upload', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-token': 'alfreelnc_admin_auth_verified'
-        },
-        body: JSON.stringify({
-          data: base64Data,
-          filename: cleanName
-        })
-      }),
-      10000,
-      'Batas waktu upload server lokal terlampaui'
-    );
+  // 1. PRIORITAS UTAMA: SIMPAN LANGSUNG KE ASET WEBSITE (/api/upload)
+  // Kecepatan sangat tinggi (< 100ms), tersimpan di direktori /public/uploads/ server secara permanen
+  try {
+    if (base64Data) {
+      const serverRes = await withTimeout(
+        fetch('/api/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-token': 'alfreelnc_admin_auth_verified'
+          },
+          body: JSON.stringify({
+            data: base64Data,
+            filename: cleanName
+          })
+        }),
+        10000,
+        'Batas waktu upload server lokal terlampaui'
+      );
 
     if (serverRes.ok) {
       const serverData = await serverRes.json();
@@ -261,9 +266,10 @@ export async function uploadImageToStorage(
         return publicUrl;
       }
     }
-  } catch (serverErr) {
-    console.warn("[Server Disk Upload] Jalur aset website server sedang dicadangkan:", serverErr);
   }
+} catch (serverErr) {
+  console.warn("[Server Disk Upload] Jalur aset website server sedang dicadangkan:", serverErr);
+}
 
   // 2. CADANGAN PERTAMA: Firebase Storage resmi (Folder khusus /works/, /experiences/, dll.)
   let firebaseStorageError: any = null;
@@ -323,17 +329,22 @@ export async function uploadImageToStorage(
   }
 
   // 4. CADANGAN KETIGA: Data URL terkompresi berkualitas tinggi (Anti-gagal)
+  if (base64Data && base64Data.startsWith('data:')) {
+    recordMediaPermanently(base64Data, cleanName, uploadBlob.size, targetFolder).catch(() => {});
+    return base64Data;
+  }
+
   try {
-    const base64Data = await new Promise<string>((resolve, reject) => {
+    const fallbackBase64 = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = reject;
       reader.readAsDataURL(uploadBlob);
     });
 
-    if (base64Data && base64Data.startsWith('data:image/')) {
-      recordMediaPermanently(base64Data, cleanName, uploadBlob.size, targetFolder).catch(() => {});
-      return base64Data;
+    if (fallbackBase64 && fallbackBase64.startsWith('data:')) {
+      recordMediaPermanently(fallbackBase64, cleanName, uploadBlob.size, targetFolder).catch(() => {});
+      return fallbackBase64;
     }
   } catch {}
 

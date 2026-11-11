@@ -71,11 +71,15 @@ export function isQuotaError(error: unknown): boolean {
   return (
     msg.includes('resource-exhausted') ||
     msg.includes('Quota limit exceeded') ||
+    msg.includes('Quota exceeded') ||
     msg.includes('Free daily write units') ||
     msg.includes('Free daily read units') ||
     msg.includes('quota metric') ||
     msg.includes('RESOURCE_EXHAUSTED') ||
-    (error as any)?.code === 'resource-exhausted'
+    msg.includes('429') ||
+    msg.includes('Too Many Requests') ||
+    (error as any)?.code === 'resource-exhausted' ||
+    (error as any)?.status === 429
   );
 }
 
