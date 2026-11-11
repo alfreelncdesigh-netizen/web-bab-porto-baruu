@@ -1217,20 +1217,18 @@ export default function CollaborationAdmin() {
                 <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-400 mb-2 font-bold">
                   Mode Terang (Light Mode)
                 </span>
-                <div className="flex items-center gap-2.5 sm:gap-3">
+                <div className="flex items-center gap-2 sm:gap-2.5">
                   <BrandLogo className="h-6 sm:h-7" variant="black" />
                   {collab.enabled && collab.partnerLogo ? (
-                    <div className="flex items-center gap-2.5 sm:gap-3">
-                      <span className="text-zinc-300 font-light text-xs sm:text-sm select-none leading-none scale-y-110">
-                        |
-                      </span>
+                    <>
+                      <span className="h-4 w-[1.5px] bg-zinc-300 rounded-full select-none block shrink-0" aria-hidden="true" />
                       <img
                         src={resolveImageUrl(collab.partnerLogo)}
                         alt={collab.partnerName || "Mitra"}
                         className="h-6 sm:h-7 w-auto max-w-[100px] object-contain"
                         onError={handleImageError}
                       />
-                    </div>
+                    </>
                   ) : (
                     <span className="text-[11px] text-zinc-400 italic">(Logo mitra belum diunggah)</span>
                   )}
@@ -1242,20 +1240,18 @@ export default function CollaborationAdmin() {
                 <span className="text-[9px] font-mono uppercase tracking-wider text-zinc-500 mb-2 font-bold">
                   Mode Gelap (Dark Mode)
                 </span>
-                <div className="flex items-center gap-2.5 sm:gap-3">
+                <div className="flex items-center gap-2 sm:gap-2.5">
                   <BrandLogo className="h-6 sm:h-7" variant="white" />
                   {collab.enabled && collab.partnerLogo ? (
-                    <div className="flex items-center gap-2.5 sm:gap-3">
-                      <span className="text-zinc-700 font-light text-xs sm:text-sm select-none leading-none scale-y-110">
-                        |
-                      </span>
+                    <>
+                      <span className="h-4 w-[1.5px] bg-zinc-700 rounded-full select-none block shrink-0" aria-hidden="true" />
                       <img
                         src={resolveImageUrl(collab.partnerLogo)}
                         alt={collab.partnerName || "Mitra"}
                         className="h-6 sm:h-7 w-auto max-w-[100px] object-contain"
                         onError={handleImageError}
                       />
-                    </div>
+                    </>
                   ) : (
                     <span className="text-[11px] text-zinc-600 italic">(Logo mitra belum diunggah)</span>
                   )}

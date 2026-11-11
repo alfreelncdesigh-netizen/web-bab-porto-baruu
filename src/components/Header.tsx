@@ -245,7 +245,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
      }`}
     >
      {/* Logo ALFREELNC & Logo Kolaborasi (jika aktif) */}
-     <div className="flex items-center gap-3 sm:gap-3.5 shrink-0">
+     <div className="flex items-center gap-2 sm:gap-2.5 md:gap-3 shrink-0">
       <button 
        onClick={() => { setView('home'); }} 
        className="group relative flex items-center justify-center hover:opacity-85 active:scale-95 transition-all select-none focus:outline-none shrink-0"
@@ -255,24 +255,26 @@ export default function Header({ setView, currentView }: HeaderProps) {
       </button>
 
       {settings.collaboration?.enabled && settings.collaboration?.partnerLogo && (
-       <div className="flex items-center gap-3 sm:gap-3.5 animate-fadeIn">
-        <span className="text-zinc-300 dark:text-zinc-600 font-light text-sm sm:text-base md:text-lg select-none leading-none">
-         |
-        </span>
+       <>
+        {/* Garis pembatas vertikal antar logo: jarak simetris sama persis ke kedua logo */}
+        <span 
+         className="h-4 sm:h-5 md:h-5.5 w-[1.5px] bg-zinc-300 dark:bg-zinc-700 rounded-full shrink-0 select-none block"
+         aria-hidden="true"
+        />
         <div 
-         className="flex items-center" 
+         className="flex items-center animate-fadeIn shrink-0" 
          title={settings.collaboration.partnerName ? `Kolaborasi dengan ${settings.collaboration.partnerName}` : 'Mitra Kolaborasi'}
         >
          <img 
           src={resolveImageUrl(settings.collaboration.partnerLogo)} 
           alt={settings.collaboration.partnerName || "Logo Mitra Kolaborasi"} 
-          className="h-6 sm:h-7 md:h-8.5 lg:h-9 w-auto max-w-[75px] sm:max-w-[105px] md:max-w-[135px] object-contain select-none"
+          className="h-7 sm:h-8 md:h-9 lg:h-9.5 w-auto max-w-[85px] sm:max-w-[115px] md:max-w-[145px] object-contain select-none"
           loading="lazy"
           decoding="async"
           onError={handleImageError}
          />
         </div>
-       </div>
+       </>
       )}
      </div>
 
