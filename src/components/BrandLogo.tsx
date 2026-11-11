@@ -21,7 +21,7 @@ export default function BrandLogo({
   if (variant === 'black') {
     return (
       <img 
-        src="/assets/aistudio/logo_text_hitam_865bfa89.png" 
+        src="/assets/aistudio/logo_text_hitam_f9421bca.png" 
         alt="ALFREELNC" 
         className={`${className} w-auto object-contain select-none`}
         loading="eager"
@@ -33,7 +33,7 @@ export default function BrandLogo({
   if (variant === 'white') {
     return (
       <img 
-        src="/assets/aistudio/logo_text_putih_865bfa89.png" 
+        src="/assets/aistudio/logo_text_putih_65332fb0.png" 
         alt="ALFREELNC" 
         className={`${className} w-auto object-contain select-none`}
         loading="eager"
@@ -45,17 +45,17 @@ export default function BrandLogo({
   // Variant auto: otomatis ganti antara logo hitam (light mode) & logo putih (dark mode) sesuai tema
   return (
     <div className={`inline-flex items-center select-none ${className}`}>
-      {/* Tampil di Light Mode (Teks Hitam Asli dari User) */}
+      {/* Tampil di Light Mode (Logo 1: Teks Hitam Asli dari User) */}
       <img 
-        src="/assets/aistudio/logo_text_hitam_865bfa89.png" 
+        src="/assets/aistudio/logo_text_hitam_f9421bca.png" 
         alt="ALFREELNC" 
         className="dark:hidden h-full w-auto object-contain select-none"
         loading="eager"
         decoding="async"
       />
-      {/* Tampil di Dark & Themed Mode (Teks Putih dengan Posisi Bulatan Ungu & Biru Asli) */}
+      {/* Tampil di Dark & Themed Mode (Logo 2: Teks Putih Asli dari User) */}
       <img 
-        src="/assets/aistudio/logo_text_putih_865bfa89.png" 
+        src="/assets/aistudio/logo_text_putih_65332fb0.png" 
         alt="ALFREELNC" 
         className="hidden dark:block h-full w-auto object-contain select-none"
         loading="eager"
