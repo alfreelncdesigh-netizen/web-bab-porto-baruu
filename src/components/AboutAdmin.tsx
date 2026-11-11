@@ -2,14 +2,17 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { Loader2, Check } from 'lucide-react';
+import { Loader2, Check, Upload, Image as ImageIcon } from 'lucide-react';
 import { defaultSettings } from '../data/settings';
 import { getStoredSettings, saveStoredSettings, cleanSettings } from '../lib/contentStorage';
+import { compressAndUpload } from '../lib/storageUploader';
+import { resolveImageUrl } from '../lib/imageResolver';
 
 export default function AboutAdmin() {
  const [settings, setSettings] = useState(() => getStoredSettings());
  const [loading, setLoading] = useState(false);
  const [isSaving, setIsSaving] = useState(false);
+ const [uploadingImage, setUploadingImage] = useState(false);
  const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
 
  useEffect(() => {
@@ -69,6 +72,42 @@ export default function AboutAdmin() {
   setSettings(prev => ({ ...prev, [name]: value }));
  };
 
+ const handleProfileImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  if (!e.target.files || e.target.files.length === 0) return;
+  const file = e.target.files[0];
+  setUploadingImage(true);
+
+  try {
+   // Preview instan lokal di UI
+   const previewUrl = URL.createObjectURL(file);
+   setSettings(prev => ({ ...prev, aboutImage: previewUrl }));
+
+   // Upload cepat langsung ke aset website
+   const finalUrl = await compressAndUpload(file, 'about', 1400, 0.85);
+   if (!finalUrl || finalUrl.startsWith('blob:')) {
+     throw new Error("Gagal memperoleh tautan publik aset gambar profil.");
+   }
+
+   const updated = {
+     ...settings,
+     aboutImage: finalUrl,
+     savedAt: Date.now()
+   };
+   setSettings(updated);
+
+   // Auto-save instan ke database Firestore & server
+   await saveStoredSettings(updated);
+   window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
+   showToast('Foto profil berhasil diunggah & tersimpan di aset website!');
+  } catch (err: any) {
+   console.error("Upload profile image failed:", err);
+   showToast(err?.message || 'Gagal mengunggah foto profil ke aset website', 'error');
+  } finally {
+   setUploadingImage(false);
+   if (e.target) e.target.value = '';
+  }
+ };
+
  const handleSave = async (e: React.FormEvent) => {
   e.preventDefault();
   setIsSaving(true);
@@ -123,6 +162,60 @@ export default function AboutAdmin() {
    </div>
 
    <form onSubmit={handleSave} className="space-y-6 w-full max-w-none">
+    {/* Upload Foto Profil / Latar Belakang */}
+    <div className="p-4 sm:p-5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800">
+     <label className="block text-xs font-bold text-black dark:text-white mb-1 uppercase tracking-wider">
+      Foto Profil / Gambar Beranda (Tentang Saya & Pendekatan Desain)
+     </label>
+     <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mb-3.5">
+      Unggah gambar profil untuk ditampilkan di bagian beranda. File langsung dikompresi dan tersimpan di aset website.
+     </p>
+
+     <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+      <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-2xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 border-2 border-dashed border-zinc-300 dark:border-zinc-700 shrink-0 group flex items-center justify-center">
+       {settings.aboutImage ? (
+        <img 
+         src={resolveImageUrl(settings.aboutImage)} 
+         alt="Profil" 
+         className="w-full h-full object-cover" 
+        />
+       ) : (
+        <ImageIcon size={32} className="text-zinc-400" />
+       )}
+
+       {uploadingImage && (
+        <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white text-xs font-semibold gap-1.5 z-20">
+         <Loader2 size={24} className="animate-spin text-white" />
+         <span>Mengunggah...</span>
+        </div>
+       )}
+      </div>
+
+      <div className="flex-1 w-full">
+       <div className="relative inline-block w-full sm:w-auto">
+        <input 
+         type="file" 
+         accept="image/png, image/jpeg, image/jpg, image/webp, image/svg+xml, application/pdf, .pdf" 
+         onChange={handleProfileImageUpload} 
+         disabled={uploadingImage}
+         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+        />
+        <button
+         type="button"
+         disabled={uploadingImage}
+         className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-black text-white dark:bg-white dark:text-black font-semibold text-xs flex items-center justify-center gap-2 hover:opacity-90 transition-all cursor-pointer shadow-sm active:scale-95 disabled:opacity-50"
+        >
+         <Upload size={14} />
+         <span>{settings.aboutImage ? 'Ganti Foto Profil' : 'Unggah Foto Profil'}</span>
+        </button>
+       </div>
+       <p className="text-[10.5px] text-zinc-400 mt-2">
+        Mendukung PNG, JPG, WebP, SVG, dan PDF. Otomatis teroptimasi untuk kecepatan tinggi.
+       </p>
+      </div>
+     </div>
+    </div>
+
     <div>
      <label className="block text-xs font-bold text-black dark:text-white mb-2 uppercase tracking-wider">Nama Lengkap</label>
      <input type="text" name="fullName" value={settings.fullName || ''} onChange={handleChange} className="w-full bg-zinc-100 dark:bg-zinc-900 border-none rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white transition-all outline-none" placeholder="Masukkan nama lengkap Anda" required />

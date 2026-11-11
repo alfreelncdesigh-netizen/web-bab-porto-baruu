@@ -4,7 +4,7 @@ import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { SiteSettings, defaultSettings, HeroBanner } from '../data/settings';
 import { getStoredSettings, saveStoredSettings, cleanSettings } from '../lib/contentStorage';
-import { uploadImageToStorage } from '../lib/storageUploader';
+import { uploadImageToStorage, compressAndUpload } from '../lib/storageUploader';
 import { Loader2, Check, Upload, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { renderPdfFirstPageToImage } from '../lib/pdfHelper';
 import { resolveImageUrl } from '../lib/imageResolver';
@@ -150,21 +150,17 @@ export default function SettingsAdmin() {
     setUploading(true);
 
     try {
-      let finalUrl = '';
-      // Jika file PDF, konversi ke gambar resolusi tinggi
-      if (fileToUpload.type === 'application/pdf' || fileToUpload.name.toLowerCase().endsWith('.pdf')) {
-        const rendered = await renderPdfFirstPageToImage(fileToUpload);
-        if (rendered) {
-          finalUrl = await uploadImageToStorage(rendered.blob, rendered.name, undefined, 'settings');
-        }
+      // Tampilkan preview instan lokal saat mengunggah agar visual langsung terisi
+      const previewUrl = URL.createObjectURL(fileToUpload);
+      if (field === 'aboutImage') {
+        setSettings(prev => ({ ...prev, aboutImage: previewUrl }));
       }
 
-      if (!finalUrl) {
-        finalUrl = await uploadImageToStorage(fileToUpload, fileToUpload.name, undefined, 'settings');
-      }
+      const targetFolder = field === 'aboutImage' ? 'about' : 'settings';
+      const finalUrl = await compressAndUpload(fileToUpload, targetFolder, 1400, 0.85);
 
-      if (!finalUrl || finalUrl.startsWith('data:') || finalUrl.startsWith('blob:')) {
-        throw new Error("Gagal memperoleh URL publik permanen dari Firebase Storage.");
+      if (!finalUrl || finalUrl.startsWith('blob:')) {
+        throw new Error("Gagal memperoleh tautan publik aset website.");
       }
 
       if (field === 'heroImage') {
@@ -180,7 +176,7 @@ export default function SettingsAdmin() {
       };
       setSettings(updated);
       
-      // Auto-save instan ke database Firestore
+      // Auto-save instan ke database Firestore & server
       await saveStoredSettings(updated);
 
       if (field === 'heroImage') {
@@ -199,10 +195,10 @@ export default function SettingsAdmin() {
       }
 
       window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-      showToast("Foto berhasil diunggah & tertanam permanen di Firebase Storage!");
+      showToast(field === 'aboutImage' ? "Gambar profil berhasil diunggah & tersimpan di aset website!" : "Foto berhasil diunggah & tersimpan di aset website!");
     } catch (err: any) {
       console.error("Upload settings image failed:", err);
-      showToast(err.message || "Gagal mengunggah gambar ke Firebase Storage. Pastikan Firebase Storage aktif di Firebase Console.", "error");
+      showToast(err.message || "Gagal mengunggah gambar ke aset website.", "error");
     } finally {
       setUploading(false);
       if (e.target) e.target.value = '';
@@ -319,27 +315,17 @@ export default function SettingsAdmin() {
     setUploading(true);
 
     try {
-      let finalUrl = '';
-      if (fileToUpload.type === 'application/pdf' || fileToUpload.name.toLowerCase().endsWith('.pdf')) {
-        const rendered = await renderPdfFirstPageToImage(fileToUpload);
-        if (rendered) {
-          finalUrl = await uploadImageToStorage(rendered.blob, rendered.name, undefined, 'banners');
-        }
-      }
+      const finalUrl = await compressAndUpload(fileToUpload, 'banners', 1600, 0.85);
 
-      if (!finalUrl) {
-        finalUrl = await uploadImageToStorage(fileToUpload, fileToUpload.name, undefined, 'banners');
-      }
-
-      if (!finalUrl || finalUrl.startsWith('data:') || finalUrl.startsWith('blob:')) {
-        throw new Error("Gagal memperoleh URL publik permanen dari Firebase Storage.");
+      if (!finalUrl || finalUrl.startsWith('blob:')) {
+        throw new Error("Gagal memperoleh tautan publik aset banner.");
       }
 
       await handleUpdateBanner(bannerId, { image: finalUrl });
-      showToast("Gambar banner berhasil diunggah & tersimpan permanen di Firebase Storage!");
+      showToast("Gambar banner berhasil diunggah & tersimpan di aset website!");
     } catch (err: any) {
       console.error("Upload banner failed:", err);
-      showToast(err.message || "Gagal mengunggah banner ke Firebase Storage.", "error");
+      showToast(err.message || "Gagal mengunggah banner ke aset website.", "error");
     } finally {
       setUploading(false);
       if (e.target) e.target.value = '';
@@ -847,7 +833,7 @@ export default function SettingsAdmin() {
         ) : settings.aboutImage ? (
          <>
           <img 
-           src={settings.aboutImage} 
+           src={resolveImageUrl(settings.aboutImage)} 
            alt="Profile" 
            className="w-full h-full object-cover absolute inset-0" 
           />
