@@ -251,7 +251,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
        className="group relative flex items-center justify-center hover:opacity-85 active:scale-95 transition-all select-none focus:outline-none shrink-0"
        aria-label="ALFREELNC Beranda"
       >
-       <BrandLogo className="h-7.5 sm:h-8.5 md:h-9.5 lg:h-10" />
+       <BrandLogo className="h-9 sm:h-10 md:h-11 lg:h-12" />
       </button>
 
       {settings.collaboration?.enabled && settings.collaboration?.partnerLogo && (

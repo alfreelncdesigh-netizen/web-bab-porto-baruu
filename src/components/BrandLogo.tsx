@@ -15,7 +15,7 @@ interface BrandLogoProps {
  * - Bebas dari distorsi dan warna lain, profesional & tajam
  */
 export default function BrandLogo({ 
-  className = "h-6 sm:h-7.5 md:h-8.5", 
+  className = "h-8 sm:h-9 md:h-10", 
   variant = 'auto' 
 }: BrandLogoProps) {
   if (variant === 'black') {

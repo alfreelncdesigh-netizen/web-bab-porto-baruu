@@ -32,7 +32,7 @@ export default function Footer() {
               className="group relative flex items-center justify-start hover:opacity-85 active:scale-95 transition-all select-none w-fit focus:outline-none" 
               aria-label="Kembali ke Atas"
             >
-              <BrandLogo className="h-7 sm:h-7.5 md:h-7.5" />
+              <BrandLogo className="h-9 sm:h-10 md:h-11" />
             </button>
 
             {/* Copyright Law - Plain Text Without Shape/Background */}
