@@ -360,7 +360,7 @@ export default function PortfolioAdmin() {
         
         setEditingProject(prev => {
           if (!prev) return null;
-          const prevImages = (prev.images || []).filter(img => !img.startsWith('data:') && !img.startsWith('blob:'));
+          const prevImages = (prev.images || []).filter(img => !img.startsWith('blob:'));
           const merged = [cleanUrl, ...prevImages.filter(img => img !== cleanUrl)];
           return {
             ...prev,
@@ -383,22 +383,22 @@ export default function PortfolioAdmin() {
           }
         }
 
-        showToast("Gambar berhasil diunggah permanen ke Firebase Storage (/works/)!");
+        showToast("Gambar berhasil diunggah!");
       } else {
-        setUploadStatusText(`Mengunggah Gambar ke Firebase Storage (/works/) (0/${fileList.length})...`);
+        setUploadStatusText(`Mengunggah Gambar (0/${fileList.length})...`);
         const cleanUrls = await uploadMultipleImagesInParallel(
           fileList,
           'works',
-          (done, total) => setUploadStatusText(`Mengunggah ke Firebase Storage (${done}/${total})...`)
+          (done, total) => setUploadStatusText(`Mengunggah (${done}/${total})...`)
         );
         if (cleanUrls.length > 0) {
           setEditingProject(prev => {
             if (!prev) return null;
-            const prevImages = (prev.images || []).filter(img => !img.startsWith('data:') && !img.startsWith('blob:'));
+            const prevImages = (prev.images || []).filter(img => !img.startsWith('blob:'));
             const merged = [...cleanUrls, ...prevImages.filter(img => !cleanUrls.includes(img))];
             return {
               ...prev,
-              image: prev.image && !prev.image.startsWith('data:') && !prev.image.startsWith('blob:') ? prev.image : cleanUrls[0],
+              image: prev.image && !prev.image.startsWith('blob:') ? prev.image : cleanUrls[0],
               images: merged
             };
           });

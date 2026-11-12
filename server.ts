@@ -349,9 +349,9 @@ app.use('/images', express.static(path.join(publicDir, 'images'), {
   }
 }));
 
-// Body parser
-app.use(express.json({ limit: '35mb' }));
-app.use(express.urlencoded({ extended: true, limit: '35mb' }));
+// Body parser (50mb untuk kelancaran upload gambar & dokumen resolusi tinggi)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Dedicated Service Worker endpoint with zero-cache & root scope header
 app.get('/sw.js', (_req: Request, res: Response) => {

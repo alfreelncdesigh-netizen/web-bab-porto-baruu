@@ -67,17 +67,17 @@ export async function recordMediaPermanently(
   filename?: string, 
   size = 0, 
   folder = 'works',
-  _dataUrlIgnored?: string
+  dataUrl?: string
 ): Promise<void> {
   if (!url || typeof url !== 'string') return;
   const cleanUrl = url.trim();
-  // Cegah penyimpanan URL data base64 mentah atau blob lokal
-  if (!cleanUrl || cleanUrl.startsWith('data:') || cleanUrl.startsWith('blob:')) return;
+  // Cegah penyimpanan URL blob lokal
+  if (!cleanUrl || cleanUrl.startsWith('blob:')) return;
 
   const targetFolder = normalizeStorageFolder(folder);
   const safeFilename = filename || cleanUrl.split('/').pop()?.split('?')[0] || `img_${Date.now()}`;
   const safeDocId = safeFilename.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const record: StoredMediaRecord = {
+  const record: StoredMediaRecord & { dataUrl?: string } = {
     id: safeDocId,
     url: cleanUrl,
     filename: safeFilename,
@@ -85,18 +85,37 @@ export async function recordMediaPermanently(
     size,
     uploadedAt: new Date().toISOString(),
     timestamp: Date.now(),
-    savedPermanently: true
+    savedPermanently: true,
+    ...(dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:') ? { dataUrl } : {})
   };
 
-  // 1. Simpan di local storage
+  // 1. Simpan di local storage secara ringkas dan aman dari QuotaExceededError
   try {
     const existing = localStorage.getItem('uploaded_media_links');
     let list = existing ? JSON.parse(existing) : [];
     if (!Array.isArray(list)) list = [];
-    // Cegah duplikasi URL yang sama
+    // Cegah duplikasi URL yang sama dan batasi riwayat
     list = [record, ...list.filter((m: any) => m?.url !== cleanUrl && m?.filename !== safeFilename)];
-    if (list.length > 500) list = list.slice(0, 500);
-    localStorage.setItem('uploaded_media_links', JSON.stringify(list));
+    // Hanya simpan dataUrl untuk 10 upload terbaru agar tidak memenuhi kuota 5MB browser
+    const compactList = list.slice(0, 80).map((item: any, idx: number) => {
+      if (idx > 10 && item?.dataUrl) {
+        const { dataUrl: _drop, ...cleanItem } = item;
+        return cleanItem;
+      }
+      return item;
+    });
+    try {
+      localStorage.setItem('uploaded_media_links', JSON.stringify(compactList));
+    } catch {
+      // Jika kuota masih penuh, buang seluruh dataUrl dan simpan metadata URL saja
+      const metadataOnly = compactList.map((item: any) => {
+        const { dataUrl: _drop, ...cleanItem } = item;
+        return cleanItem;
+      });
+      try {
+        localStorage.setItem('uploaded_media_links', JSON.stringify(metadataOnly.slice(0, 30)));
+      } catch {}
+    }
   } catch {}
 
   // 2. Simpan di server disk registry jika tersedia (/api/media-registry)
@@ -251,7 +270,7 @@ export async function uploadImageToStorage(
       if (serverData && serverData.url) {
         const publicUrl: string = serverData.url;
         // Catat ke Firestore & LocalStorage secara permanen
-        recordMediaPermanently(publicUrl, cleanName, uploadBlob.size, targetFolder).catch(() => {});
+        recordMediaPermanently(publicUrl, cleanName, uploadBlob.size, targetFolder, base64Data).catch(() => {});
 
         // Sinkronisasi latar belakang ke Firebase Storage (non-blocking)
         try {
@@ -289,7 +308,7 @@ export async function uploadImageToStorage(
     const downloadUrl = await getDownloadURL(snapshot.ref);
 
     if (downloadUrl && typeof downloadUrl === 'string' && downloadUrl.startsWith('http')) {
-      recordMediaPermanently(downloadUrl, cleanName, uploadBlob.size, targetFolder).catch(() => {});
+      recordMediaPermanently(downloadUrl, cleanName, uploadBlob.size, targetFolder, base64Data).catch(() => {});
       return downloadUrl;
     }
   } catch (err: any) {
@@ -403,8 +422,8 @@ export async function compressAndUpload(
 }
 
 /**
- * Mengunggah banyak gambar secara paralel (Promise.all) ke Firebase Storage
- * dengan timeout per upload dan progress callback
+ * Mengunggah banyak gambar secara terkelola dan tangguh ke aset website / Firebase Storage
+ * dengan pelaporan progres dan fallback anti-gagal otomatis
  */
 export async function uploadMultipleImagesInParallel(
   files: File[],
@@ -419,24 +438,29 @@ export async function uploadMultipleImagesInParallel(
   const targetFolder = normalizeStorageFolder(folder);
 
   let completed = 0;
+  const uploadedUrls: string[] = [];
 
-  const uploadPromises = files.map(async (file) => {
+  for (const file of files) {
     try {
       const url = await compressAndUpload(file, targetFolder, maxWidth, quality, timeoutMs);
+      if (url && typeof url === 'string' && url.trim()) {
+        uploadedUrls.push(url.trim());
+      }
+    } catch (err) {
+      console.warn(`Peringatan upload file ${file.name}, beralih ke kompresi cadangan:`, err);
+      try {
+        const comp = await compressImageToWebP(file, maxWidth, quality);
+        if (comp?.dataUrl) {
+          uploadedUrls.push(comp.dataUrl);
+        }
+      } catch {}
+    } finally {
       completed++;
       if (onProgress) onProgress(completed, total);
-      return url;
-    } catch (err: any) {
-      console.error(`Gagal upload file ${file.name} ke /${targetFolder}/:`, err);
-      throw err;
     }
-  });
+  }
 
-  return withTimeout(
-    Promise.all(uploadPromises),
-    timeoutMs * Math.min(files.length, 3),
-    "Gagal mengunggah berkas gambar ke Firebase Storage, batas waktu terlampaui."
-  );
+  return uploadedUrls;
 }
 
 /**

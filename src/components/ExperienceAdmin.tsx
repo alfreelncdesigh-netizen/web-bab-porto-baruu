@@ -324,7 +324,7 @@ export default function ExperienceAdmin() {
       setUploadProgressText(`Mengompres & Mengunggah ke Firebase Storage (/experiences/) (${i + 1}/${fileList.length})...`);
       try {
         const url = await compressAndUpload(file, 'experiences', 1200, 0.8, 25000);
-        if (url && typeof url === 'string' && url.trim() && !url.startsWith('data:') && !url.startsWith('blob:')) {
+        if (url && typeof url === 'string' && url.trim() && !url.startsWith('blob:')) {
           newUrls.push(url.trim());
           successCount++;
         }
