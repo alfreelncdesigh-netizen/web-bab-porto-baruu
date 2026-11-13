@@ -150,6 +150,9 @@ interface PortfolioLazyImageProps {
   src?: string | null;
   alt: string;
   priority?: boolean;
+  width?: number;
+  height?: number;
+  aspectRatio?: string;
   className?: string;
   containerClassName?: string;
   skeletonClassName?: string;
@@ -158,10 +161,24 @@ interface PortfolioLazyImageProps {
   onLoad?: () => void;
 }
 
+function getCssAspectRatio(width?: number, height?: number, aspectRatio?: string): string | undefined {
+  if (width && height && width > 0 && height > 0) {
+    return `${width} / ${height}`;
+  }
+  if (aspectRatio && /^\d+\s*:\s*\d+$/.test(aspectRatio.trim())) {
+    const [w, h] = aspectRatio.split(':').map(s => Number(s.trim()));
+    if (w > 0 && h > 0) return `${w} / ${h}`;
+  }
+  return undefined;
+}
+
 function PortfolioLazyImage({
   src,
   alt,
   priority = false,
+  width,
+  height,
+  aspectRatio,
   className = "w-full h-auto object-contain transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100 block",
   containerClassName = "relative w-full overflow-hidden flex items-center justify-center bg-zinc-100 dark:bg-zinc-900",
   skeletonClassName = "rounded-xl sm:rounded-2xl",
@@ -171,6 +188,8 @@ function PortfolioLazyImage({
 }: PortfolioLazyImageProps) {
   const [isInView, setIsInView] = useState<boolean>(priority);
   const containerRef = useRef<HTMLDivElement>(null);
+  const cssAspectRatio = getCssAspectRatio(width, height, aspectRatio);
+  const aspectStyle: React.CSSProperties | undefined = cssAspectRatio ? { aspectRatio: cssAspectRatio } : undefined;
 
   useEffect(() => {
     // Jika priority (kartu pertama) atau sudah terlihat di layar, observer tidak diperlukan
@@ -206,13 +225,16 @@ function PortfolioLazyImage({
   }, [priority, isInView]);
 
   return (
-    <div ref={containerRef} className={`relative w-full overflow-hidden ${containerClassName}`}>
+    <div ref={containerRef} className={`relative w-full overflow-hidden ${containerClassName}`} style={aspectStyle}>
       {isInView ? (
         <ImageWithSkeleton
           src={src || FALLBACK_IMAGE}
           alt={alt}
           priority={priority}
           loading={priority ? 'eager' : 'lazy'}
+          width={width}
+          height={height}
+          style={aspectStyle}
           className={className}
           skeletonClassName={skeletonClassName}
           onError={onError}
@@ -220,7 +242,8 @@ function PortfolioLazyImage({
         />
       ) : (
         <div 
-          className={`w-full ${aspectClass} bg-gradient-to-br from-zinc-200 to-zinc-300 dark:from-zinc-800 dark:to-zinc-900 animate-shimmer ${skeletonClassName}`} 
+          className={`w-full ${cssAspectRatio ? '' : aspectClass} bg-gradient-to-br from-zinc-200 to-zinc-300 dark:from-zinc-800 dark:to-zinc-900 animate-shimmer ${skeletonClassName}`}
+          style={aspectStyle}
           aria-hidden="true" 
         />
       )}
@@ -793,7 +816,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                             <PortfolioLazyImage 
                               src={project.image} 
                               alt={project.title} 
-                              priority={index < 6}
+                              priority={index < 2}
+                              width={project.imageWidth}
+                              height={project.imageHeight}
+                              aspectRatio={project.aspectRatio}
                               className="w-full h-auto object-contain transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block mx-auto" 
                               skeletonClassName="rounded-xl sm:rounded-2xl"
                               aspectClass={layoutMode === 'grid-2' ? "min-h-[140px] sm:min-h-[260px]" : "min-h-[200px] sm:min-h-[260px]"}
@@ -803,7 +829,9 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                             <PortfolioLazyImage 
                               src={FALLBACK_IMAGE} 
                               alt={project.title} 
-                              priority={index < 6}
+                              priority={index < 2}
+                              width={800}
+                              height={600}
                               className="w-full h-auto object-contain transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block mx-auto" 
                               skeletonClassName="rounded-xl sm:rounded-2xl"
                               aspectClass={layoutMode === 'grid-2' ? "min-h-[140px] sm:min-h-[260px]" : "min-h-[200px] sm:min-h-[260px]"}
@@ -998,7 +1026,11 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                         <div 
                           className="relative flex items-center justify-center bg-white rounded-none md:rounded-3xl p-0 md:p-2 border-0 md:border md:border-zinc-200/70 shadow-none md:shadow-xs w-full md:w-auto max-w-full max-h-full transition-all duration-150 overflow-hidden"
                           style={{
-                            aspectRatio: imageAspectRatio ? `${imageAspectRatio}` : undefined,
+                            aspectRatio: imageAspectRatio
+                              ? `${imageAspectRatio}`
+                              : (selectedProject.imageWidth && selectedProject.imageHeight
+                                  ? `${selectedProject.imageWidth} / ${selectedProject.imageHeight}`
+                                  : undefined),
                             maxWidth: '100%',
                             maxHeight: '100%',
                           }}
@@ -1012,7 +1044,9 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                             exit={{ opacity: 0.85 }}
                             transition={{ duration: 0.15, ease: "easeOut" }}
                             src={resolveImageUrl(activeImage)} 
-                            alt={selectedProject.title} 
+                            alt={selectedProject.title}
+                            width={selectedProject.imageWidth || undefined}
+                            height={selectedProject.imageHeight || undefined}
                             loading="lazy"
                             decoding="async"
                             onLoad={(e) => {
@@ -1103,6 +1137,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           <img
                             src={resolveImageUrl(img)}
                             alt={`Preview ${idx + 1}`}
+                            width={48}
+                            height={48}
                             loading="lazy"
                             decoding="async"
                             className="w-full h-full object-cover"
@@ -1368,6 +1404,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               src={item.image} 
                               alt={item.title || 'Karya'} 
                               priority={false}
+                              width={item.imageWidth}
+                              height={item.imageHeight}
                               className="w-full h-auto block object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]" 
                               containerClassName="relative w-full overflow-hidden"
                               skeletonClassName="rounded-t-lg sm:rounded-t-xl"

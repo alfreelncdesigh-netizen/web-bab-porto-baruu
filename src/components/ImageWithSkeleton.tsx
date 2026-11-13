@@ -9,6 +9,9 @@ interface ImageWithSkeletonProps {
   skeletonClassName?: string;
   loading?: 'lazy' | 'eager';
   priority?: boolean;
+  width?: number;
+  height?: number;
+  style?: React.CSSProperties;
   onError?: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
   onLoad?: () => void;
   children?: React.ReactNode;
@@ -22,6 +25,9 @@ export default function ImageWithSkeleton({
   skeletonClassName = "rounded-2xl",
   loading = "lazy",
   priority = false,
+  width,
+  height,
+  style,
   onError,
   onLoad,
   children
@@ -62,7 +68,7 @@ export default function ImageWithSkeleton({
   const isPdf = typeof resolvedSrc === 'string' && (resolvedSrc.toLowerCase().includes('.pdf') || resolvedSrc.startsWith('data:application/pdf'));
 
   return (
-    <div className={`relative ${containerClassName}`}>
+    <div className={`relative ${containerClassName}`} style={style}>
       {/* Gradient Shimmer Silhouette Skeleton Placeholder */}
       <div 
         className={`absolute inset-0 z-0 pointer-events-none bg-zinc-200 dark:bg-zinc-800 animate-shimmer transition-opacity duration-300 ease-out ${
@@ -89,6 +95,9 @@ export default function ImageWithSkeleton({
           ref={imgRef}
           src={resolvedSrc}
           alt={alt}
+          width={width}
+          height={height}
+          style={style}
           loading={priority ? 'eager' : loading}
           fetchPriority={priority ? 'high' : 'auto'}
           decoding="async"

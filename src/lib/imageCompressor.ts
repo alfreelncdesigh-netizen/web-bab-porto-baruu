@@ -122,3 +122,147 @@ export async function compressImageToWebP(
     reader.readAsDataURL(source);
   });
 }
+
+export interface PortfolioCompressedImage {
+  blob: Blob;
+  file: File;
+  width: number;
+  height: number;
+  size: number;
+  quality: number;
+}
+
+function renderCanvasToWebPBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob || blob.size === 0) {
+          reject(new Error('Gagal mengonversi gambar ke format WebP.'));
+          return;
+        }
+        resolve(blob);
+      },
+      'image/webp',
+      quality
+    );
+  });
+}
+
+function drawResizedCanvas(img: HTMLImageElement, maxSidePx: number): { canvas: HTMLCanvasElement; width: number; height: number } {
+  const origWidth = img.naturalWidth || img.width;
+  const origHeight = img.naturalHeight || img.height;
+
+  if (!origWidth || !origHeight) {
+    throw new Error('Dimensi gambar tidak valid atau file gambar rusak.');
+  }
+
+  let width = origWidth;
+  let height = origHeight;
+
+  if (width > maxSidePx || height > maxSidePx) {
+    if (width >= height) {
+      width = maxSidePx;
+      height = Math.max(1, Math.round((origHeight * maxSidePx) / origWidth));
+    } else {
+      height = maxSidePx;
+      width = Math.max(1, Math.round((origWidth * maxSidePx) / origHeight));
+    }
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('Canvas browser tidak tersedia untuk memproses gambar.');
+  }
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, width, height);
+
+  return { canvas, width, height };
+}
+
+/**
+ * Konversi dan kompresi adaptif khusus gambar karya portofolio:
+ * - Format output: WebP
+ * - Sisi terpanjang maksimal: 1600 px (rasio aspek terjaga)
+ * - Kualitas adaptif mulai 0.82 diturunkan bertahap hingga ukuran file < 300 KB
+ * - Tidak menghasilkan maupun menyimpan base64
+ */
+export async function compressPortfolioImageToWebP(
+  file: File,
+  maxLongestSide = 1600,
+  targetMaxBytes = 300 * 1024
+): Promise<PortfolioCompressedImage> {
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const imageEl = new Image();
+      imageEl.onload = () => resolve(imageEl);
+      imageEl.onerror = () => reject(new Error(`File "${file.name}" gagal dibaca sebagai gambar.`));
+      imageEl.src = objectUrl;
+    });
+
+    const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'karya';
+    const webpFileName = `${baseName}.webp`;
+
+    let { canvas, width, height } = drawResizedCanvas(img, maxLongestSide);
+    const qualitySteps = [0.82, 0.76, 0.70, 0.64, 0.58, 0.52, 0.46, 0.40];
+
+    let bestBlob: Blob | null = null;
+    let usedQuality = 0.82;
+
+    for (const q of qualitySteps) {
+      const candidate = await renderCanvasToWebPBlob(canvas, q);
+      bestBlob = candidate;
+      usedQuality = q;
+      if (candidate.size <= targetMaxBytes) {
+        break;
+      }
+    }
+
+    // Jika gambar kompleks masih > 300 KB pada 1600px q=0.40, turunkan resolusi sekali ke 1280px agar tetap tajam & < 300 KB
+    if (bestBlob && bestBlob.size > targetMaxBytes && Math.max(width, height) > 1280) {
+      const resized1280 = drawResizedCanvas(img, 1280);
+      canvas = resized1280.canvas;
+      width = resized1280.width;
+      height = resized1280.height;
+
+      for (const q of [0.68, 0.60, 0.52, 0.44]) {
+        const candidate = await renderCanvasToWebPBlob(canvas, q);
+        if (candidate.size < bestBlob.size) {
+          bestBlob = candidate;
+          usedQuality = q;
+        }
+        if (candidate.size <= targetMaxBytes) {
+          break;
+        }
+      }
+    }
+
+    if (!bestBlob || bestBlob.size === 0 || bestBlob.type !== 'image/webp') {
+      throw new Error('Browser gagal mengonversi gambar ke format WebP.');
+    }
+
+    const webpFile = new File([bestBlob], webpFileName, {
+      type: 'image/webp',
+      lastModified: Date.now()
+    });
+
+    return {
+      blob: bestBlob,
+      file: webpFile,
+      width,
+      height,
+      size: bestBlob.size,
+      quality: usedQuality
+    };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+

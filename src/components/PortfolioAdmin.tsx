@@ -5,12 +5,11 @@ import { motion } from 'motion/react';
 import { Project, categories } from '../data/projects';
 import { Edit, Trash, EyeOff, Eye, Plus, X, Check, Upload, Loader2, Link as LinkIcon, Archive, AlertCircle, Handshake } from 'lucide-react';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, arrayUnion } from 'firebase/firestore';
-import { getStoredProjects, saveStoredProjects, cleanProjects, mergeProjects, markDeletedIds, unmarkDeletedIds, syncDeletedIdsFromServer, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
+import { getStoredProjects, saveStoredProjects, mergeProjects, markDeletedIds, unmarkDeletedIds, syncDeletedIdsFromServer, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { SiteSettings } from '../data/settings';
-import { getOptimizedImageUrl } from "../lib/cloudinary";
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
-import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
+import { withTimeout, compressAndUpload, ensurePersistedAssetUrl, validatePortfolioImageFile, uploadPortfolioImageToVercelBlob } from '../lib/storageUploader';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
@@ -23,6 +22,7 @@ export default function PortfolioAdmin() {
   const [archiveItemId, setArchiveItemId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -81,37 +81,67 @@ export default function PortfolioAdmin() {
     };
   }, []);
 
+  const refreshProjectsList = async () => {
+    try {
+      const res = await fetch('/api/projects');
+      if (res.ok) {
+        const apiProjs = await res.json();
+        if (Array.isArray(apiProjs)) {
+          const merged = mergeProjects(getStoredProjects(), apiProjs);
+          setProjects(merged);
+          await saveStoredProjects(merged);
+          return;
+        }
+      }
+    } catch {}
+    setProjects(getStoredProjects());
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProject) return;
+    if (uploading) {
+      showToast("Tunggu hingga proses upload gambar ke Vercel Blob selesai.", "error");
+      return;
+    }
+    if (uploadError) {
+      showToast(`Upload gambar gagal: ${uploadError}. Silakan coba upload ulang terlebih dahulu.`, "error");
+      return;
+    }
     if (!editingProject.title.trim()) {
       showToast("Judul karya wajib diisi!", "error");
       return;
     }
-    setSaving(true);
-
-    const docId = editingProject.id.toString();
-    const nowMs = Date.now();
 
     const rawImages = editingProject.images && editingProject.images.length > 0
       ? editingProject.images
       : (editingProject.image ? [editingProject.image] : []);
 
-    const persistedImages: string[] = [];
-    for (const rawImg of rawImages) {
-      const cleanedUrl = await ensurePersistedAssetUrl(rawImg || '', 'works');
-      if (cleanedUrl && !cleanedUrl.startsWith('blob:')) {
-        persistedImages.push(cleanedUrl);
-      }
+    const rawMain = (editingProject.image || '').trim();
+    if (
+      rawMain.startsWith('data:') ||
+      rawMain.startsWith('blob:') ||
+      rawImages.some((u) => typeof u === 'string' && (u.trim().startsWith('data:') || u.trim().startsWith('blob:')))
+    ) {
+      showToast("Gambar tidak boleh berupa base64/blob. Silakan unggah gambar ke Vercel Blob.", "error");
+      return;
     }
 
-    let cleanMainImage = await ensurePersistedAssetUrl(editingProject.image || '', 'works');
-    if (!cleanMainImage || cleanMainImage.startsWith('blob:')) {
-      cleanMainImage = persistedImages[0] || '';
+    const cleanImages = rawImages
+      .map((u) => (typeof u === 'string' ? u.trim() : ''))
+      .filter((u) => u.length > 0 && !u.startsWith('data:') && !u.startsWith('blob:'));
+
+    const cleanMainImage = rawMain || cleanImages[0] || '';
+    if (!cleanMainImage) {
+      showToast("Pilih dan unggah gambar karya terlebih dahulu.", "error");
+      return;
     }
-    const finalImages = persistedImages.length > 0
-      ? persistedImages
-      : (cleanMainImage ? [cleanMainImage] : []);
+    const finalImages = cleanImages.length > 0 ? cleanImages : [cleanMainImage];
+
+    setSaving(true);
+
+    const docId = editingProject.id.toString();
+    const nowMs = Date.now();
 
     const persistedCollabLogo = editingProject.collaborationLogo
       ? await ensurePersistedAssetUrl(editingProject.collaborationLogo, 'collaboration')
@@ -123,6 +153,9 @@ export default function PortfolioAdmin() {
       category: editingProject.category.trim() || 'UI/UX',
       image: cleanMainImage,
       images: finalImages,
+      ...(editingProject.imageWidth && editingProject.imageHeight
+        ? { imageWidth: editingProject.imageWidth, imageHeight: editingProject.imageHeight }
+        : {}),
       description: (editingProject.description || '').trim(),
       date: (editingProject.date || '').trim() || new Date().toISOString().split('T')[0],
       role: (editingProject.role || '').trim(),
@@ -140,6 +173,53 @@ export default function PortfolioAdmin() {
       isArchived: false,
       archiveFolderId: null,
     };
+
+    // Simpan ke Cloud Firestore terlebih dahulu
+    if (!isQuotaExhausted()) {
+      try {
+        const projectRef = doc(db, 'projects', docId);
+        await withTimeout(
+          setDoc(projectRef, {
+            title: savedProj.title,
+            category: savedProj.category,
+            image: savedProj.image,
+            images: savedProj.images || [],
+            ...(savedProj.imageWidth && savedProj.imageHeight
+              ? { imageWidth: savedProj.imageWidth, imageHeight: savedProj.imageHeight }
+              : {}),
+            description: savedProj.description,
+            date: savedProj.date || new Date().toISOString().split('T')[0],
+            role: savedProj.role || '',
+            aspectRatio: savedProj.aspectRatio || '1:1',
+            draft: savedProj.draft || false,
+            totalHoursSpent: savedProj.totalHoursSpent || '',
+            toolsUsed: savedProj.toolsUsed || '',
+            completionDate: savedProj.completionDate || '',
+            isCollaboration: savedProj.isCollaboration || false,
+            collaborationPartner: savedProj.collaborationPartner || '',
+            collaborationLogo: savedProj.collaborationLogo || '',
+            collaborationText: savedProj.collaborationText || '',
+            createdAt: savedProj.createdAt || nowMs,
+            isArchived: false,
+            archiveFolderId: null,
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true,
+            updatedAt: new Date(nowMs).toISOString()
+          }, { merge: true }),
+          8000,
+          "Waktu penyimpanan ke Cloud Firestore habis."
+        );
+      } catch (err: any) {
+        if (isQuotaError(err)) {
+          markQuotaExhausted();
+        } else {
+          logFirestoreError(err, OperationType.WRITE, `projects/${docId}`);
+          showToast(err?.message || "Gagal menyimpan karya ke Firestore.", "error");
+          setSaving(false);
+          return;
+        }
+      }
+    }
 
     await unmarkDeletedIds('projects', [docId]);
 
@@ -173,11 +253,6 @@ export default function PortfolioAdmin() {
       }
     }
 
-    // Tutup modal dan tampilkan notifikasi berhasil seketika (optimistic save)
-    showToast("Karya berhasil disimpan & langsung tampil di web!");
-    setEditingProject(null);
-    setSaving(false);
-
     // Lacak aktivitas kolaborator secara realtime jika sesi yang aktif adalah kolaborator
     try {
       const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
@@ -191,45 +266,11 @@ export default function PortfolioAdmin() {
       }
     } catch {}
 
-    if (!isQuotaExhausted()) {
-      try {
-        const projectRef = doc(db, 'projects', docId);
-        await withTimeout(
-          setDoc(projectRef, {
-            title: savedProj.title,
-            category: savedProj.category,
-            image: savedProj.image,
-            images: savedProj.images || [],
-            description: savedProj.description,
-            date: savedProj.date || new Date().toISOString().split('T')[0],
-            role: savedProj.role || '',
-            aspectRatio: savedProj.aspectRatio || '1:1',
-            draft: savedProj.draft || false,
-            totalHoursSpent: savedProj.totalHoursSpent || '',
-            toolsUsed: savedProj.toolsUsed || '',
-            completionDate: savedProj.completionDate || '',
-            isCollaboration: savedProj.isCollaboration || false,
-            collaborationPartner: savedProj.collaborationPartner || '',
-            collaborationLogo: savedProj.collaborationLogo || '',
-            collaborationText: savedProj.collaborationText || '',
-            createdAt: savedProj.createdAt || nowMs,
-            isArchived: false,
-            archiveFolderId: null,
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true,
-            updatedAt: new Date(nowMs).toISOString()
-          }, { merge: true }),
-          4000,
-          "Database cloud disinkronkan di latar belakang."
-        );
-      } catch (err: any) {
-        if (isQuotaError(err)) {
-          markQuotaExhausted();
-        } else {
-          logFirestoreError(err, OperationType.WRITE, `projects/${docId}`);
-        }
-      }
-    }
+    await refreshProjectsList();
+    showToast("Karya berhasil disimpan & langsung tampil di web!");
+    setEditingProject(null);
+    setUploadError(null);
+    setSaving(false);
   };
 
   const handleDelete = (project: Project) => {
@@ -323,6 +364,8 @@ export default function PortfolioAdmin() {
       } catch {}
     }
 
+    setUploadError(null);
+
     // Saat menambahkan karya baru, toggle kolaborator selalu OFF secara default
     setEditingProject({
       id: Date.now().toString(),
@@ -345,130 +388,81 @@ export default function PortfolioAdmin() {
   };
 
   /**
-   * 1. Upload Langsung Saat File Dipilih (File Picker / Drag-Drop)
-   * 2. Kompresi Otomatis di Client Menggunakan HTML5 Canvas (max 1000px, WebP, quality 0.78 < 150 KB)
-   * 3. Multiple Upload via Promise.all jika memilih lebih dari 1 file
-   * 4. Error Handling & Timeout 10 detik
+   * 1. Validasi JPG, JPEG, PNG, WebP dan ukuran maksimal 5 MB sebelum diproses
+   * 2. Konversi WebP max 1600px dengan kualitas adaptif (0.82 turun bertahap hingga < 300 KB)
+   * 3. Upload ke Vercel Blob (portfolio/[timestamp]-[nama-file-asli].webp)
+   * 4. Jangan simpan ke Firestore atau ubah karya lama jika upload gagal
    */
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0 || !editingProject) return;
 
     const fileList = Array.from(files);
-    const firstFile = fileList[0];
+    setUploadError(null);
 
-    // Validasi rasio aspek jika gambar
-    if (firstFile.type.startsWith('image/')) {
-      const objectUrl = URL.createObjectURL(firstFile);
-      const img = new Image();
-      img.onload = () => {
-        URL.revokeObjectURL(objectUrl);
-        const ratio = img.width / img.height;
-        let expectedRatioStr = '';
-        let expectedRatioVal = 0;
-        let isValid = true;
-        const cat = editingProject.category;
-
-        if (cat === 'Poster' || cat === 'Branding') {
-          expectedRatioVal = 1 / 2;
-          expectedRatioStr = '1:2';
-          if (Math.abs(ratio - expectedRatioVal) > 0.1) isValid = false;
-        } else if (cat === 'PowerPoint') {
-          expectedRatioVal = 16 / 9;
-          expectedRatioStr = '16:9';
-          if (Math.abs(ratio - expectedRatioVal) > 0.1) isValid = false;
-        } else if (cat === 'Postingan Instagram') {
-          let rVal = 1;
-          if (editingProject.aspectRatio === '4:5') rVal = 4 / 5;
-          if (editingProject.aspectRatio === '16:9') rVal = 16 / 9;
-
-          if (Math.abs(ratio - rVal) > 0.1) {
-            isValid = false;
-            expectedRatioStr = editingProject.aspectRatio || '1:1';
-          }
-        }
-
-        if (!isValid) {
-          console.warn(`Peringatan: Ukuran gambar tidak sesuai dengan rasio bingkai untuk kategori ${cat}. Rasio yang disarankan adalah ${expectedRatioStr}.`);
-        }
-      };
-      img.src = objectUrl;
+    // Validasi seluruh file sebelum diproses atau dikompres
+    for (const file of fileList) {
+      try {
+        validatePortfolioImageFile(file);
+      } catch (valErr: any) {
+        const msg = valErr?.message || 'File tidak valid.';
+        setUploadError(msg);
+        showToast(msg, 'error');
+        e.target.value = '';
+        return;
+      }
     }
 
     setUploading(true);
 
     try {
-      if (fileList.length === 1) {
-        setUploadStatusText("Mengompres & Mengunggah Gambar ke Firebase Storage (/works/)...");
-        const rawUrl = await compressAndUpload(firstFile, 'works');
-        const cleanUrl = await ensurePersistedAssetUrl(rawUrl, 'works');
-        
-        setEditingProject(prev => {
-          if (!prev) return null;
-          const prevImages = (prev.images || []).filter(img => !img.startsWith('blob:'));
-          const merged = [cleanUrl, ...prevImages.filter(img => img !== cleanUrl)];
-          return {
-            ...prev,
-            image: cleanUrl,
-            images: merged
-          };
+      const uploadedResults: Array<{ url: string; width: number; height: number }> = [];
+
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        const prefixLabel = fileList.length > 1 ? `(${i + 1}/${fileList.length}) ` : '';
+        const res = await uploadPortfolioImageToVercelBlob(file, (stage) => {
+          setUploadStatusText(`${prefixLabel}${stage}`);
         });
-
-        // Jika dokumen karya sudah tersimpan di Firestore, langsung sinkronkan URL permanen via arrayUnion()
-        if (editingProject?.id && !isQuotaExhausted() && !cleanUrl.startsWith('data:')) {
-          try {
-            const projectRef = doc(db, 'projects', editingProject.id.toString());
-            await updateDoc(projectRef, {
-              image: cleanUrl,
-              images: arrayUnion(cleanUrl),
-              updatedAt: new Date().toISOString()
-            });
-          } catch (syncErr: any) {
-            if (isQuotaError(syncErr)) markQuotaExhausted();
-          }
-        }
-
-        showToast("Gambar berhasil diunggah!");
-      } else {
-        setUploadStatusText(`Mengunggah Gambar (0/${fileList.length})...`);
-        const rawUrls = await uploadMultipleImagesInParallel(
-          fileList,
-          'works',
-          (done, total) => setUploadStatusText(`Mengunggah (${done}/${total})...`)
-        );
-        const cleanUrls = await Promise.all(rawUrls.map(u => ensurePersistedAssetUrl(u, 'works')));
-        if (cleanUrls.length > 0) {
-          setEditingProject(prev => {
-            if (!prev) return null;
-            const prevImages = (prev.images || []).filter(img => !img.startsWith('blob:'));
-            const merged = [...cleanUrls, ...prevImages.filter(img => !cleanUrls.includes(img))];
-            return {
-              ...prev,
-              image: prev.image && !prev.image.startsWith('blob:') ? prev.image : cleanUrls[0],
-              images: merged
-            };
-          });
-
-          // Sinkronkan seluruh foto ke dokumen Firestore via arrayUnion()
-          const persistableCloudUrls = cleanUrls.filter(u => !u.startsWith('data:'));
-          if (editingProject?.id && !isQuotaExhausted() && persistableCloudUrls.length > 0) {
-            try {
-              const projectRef = doc(db, 'projects', editingProject.id.toString());
-              await updateDoc(projectRef, {
-                images: arrayUnion(...persistableCloudUrls),
-                updatedAt: new Date().toISOString()
-              });
-            } catch (syncErr: any) {
-              if (isQuotaError(syncErr)) markQuotaExhausted();
-            }
-          }
-
-          showToast(`${cleanUrls.length} gambar berhasil diunggah permanen ke Firebase Storage!`);
-        }
+        uploadedResults.push({ url: res.url, width: res.width, height: res.height });
       }
+
+      if (uploadedResults.length === 0) {
+        throw new Error('Tidak ada URL gambar yang dikembalikan oleh Vercel Blob.');
+      }
+
+      const uploadedUrls = uploadedResults.map((r) => r.url);
+      const primary = uploadedResults[0];
+
+      setEditingProject((prev) => {
+        if (!prev) return null;
+        const prevImages = (prev.images || []).filter(
+          (img) => typeof img === 'string' && !img.startsWith('blob:') && !img.startsWith('data:')
+        );
+        const mergedImages =
+          fileList.length === 1
+            ? [primary.url, ...prevImages.filter((img) => img !== primary.url)]
+            : [...uploadedUrls, ...prevImages.filter((img) => !uploadedUrls.includes(img))];
+
+        return {
+          ...prev,
+          image: fileList.length === 1 ? primary.url : (prev.image && !prev.image.startsWith('blob:') && !prev.image.startsWith('data:') ? prev.image : primary.url),
+          images: mergedImages,
+          imageWidth: primary.width,
+          imageHeight: primary.height,
+        };
+      });
+
+      showToast(
+        fileList.length === 1
+          ? "Gambar WebP berhasil diunggah ke Vercel Blob! Klik Simpan untuk memperbarui karya."
+          : `${uploadedResults.length} gambar WebP berhasil diunggah ke Vercel Blob! Klik Simpan untuk memperbarui karya.`
+      );
     } catch (err: any) {
-      console.error("Upload portfolio image error:", err);
-      showToast(err?.message || "Gagal mengunggah gambar ke Firebase Storage.", "error");
+      const realErrorMsg = err?.message || String(err) || 'Gagal mengunggah gambar ke Vercel Blob.';
+      console.error("Vercel Blob portfolio upload error:", err);
+      setUploadError(realErrorMsg);
+      showToast(realErrorMsg, "error");
     } finally {
       setUploading(false);
       setUploadStatusText('');
@@ -644,12 +638,15 @@ export default function PortfolioAdmin() {
             <div className="h-full flex flex-col">
               <div className="flex justify-between items-center mb-2">
                 <label className="text-[10px] font-bold text-black dark:text-zinc-400 block">
-                  Gambar Karya (Otomatis WebP Kompres &lt; 150 KB)
+                  Gambar Karya (Otomatis WebP &lt; 300 KB • Vercel Blob)
                 </label>
                 {editingProject.image && (
                   <button
                     type="button"
-                    onClick={() => setEditingProject({ ...editingProject, image: '' })}
+                    onClick={() => {
+                      setUploadError(null);
+                      setEditingProject({ ...editingProject, image: '' });
+                    }}
                     className="text-red-500 text-[10px] hover:underline"
                   >
                     Hapus Gambar
@@ -660,7 +657,7 @@ export default function PortfolioAdmin() {
                 <input
                   type="file"
                   multiple
-                  accept="image/png, image/jpeg, image/webp, image/svg+xml, application/pdf, application/postscript, .ai, .eps"
+                  accept="image/jpeg, image/png, image/webp, .jpg, .jpeg, .png, .webp"
                   onChange={handleImageUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                   disabled={uploading}
@@ -670,35 +667,41 @@ export default function PortfolioAdmin() {
                   <div className="flex flex-col items-center text-black dark:text-white p-4 text-center">
                     <Loader2 size={32} className="animate-spin mb-3 text-orange-500" />
                     <span className="text-[10px] font-semibold">
-                      {uploadStatusText || "Mengompres & Mengunggah Gambar..."}
+                      {uploadStatusText || "Mengompres & Mengunggah ke Vercel Blob..."}
                     </span>
                   </div>
                 ) : editingProject.image ? (
                   <>
                     <img
-                      src={
-                        editingProject.image?.includes('.pdf')
-                          ? 'https://via.placeholder.com/800x400?text=Dokumen+PDF'
-                          : editingProject.image?.includes('.eps') || editingProject.image?.includes('.ai')
-                          ? 'https://via.placeholder.com/800x400?text=File+Vektor'
-                          : getOptimizedImageUrl(editingProject.image)
-                      }
+                      src={resolveImageUrl(editingProject.image)}
                       alt="Preview"
+                      width={editingProject.imageWidth || undefined}
+                      height={editingProject.imageHeight || undefined}
                       className="w-full h-full object-cover absolute inset-0 p-2"
+                      onError={handleImageError}
                     />
                     <div className="absolute inset-0 bg-black/60 dark:bg-zinc-950/70 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center z-0">
                       <Upload size={24} className="text-white mb-2 transform -translate-y-2 group-hover:translate-y-0 transition-transform" />
-                      <span className="text-white text-[10px] font-semibold">Ganti File</span>
+                      <span className="text-white text-[10px] font-semibold">Ganti Gambar</span>
                     </div>
                   </>
                 ) : (
                   <div className="flex flex-col items-center text-black dark:text-zinc-500 group-hover:text-black dark:group-hover:text-zinc-500 transition-colors text-center px-4">
                     <Upload size={28} className="mb-3 transform group-hover:-translate-y-1 transition-transform" />
-                    <span className="text-[10px] font-semibold mb-1">Pilih File dari Perangkat</span>
-                    <span className="text-[9px] font-medium opacity-60">Mendukung JPG, PNG, WEBP, SVG, PDF (Bisa Multiple)</span>
+                    <span className="text-[10px] font-semibold mb-1">Pilih Gambar dari Perangkat</span>
+                    <span className="text-[9px] font-medium opacity-60">Mendukung JPG, JPEG, PNG, WEBP (Maks. 5 MB)</span>
                   </div>
                 )}
               </div>
+              {uploadError && (
+                <div className="mt-2.5 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 text-red-600 dark:text-red-400 text-[11px] font-medium flex items-start gap-2">
+                  <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p>{uploadError}</p>
+                    <p className="text-[10px] opacity-80 mt-0.5">Klik area upload di atas untuk memilih dan mencoba upload ulang.</p>
+                  </div>
+                </div>
+              )}
               <div className="mt-3">
                 <label className="text-[9px] font-medium text-zinc-500 block mb-1">
                   Atau masukkan Link / URL Gambar secara langsung:
@@ -707,7 +710,10 @@ export default function PortfolioAdmin() {
                   type="text"
                   placeholder="https://... atau /uploads/..."
                   value={editingProject.image && !editingProject.image.startsWith('data:') ? editingProject.image : ''}
-                  onChange={e => setEditingProject({ ...editingProject, image: e.target.value })}
+                  onChange={e => {
+                    setUploadError(null);
+                    setEditingProject({ ...editingProject, image: e.target.value });
+                  }}
                   className="w-full bg-transparent border-b border-zinc-300 dark:border-zinc-800/50 py-1.5 text-[10px] md:text-xs focus:border-black dark:focus:border-sky-400 outline-none transition-colors text-black dark:text-white placeholder-zinc-400"
                 />
               </div>
@@ -903,16 +909,14 @@ export default function PortfolioAdmin() {
                   {/* Thumbnail */}
                   <div className="w-16 h-16 sm:w-20 sm:h-20 bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-hidden shrink-0 border border-zinc-200/60 dark:border-zinc-700/60">
                     <img
-                      src={
-                        project.image?.includes('.pdf')
-                          ? 'https://via.placeholder.com/150?text=PDF'
-                          : project.image?.includes('.eps') || project.image?.includes('.ai')
-                          ? 'https://via.placeholder.com/150?text=Vektor'
-                          : resolveImageUrl(project.image)
-                      }
+                      src={resolveImageUrl(project.image)}
                       alt={project.title}
+                      width={80}
+                      height={80}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover"
-                      onError={e => (e.currentTarget.src = 'https://via.placeholder.com/150?text=Err')}
+                      onError={handleImageError}
                     />
                   </div>
 
@@ -949,7 +953,10 @@ export default function PortfolioAdmin() {
                 {/* Mobile Action Buttons Bar */}
                 <div className="pt-2.5 border-t border-zinc-100 dark:border-zinc-800/60 grid grid-cols-4 gap-2">
                   <button
-                    onClick={() => setEditingProject(project)}
+                    onClick={() => {
+                      setUploadError(null);
+                      setEditingProject(project);
+                    }}
                     className="flex items-center justify-center gap-1.5 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black rounded-xl text-xs font-semibold text-black dark:text-white transition-all active:scale-95"
                     title="Edit Karya"
                   >
@@ -1014,16 +1021,14 @@ export default function PortfolioAdmin() {
                     <td className="p-4 md:p-5">
                       <div className="w-16 h-12 bg-zinc-200 dark:bg-zinc-800 rounded-xl overflow-hidden flex items-center justify-center border border-zinc-200 dark:border-zinc-700">
                         <img
-                          src={
-                            project.image?.includes('.pdf')
-                              ? 'https://via.placeholder.com/150?text=PDF'
-                              : project.image?.includes('.eps') || project.image?.includes('.ai')
-                              ? 'https://via.placeholder.com/150?text=Vektor'
-                              : resolveImageUrl(project.image)
-                          }
+                          src={resolveImageUrl(project.image)}
                           alt={project.title}
+                          width={64}
+                          height={48}
+                          loading="lazy"
+                          decoding="async"
                           className="w-full h-full object-cover"
-                          onError={e => (e.currentTarget.src = 'https://via.placeholder.com/150?text=Err')}
+                          onError={handleImageError}
                         />
                       </div>
                     </td>
@@ -1040,7 +1045,10 @@ export default function PortfolioAdmin() {
                     <td className="p-4 md:p-5 text-zinc-600 dark:text-zinc-400">{project.category}</td>
                     <td className="p-4 md:p-5 flex justify-end gap-2 items-center">
                       <button
-                        onClick={() => setEditingProject(project)}
+                        onClick={() => {
+                          setUploadError(null);
+                          setEditingProject(project);
+                        }}
                         className="w-9 h-9 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-300 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black rounded-xl transition-all active:scale-95 cursor-pointer shadow-2xs"
                         title="Edit"
                       >

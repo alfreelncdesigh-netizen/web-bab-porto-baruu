@@ -11,6 +11,8 @@ export interface Project {
   link?: string;
   draft?: boolean;
   aspectRatio?: string;
+  imageWidth?: number;
+  imageHeight?: number;
   totalHoursSpent?: string | number;
   toolsUsed?: string[] | string;
   completionDate?: string;

@@ -6,6 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { put } from '@vercel/blob';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1337,6 +1338,104 @@ app.post('/api/upload', (req: Request, res: Response): void => {
       res.status(200).json({ url: publicUrl });
     } catch {
       res.status(500).json({ error: 'Upload gagal diproses' });
+    }
+  });
+});
+
+// Dedicated endpoint untuk upload gambar karya WebP langsung ke Vercel Blob
+app.post('/api/blob-upload', requireAdminAuth, (req: Request, res: Response): void => {
+  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+  if (!token) {
+    res.status(500).json({
+      error: 'Konfigurasi Vercel Blob belum diatur: environment variable BLOB_READ_WRITE_TOKEN tidak ditemukan di server.'
+    });
+    return;
+  }
+
+  const chunks: Buffer[] = [];
+  req.on('data', (chunk: Buffer) => chunks.push(chunk));
+  req.on('end', async () => {
+    try {
+      const fullBuffer = Buffer.concat(chunks);
+      const contentType = String(req.headers['content-type'] || '');
+      let filename = String(req.headers['x-filename'] || req.query.filename || 'karya.webp');
+      let fileBuffer: Buffer | null = null;
+
+      if (contentType.includes('multipart/form-data')) {
+        const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+        const boundary = boundaryMatch ? (boundaryMatch[1] || boundaryMatch[2]).trim() : '';
+        if (boundary) {
+          const boundaryBuffer = Buffer.from(`--${boundary}`);
+          let startIdx = fullBuffer.indexOf(boundaryBuffer);
+          while (startIdx !== -1) {
+            const nextIdx = fullBuffer.indexOf(boundaryBuffer, startIdx + boundaryBuffer.length);
+            if (nextIdx === -1) break;
+
+            const part = fullBuffer.slice(startIdx, nextIdx);
+            let headerEndIdx = part.indexOf(Buffer.from('\r\n\r\n'));
+            let headerOffset = 4;
+            if (headerEndIdx === -1) {
+              headerEndIdx = part.indexOf(Buffer.from('\n\n'));
+              headerOffset = 2;
+            }
+
+            if (headerEndIdx !== -1) {
+              const headerStr = part.slice(0, headerEndIdx).toString('utf-8');
+              if (headerStr.includes('filename="')) {
+                const fnMatch = headerStr.match(/filename="([^"]+)"/);
+                if (fnMatch) filename = fnMatch[1];
+                const dataStart = headerEndIdx + headerOffset;
+                let dataEnd = part.length;
+                if (part.slice(dataEnd - 2).equals(Buffer.from('\r\n'))) {
+                  dataEnd -= 2;
+                } else if (part.slice(dataEnd - 1).equals(Buffer.from('\n'))) {
+                  dataEnd -= 1;
+                }
+                fileBuffer = part.slice(dataStart, dataEnd);
+                break;
+              }
+            }
+            startIdx = nextIdx;
+          }
+        }
+      } else if (fullBuffer.length > 0) {
+        fileBuffer = fullBuffer;
+      }
+
+      if (!fileBuffer || fileBuffer.length === 0) {
+        res.status(400).json({ error: 'File gambar WebP kosong atau tidak diterima oleh server.' });
+        return;
+      }
+
+      if (fileBuffer.length > 5 * 1024 * 1024) {
+        res.status(400).json({ error: 'Ukuran file gambar melebihi batas maksimal 5 MB.' });
+        return;
+      }
+
+      const rawBase = path.basename(filename, path.extname(filename))
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 60) || 'karya';
+
+      const blobPathname = `portfolio/${Date.now()}-${rawBase}.webp`;
+
+      const blob = await put(blobPathname, fileBuffer, {
+        access: 'public',
+        contentType: 'image/webp',
+        addRandomSuffix: false,
+        token
+      });
+
+      res.status(200).json({
+        url: blob.url,
+        pathname: blob.pathname,
+        size: fileBuffer.length
+      });
+    } catch (err: any) {
+      const msg = err?.message || String(err) || 'Upload ke Vercel Blob gagal.';
+      console.error('[VERCEL BLOB UPLOAD ERROR]', err);
+      res.status(500).json({ error: msg });
     }
   });
 });

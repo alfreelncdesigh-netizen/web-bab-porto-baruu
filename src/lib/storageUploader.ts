@@ -1,9 +1,110 @@
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage, db } from './firebase';
 import { doc, setDoc } from 'firebase/firestore';
-import { compressImageToWebP } from './imageCompressor';
+import { compressImageToWebP, compressPortfolioImageToWebP } from './imageCompressor';
 import { renderPdfFirstPageToImage } from './pdfHelper';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from './firestoreErrorHandler';
+
+export const PORTFOLIO_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+const ALLOWED_PORTFOLIO_MIME_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
+const ALLOWED_PORTFOLIO_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+
+export interface VercelBlobUploadResult {
+  url: string;
+  pathname: string;
+  width: number;
+  height: number;
+  size: number;
+}
+
+export function validatePortfolioImageFile(file: File): void {
+  if (!file) {
+    throw new Error('Tidak ada file yang dipilih.');
+  }
+
+  const lowerName = (file.name || '').toLowerCase();
+  const dotIdx = lowerName.lastIndexOf('.');
+  const ext = dotIdx !== -1 ? lowerName.slice(dotIdx) : '';
+  const mime = (file.type || '').toLowerCase();
+
+  const isAllowedType =
+    (mime && ALLOWED_PORTFOLIO_MIME_TYPES.has(mime)) ||
+    (!mime && ALLOWED_PORTFOLIO_EXTENSIONS.has(ext));
+
+  if (!isAllowedType || (ext && !ALLOWED_PORTFOLIO_EXTENSIONS.has(ext) && !ALLOWED_PORTFOLIO_MIME_TYPES.has(mime))) {
+    throw new Error(`Format file "${file.name}" tidak didukung. Pilih file gambar JPG, JPEG, PNG, atau WebP.`);
+  }
+
+  if (file.size > PORTFOLIO_MAX_FILE_SIZE_BYTES) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+    throw new Error(`Ukuran file "${file.name}" (${sizeMb} MB) melebihi batas maksimal 5 MB.`);
+  }
+}
+
+export async function uploadPortfolioImageToVercelBlob(
+  file: File,
+  onStage?: (stageText: string) => void
+): Promise<VercelBlobUploadResult> {
+  validatePortfolioImageFile(file);
+
+  onStage?.(`Mengonversi "${file.name}" ke WebP (maks. 1600px, < 300 KB)...`);
+  const compressed = await compressPortfolioImageToWebP(file, 1600, 300 * 1024);
+
+  onStage?.(`Mengunggah "${compressed.file.name}" ke Vercel Blob...`);
+  const formData = new FormData();
+  formData.append('file', compressed.file, compressed.file.name);
+
+  let response: Response;
+  try {
+    response = await withTimeout(
+      fetch('/api/blob-upload', {
+        method: 'POST',
+        headers: {
+          'x-admin-token': 'alfreelnc_admin_auth_verified',
+          'x-filename': compressed.file.name,
+        },
+        body: formData,
+      }),
+      35000,
+      'Batas waktu upload ke Vercel Blob terlampaui. Silakan coba lagi.'
+    );
+  } catch (netErr: any) {
+    throw new Error(netErr?.message || 'Koneksi ke endpoint upload Vercel Blob gagal.');
+  }
+
+  let data: any = null;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const serverMsg = data?.error || `Upload ke Vercel Blob gagal (HTTP ${response.status}).`;
+    throw new Error(serverMsg);
+  }
+
+  const publicUrl = typeof data?.url === 'string' ? data.url.trim() : '';
+  if (!publicUrl || !/^https?:\/\//i.test(publicUrl)) {
+    throw new Error('Server tidak mengembalikan URL publik Vercel Blob yang valid.');
+  }
+
+  // Catat hanya metadata URL publik (tanpa base64)
+  recordMediaPermanently(
+    publicUrl,
+    data?.pathname || compressed.file.name,
+    compressed.size,
+    'works'
+  ).catch(() => {});
+
+  return {
+    url: publicUrl,
+    pathname: data?.pathname || compressed.file.name,
+    width: compressed.width,
+    height: compressed.height,
+    size: compressed.size,
+  };
+}
 
 export interface StoredMediaRecord {
   id: string;

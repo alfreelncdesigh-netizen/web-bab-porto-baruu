@@ -8,6 +8,9 @@
         "title": { "type": "string", "maxLength": 200 },
         "category": { "type": "string", "maxLength": 100 },
         "image": { "type": "string", "maxLength": 1000 },
+        "images": { "type": "array", "description": "Array of public image URLs." },
+        "imageWidth": { "type": "number" },
+        "imageHeight": { "type": "number" },
         "description": { "type": "string", "maxLength": 5000 },
         "date": { "type": "string", "maxLength": 100 },
         "role": { "type": "string", "maxLength": 100 }
