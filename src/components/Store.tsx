@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
-import { doc, getDoc, collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
 import { User, Phone, Instagram, LayoutTemplate, PenTool, Layers, Maximize, Hash, Calendar, DollarSign, ArrowRight, ArrowLeft, Send, CheckCircle2, FileText, UploadCloud, Info, Wallet, FileEdit, X, ChevronDown, CreditCard, ShieldCheck, Sparkles, ExternalLink, Tag, ShoppingBag, Download } from 'lucide-react';
 import { FastInput, FastTextarea } from './FastInput';
 import { ServiceSelectModal, servicesList } from './ServiceSelectModal';
@@ -58,32 +58,52 @@ export default function Store({ isOrderView = false }: StoreProps) {
     };
     window.addEventListener('app_settings_updated', handleSettingsUpdate);
 
-    // 1. Dengarkan doc settings/promoPosters khusus
-    const unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.posters && Array.isArray(data.posters)) {
-          setPromoPosters(deduplicatePosters(data.posters));
+    // 0. Sinkronisasi dari server disk (/api/settings)
+    fetch('/api/settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(serverData => {
+        if (serverData?.promoPosters && Array.isArray(serverData.promoPosters)) {
+          setPromoPosters(deduplicatePosters(serverData.promoPosters));
         }
-      }
-    }, (err) => {
-      console.warn("Store promo realtime sync notice:", err);
-    });
+        if (serverData?.contactPhone) {
+          setWhatsappNumber(getCleanPhone(serverData.contactPhone));
+        }
+      })
+      .catch(() => {});
 
-    // 2. Dengarkan doc settings/global
-    const unsub = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (data.promoPosters && Array.isArray(data.promoPosters)) {
-          setPromoPosters(deduplicatePosters(data.promoPosters));
+    let unsubPromo = () => {};
+    let unsub = () => {};
+
+    if (!isQuotaExhausted()) {
+      // 1. Dengarkan doc settings/promoPosters khusus
+      unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.posters && Array.isArray(data.posters)) {
+            setPromoPosters(deduplicatePosters(data.posters));
+          }
         }
-        if (data.contactPhone) {
-          setWhatsappNumber(getCleanPhone(data.contactPhone));
+      }, (err) => {
+        if (isQuotaError(err)) markQuotaExhausted();
+        console.warn("Store promo realtime sync notice:", err);
+      });
+
+      // 2. Dengarkan doc settings/global
+      unsub = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.promoPosters && Array.isArray(data.promoPosters)) {
+            setPromoPosters(deduplicatePosters(data.promoPosters));
+          }
+          if (data.contactPhone) {
+            setWhatsappNumber(getCleanPhone(data.contactPhone));
+          }
         }
-      }
-    }, (err) => {
-      console.warn("Store realtime sync notice:", err);
-    });
+      }, (err) => {
+        if (isQuotaError(err)) markQuotaExhausted();
+        console.warn("Store realtime sync notice:", err);
+      });
+    }
 
     return () => {
       window.removeEventListener('app_settings_updated', handleSettingsUpdate);
@@ -219,6 +239,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
     window.addEventListener('app_settings_updated', handleSettingsUpdate);
 
     const fetchSettings = async () => {
+      if (isQuotaExhausted()) return;
       try {
         const docRef = doc(db, 'settings', 'global');
         const docSnap = await getDoc(docRef);
@@ -226,6 +247,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
           setWhatsappNumber(getCleanPhone(docSnap.data().contactPhone));
         }
       } catch (e) {
+        if (isQuotaError(e)) markQuotaExhausted();
         console.warn(e);
       }
     };
@@ -358,49 +380,49 @@ export default function Store({ isOrderView = false }: StoreProps) {
     const { total, breakdown } = getPriceBreakdown();
     const breakdownText = breakdown.map(b => `  - ${b.label}: ${formatIDR(b.price)}`).join('\n');
 
-    // Simpan data order ke Firestore & LocalStorage
+    // Simpan data order ke LocalStorage, Server Disk (/api/orders), & Cloud Firestore
+    const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const orderRecord = {
+      id: orderId,
+      nama: formData.nama,
+      whatsapp: formData.whatsapp,
+      sosmed: formData.sosmed || '',
+      layanan,
+      tujuan: formData.tujuan || '',
+      gaya: formData.gaya || '',
+      format: formData.format || '',
+      jumlah: formData.jumlah || '',
+      deadline: formData.deadline || '',
+      budget: formData.budget || '',
+      referensiUrl: formData.referensiUrl || '',
+      materi: formData.materi || '',
+      catatan: formData.catatan || '',
+      totalEstimasi: total,
+      status: 'pending' as const,
+      createdAt: new Date().toISOString()
+    };
+
     try {
-      const orderRecord = {
-        nama: formData.nama,
-        whatsapp: formData.whatsapp,
-        sosmed: formData.sosmed || '',
-        layanan,
-        tujuan: formData.tujuan || '',
-        gaya: formData.gaya || '',
-        format: formData.format || '',
-        jumlah: formData.jumlah || '',
-        deadline: formData.deadline || '',
-        budget: formData.budget || '',
-        referensiUrl: formData.referensiUrl || '',
-        materi: formData.materi || '',
-        catatan: formData.catatan || '',
-        totalEstimasi: total,
-        createdAt: new Date().toISOString()
-      };
       const existing = JSON.parse(localStorage.getItem('orders') || '[]');
-      existing.push(orderRecord);
-      localStorage.setItem('orders', JSON.stringify(existing));
-    } catch (e) {}
+      existing.unshift(orderRecord);
+      localStorage.setItem('orders', JSON.stringify(existing.slice(0, 100)));
+    } catch {}
+
+    try {
+      fetch('/api/orders', {
+        method: 'POST',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderRecord)
+      }).catch(() => {});
+    } catch {}
 
     if (!isQuotaExhausted()) {
       try {
-        await addDoc(collection(db, 'orders'), {
-          nama: formData.nama,
-          whatsapp: formData.whatsapp,
-          sosmed: formData.sosmed || '',
-          layanan,
-          tujuan: formData.tujuan || '',
-          gaya: formData.gaya || '',
-          format: formData.format || '',
-          jumlah: formData.jumlah || '',
-          deadline: formData.deadline || '',
-          budget: formData.budget || '',
-          referensiUrl: formData.referensiUrl || '',
-          materi: formData.materi || '',
-          catatan: formData.catatan || '',
-          totalEstimasi: total,
+        await setDoc(doc(db, 'orders', orderId), {
+          ...orderRecord,
           createdAt: serverTimestamp(),
-        });
+        }, { merge: true });
       } catch (error: any) {
         if (isQuotaError(error)) {
           markQuotaExhausted();

@@ -119,27 +119,37 @@ export default function PromoPosterWidget({
       }
     };
 
-    // 1. Dengarkan doc settings/promoPosters secara realtime
-    const unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (Array.isArray(data.posters) && data.posters.length > 0) {
-          setSettings(prev => ({
-            ...prev,
-            promoPosters: data.posters,
-            promoWidgetActive: data.active !== undefined ? data.active !== false : prev.promoWidgetActive
-          }));
-        }
-      }
-    }, (err) => console.warn("PromoWidget promoPosters notice:", err));
+    let unsubPromo = () => {};
+    let unsubGlobal = () => {};
 
-    // 2. Dengarkan doc settings/global secara realtime
-    const unsubGlobal = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as SiteSettings;
-        setSettings(prev => ({ ...prev, ...data }));
-      }
-    }, (err) => console.warn("PromoWidget settings/global notice:", err));
+    // Dynamic import check avoided by using module-level helpers
+    if (localStorage.getItem('firestore_quota_exhausted') !== 'true') {
+      // 1. Dengarkan doc settings/promoPosters secara realtime
+      unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          const current = getStoredSettings();
+          if (current.savedAt && data.savedAt && Number(data.savedAt) < Number(current.savedAt)) return;
+          if (Array.isArray(data.posters) && data.posters.length > 0) {
+            setSettings(prev => ({
+              ...prev,
+              promoPosters: data.posters,
+              promoWidgetActive: data.active !== undefined ? data.active !== false : prev.promoWidgetActive
+            }));
+          }
+        }
+      }, (err) => console.warn("PromoWidget promoPosters notice:", err));
+
+      // 2. Dengarkan doc settings/global secara realtime
+      unsubGlobal = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as SiteSettings;
+          const current = getStoredSettings();
+          if (current.savedAt && data.savedAt && Number(data.savedAt) < Number(current.savedAt)) return;
+          setSettings(prev => ({ ...prev, ...data }));
+        }
+      }, (err) => console.warn("PromoWidget settings/global notice:", err));
+    }
 
     // Event testing dari dashboard admin: munculkan widget sekarang secara acak
     const handleTriggerPromoNow = (e?: any) => {

@@ -11,10 +11,13 @@ import { QuickFilterItem } from '../types/quickFilter';
 import { 
   getStoredQuickFilterItems, 
   saveStoredQuickFilterItems, 
-  cleanQuickFilterItems 
+  cleanQuickFilterItems,
+  mergeQuickFilterItems
 } from '../lib/quickFilterStorage';
+import { syncDeletedIdsFromServer } from '../lib/contentStorage';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useTheme } from '../contexts/ThemeContext';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 
@@ -247,61 +250,73 @@ export default function SectionInsight({ isSecondHalfLoaded = true, isDedicatedP
       if (isMounted) setIsLoading(false);
     }, 600);
 
-    try {
-      const unsubscribe = onSnapshot(
-        collection(db, 'quickFilterQA'),
-        (snapshot) => {
-          if (!isMounted) return;
-          const loaded: QuickFilterItem[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            loaded.push({
-              id: docSnap.id,
-              question: data.question || '',
-              answer: data.answer || '',
-              category: data.category || 'Tren Desain',
-              images: Array.isArray(data.images) ? data.images : (typeof data.image === 'string' && data.image ? [data.image] : []),
-              tags: data.tags || [],
-              order: data.order ?? 0,
-              published: data.published !== false,
-              createdAt: data.createdAt,
-              updatedAt: data.updatedAt
-            });
-          });
-
-          if (loaded.length > 0) {
-            const cleaned = cleanQuickFilterItems(loaded);
-            setItems(cleaned);
-            saveStoredQuickFilterItems(cleaned);
-          } else {
-            const current = getStoredQuickFilterItems();
-            setItems(current);
-          }
-          setIsLoading(false);
-        },
-        (error) => {
-          console.warn('Firestore Section Insight listener notice:', error);
-          if (isMounted) {
-            setItems(getStoredQuickFilterItems());
+    (async () => {
+      await syncDeletedIdsFromServer();
+      try {
+        const res = await fetch('/api/quick-filter');
+        if (res.ok) {
+          const apiData = await res.json();
+          if (Array.isArray(apiData) && isMounted) {
+            const merged = mergeQuickFilterItems(getStoredQuickFilterItems(), apiData);
+            setItems(merged);
+            saveStoredQuickFilterItems(merged);
             setIsLoading(false);
           }
         }
-      );
+      } catch {}
+    })();
 
-      return () => {
-        isMounted = false;
-        clearTimeout(loadTimer);
-        unsubscribe();
-        window.removeEventListener('quick_filter_updated', handleLocalUpdate);
-      };
-    } catch {
+    let unsubscribe = () => {};
+    if (!isQuotaExhausted()) {
+      try {
+        unsubscribe = onSnapshot(
+          collection(db, 'quickFilterQA'),
+          (snapshot) => {
+            if (!isMounted) return;
+            const loaded: QuickFilterItem[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+              loaded.push({
+                id: docSnap.id,
+                question: data.question || '',
+                answer: data.answer || '',
+                category: data.category || 'Tren Desain',
+                images: Array.isArray(data.images) ? data.images : (typeof data.image === 'string' && data.image ? [data.image] : []),
+                tags: data.tags || [],
+                order: data.order ?? 0,
+                published: data.published !== false,
+                createdAt: data.createdAt,
+                updatedAt: data.updatedAt
+              });
+            });
+
+            const merged = mergeQuickFilterItems(getStoredQuickFilterItems(), loaded);
+            setItems(merged);
+            saveStoredQuickFilterItems(merged);
+            setIsLoading(false);
+          },
+          (error) => {
+            if (isQuotaError(error)) markQuotaExhausted();
+            logFirestoreError(error, OperationType.LIST, 'quickFilterQA');
+            if (isMounted) {
+              setItems(getStoredQuickFilterItems());
+              setIsLoading(false);
+            }
+          }
+        );
+      } catch {
+        setIsLoading(false);
+      }
+    } else {
       setIsLoading(false);
-      return () => {
-        isMounted = false;
-        clearTimeout(loadTimer);
-        window.removeEventListener('quick_filter_updated', handleLocalUpdate);
-      };
     }
+
+    return () => {
+      isMounted = false;
+      clearTimeout(loadTimer);
+      unsubscribe();
+      window.removeEventListener('quick_filter_updated', handleLocalUpdate);
+    };
   }, []);
 
   // Handler saat pertanyaan diklik: buka fokus detail dengan skeleton loading singkat (< 1s)

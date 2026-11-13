@@ -13,5 +13,9 @@ export interface BlogPost {
   collaborationPartner?: string;
   collaborationLogo?: string;
   collaborationText?: string;
+  createdAt?: number | string;
+  updatedAt?: number | string;
+  isArchived?: boolean;
+  archiveFolderId?: string | null;
 }
 

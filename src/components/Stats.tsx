@@ -6,7 +6,8 @@ import { Eye, Image as ImageIcon, ShoppingCart, FileText, Mail, BarChart3, Downl
 import { toPng } from 'html-to-image';
 import { motion, AnimatePresence } from 'framer-motion';
 import BrandLogo from './BrandLogo';
-import { cleanProjects, cleanBlogs, getStoredProjects, getStoredBlogs } from '../lib/contentStorage';
+import { cleanProjects, cleanBlogs, mergeProjects, mergeBlogs, syncDeletedIdsFromServer, getStoredProjects, getStoredBlogs } from '../lib/contentStorage';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { MASTER_ADMINS } from './AdminDashboard';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -207,106 +208,134 @@ export default function Stats({
     window.addEventListener('user_projects_updated', handleProjectsUpdate);
     window.addEventListener('blog_posts_updated', handleBlogsUpdate);
 
-    // 1. Data Agregat Publik: Jumlah Pengunjung (stats/views)
-    const unsubViews = onSnapshot(
-      doc(db, 'stats', 'views'),
-      (docSnap) => {
-        if (!isSubscribed) return;
-        if (docSnap.exists()) {
-          const c = docSnap.data().count;
-          if (typeof c === 'number' && c > 0) {
-            setPageViews(c);
-            try { localStorage.setItem('stats_views', String(c)); } catch (e) {}
-          }
+    (async () => {
+      await syncDeletedIdsFromServer();
+      try {
+        const [projRes, blogRes, ordRes] = await Promise.all([
+          fetch('/api/projects').catch(() => null),
+          fetch('/api/blogs').catch(() => null),
+          isEffectiveAdmin ? fetch('/api/orders').catch(() => null) : Promise.resolve(null),
+        ]);
+        if (projRes?.ok && isSubscribed) {
+          const apiProjs = await projRes.json();
+          if (Array.isArray(apiProjs)) setProjects(mergeProjects(getStoredProjects(), apiProjs));
         }
-        setLoading(false);
-      },
-      (err) => {
-        if (!isSubscribed) return;
-        if (err.code !== 'permission-denied') {
-          console.warn('Catatan pembacaan statistik pengunjung:', err.message);
+        if (blogRes?.ok && isSubscribed) {
+          const apiBlogs = await blogRes.json();
+          if (Array.isArray(apiBlogs)) setBlogs(mergeBlogs(getStoredBlogs(), apiBlogs));
         }
-        setLoading(false);
-      }
-    );
+        if (ordRes?.ok && isSubscribed) {
+          const apiOrds = await ordRes.json();
+          if (Array.isArray(apiOrds)) setOrders(apiOrds);
+        }
+      } catch {}
+    })();
 
-    // 2. Data Publik: Portofolio Proyek (projects)
-    const unsubProjects = onSnapshot(
-      collection(db, 'projects'),
-      (snapshot) => {
-        if (!isSubscribed) return;
-        const rawProjects = snapshot.docs.map(d => ({id: d.id, ...d.data()})).filter((p: any) => p.isArchived !== true);
-        const activeProjects = cleanProjects(rawProjects as any);
-        if (activeProjects.length > 0) {
-          setProjects(activeProjects);
-        } else {
+    let unsubViews = () => {};
+    let unsubProjects = () => {};
+    let unsubBlogs = () => {};
+
+    if (!isQuotaExhausted()) {
+      // 1. Data Agregat Publik: Jumlah Pengunjung (stats/views)
+      unsubViews = onSnapshot(
+        doc(db, 'stats', 'views'),
+        (docSnap) => {
+          if (!isSubscribed) return;
+          if (docSnap.exists()) {
+            const c = docSnap.data().count;
+            if (typeof c === 'number' && c > 0) {
+              setPageViews(c);
+              try { localStorage.setItem('stats_views', String(c)); } catch (e) {}
+            }
+          }
+          setLoading(false);
+        },
+        (err) => {
+          if (!isSubscribed) return;
+          if (isQuotaError(err)) markQuotaExhausted();
+          if (err.code !== 'permission-denied') {
+            logFirestoreError(err, OperationType.GET, 'stats/views');
+          }
+          setLoading(false);
+        }
+      );
+
+      // 2. Data Publik: Portofolio Proyek (projects)
+      unsubProjects = onSnapshot(
+        collection(db, 'projects'),
+        (snapshot) => {
+          if (!isSubscribed) return;
+          const rawProjects = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          const merged = mergeProjects(getStoredProjects(), rawProjects as any);
+          setProjects(merged);
+          setLoading(false);
+        },
+        (err) => {
+          if (!isSubscribed) return;
+          if (isQuotaError(err)) markQuotaExhausted();
           setProjects(cleanProjects(getStoredProjects() as any));
+          setLoading(false);
         }
-        setLoading(false);
-      },
-      (err) => {
-        if (!isSubscribed) return;
-        setProjects(cleanProjects(getStoredProjects() as any));
-        setLoading(false);
-      }
-    );
+      );
 
-    // 3. Data Publik: Artikel Blog (blogPosts)
-    const unsubBlogs = onSnapshot(
-      collection(db, 'blogPosts'),
-      (snapshot) => {
-        if (!isSubscribed) return;
-        const rawBlogs = snapshot.docs.map(d => ({id: d.id, ...d.data()})).filter((b: any) => b.isArchived !== true);
-        const activeBlogs = cleanBlogs(rawBlogs as any);
-        if (activeBlogs.length > 0) {
-          setBlogs(activeBlogs);
-        } else {
+      // 3. Data Publik: Artikel Blog (blogPosts)
+      unsubBlogs = onSnapshot(
+        collection(db, 'blogPosts'),
+        (snapshot) => {
+          if (!isSubscribed) return;
+          const rawBlogs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          const merged = mergeBlogs(getStoredBlogs(), rawBlogs as any);
+          setBlogs(merged);
+          setLoading(false);
+        },
+        (err) => {
+          if (!isSubscribed) return;
+          if (isQuotaError(err)) markQuotaExhausted();
           setBlogs(cleanBlogs(getStoredBlogs() as any));
+          setLoading(false);
         }
-        setLoading(false);
-      },
-      (err) => {
-        if (!isSubscribed) return;
-        setBlogs(cleanBlogs(getStoredBlogs() as any));
-        setLoading(false);
+      );
+
+      // 4. Data Privat: Pesanan (orders) & Pesan Masuk (messages)
+      if (isEffectiveAdmin) {
+        unsubOrders = onSnapshot(
+          collection(db, 'orders'),
+          (snapshot) => {
+            if (!isSubscribed) return;
+            const loaded = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter((o: any) => o.isArchived !== true);
+            setOrders(loaded);
+            try { localStorage.setItem('orders', JSON.stringify(loaded)); } catch (e) {}
+          },
+          (err) => {
+            if (!isSubscribed) return;
+            if (isQuotaError(err)) markQuotaExhausted();
+            if (err.code === 'permission-denied') {
+              if (unsubOrders) { unsubOrders(); unsubOrders = null; }
+            }
+          }
+        );
+
+        unsubMsgs = onSnapshot(
+          collection(db, 'messages'),
+          (snapshot) => {
+            if (!isSubscribed) return;
+            const activeMsgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter((m: any) => m.isArchived !== true);
+            setMessages(activeMsgs);
+          },
+          (err) => {
+            if (!isSubscribed) return;
+            if (isQuotaError(err)) markQuotaExhausted();
+            if (err.code === 'permission-denied') {
+              if (unsubMsgs) { unsubMsgs(); unsubMsgs = null; }
+            }
+          }
+        );
       }
-    );
-
-    // 4. Data Privat: Pesanan (orders) & Pesan Masuk (messages)
-    // HANYA dipanggil jika pengguna terbukti memiliki otorisasi Admin yang sah
-    if (isEffectiveAdmin) {
-      unsubOrders = onSnapshot(
-        collection(db, 'orders'),
-        (snapshot) => {
-          if (!isSubscribed) return;
-          const loaded = snapshot.docs.map(d => ({id: d.id, ...d.data()})).filter((o: any) => o.isArchived !== true);
-          setOrders(loaded);
-          try { localStorage.setItem('orders', JSON.stringify(loaded)); } catch (e) {}
-        },
-        (err) => {
-          if (!isSubscribed) return;
-          if (err.code === 'permission-denied') {
-            if (unsubOrders) { unsubOrders(); unsubOrders = null; }
-          }
-        }
-      );
-
-      unsubMsgs = onSnapshot(
-        collection(db, 'messages'),
-        (snapshot) => {
-          if (!isSubscribed) return;
-          const activeMsgs = snapshot.docs.map(d => ({id: d.id, ...d.data()})).filter((m: any) => m.isArchived !== true);
-          setMessages(activeMsgs);
-        },
-        (err) => {
-          if (!isSubscribed) return;
-          if (err.code === 'permission-denied') {
-            if (unsubMsgs) { unsubMsgs(); unsubMsgs = null; }
-          }
-        }
-      );
     } else {
-      // Pengunjung publik tidak mengakses koleksi privat orders & messages
+      setLoading(false);
+    }
+
+    if (!isEffectiveAdmin) {
       try {
         const saved = localStorage.getItem('orders');
         if (saved) setOrders(JSON.parse(saved));

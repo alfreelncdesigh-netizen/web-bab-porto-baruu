@@ -77,6 +77,13 @@ export async function recordMediaPermanently(
   const targetFolder = normalizeStorageFolder(folder);
   const safeFilename = filename || cleanUrl.split('/').pop()?.split('?')[0] || `img_${Date.now()}`;
   const safeDocId = safeFilename.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const safeLocalDataUrl = dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:') && dataUrl.length <= 150000
+    ? dataUrl
+    : undefined;
+  const safeFirestoreDataUrl = dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:') && dataUrl.length <= 700000
+    ? dataUrl
+    : undefined;
+
   const record: StoredMediaRecord & { dataUrl?: string } = {
     id: safeDocId,
     url: cleanUrl,
@@ -86,7 +93,7 @@ export async function recordMediaPermanently(
     uploadedAt: new Date().toISOString(),
     timestamp: Date.now(),
     savedPermanently: true,
-    ...(dataUrl && typeof dataUrl === 'string' && dataUrl.startsWith('data:') ? { dataUrl } : {})
+    ...(safeLocalDataUrl ? { dataUrl: safeLocalDataUrl } : {})
   };
 
   // 1. Simpan di local storage secara ringkas dan aman dari QuotaExceededError
@@ -126,7 +133,10 @@ export async function recordMediaPermanently(
         'Content-Type': 'application/json',
         'x-admin-token': 'alfreelnc_admin_auth_verified'
       },
-      body: JSON.stringify(record)
+      body: JSON.stringify({
+        ...record,
+        ...(safeFirestoreDataUrl ? { dataUrl: safeFirestoreDataUrl } : {})
+      })
     }).catch(() => {});
   } catch {}
 
@@ -136,6 +146,7 @@ export async function recordMediaPermanently(
 
     const firestoreData: Record<string, any> = {
       ...record,
+      ...(safeFirestoreDataUrl ? { dataUrl: safeFirestoreDataUrl } : {}),
       _adminAuth: 'alfreelnc_admin_auth_verified',
       updatedByAdmin: true
     };
@@ -483,3 +494,56 @@ export function base64ToBlob(base64: string): Blob {
     return new Blob([], { type: 'image/webp' });
   }
 }
+
+/**
+ * Memastikan URL gambar/aset apa pun (termasuk fallback data:image/* atau data:application/pdf)
+ * tersimpan menjadi path file permanen (/uploads/...) sebelum disimpan ke database/state.
+ */
+export async function ensurePersistedAssetUrl(url: string, folder = 'works'): Promise<string> {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed || trimmed.startsWith('blob:')) return '';
+
+  if (trimmed.startsWith('data:image/') || trimmed.startsWith('data:application/pdf')) {
+    const isPdf = trimmed.startsWith('data:application/pdf');
+    const isPng = trimmed.startsWith('data:image/png');
+    const isSvg = trimmed.startsWith('data:image/svg');
+    const ext = isPdf ? '.pdf' : isSvg ? '.svg' : isPng ? '.png' : '.webp';
+    const targetFolder = normalizeStorageFolder(folder);
+    const filename = `${targetFolder}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}${ext}`;
+
+    try {
+      const serverRes = await withTimeout(
+        fetch('/api/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-token': 'alfreelnc_admin_auth_verified'
+          },
+          body: JSON.stringify({ data: trimmed, filename })
+        }),
+        12000,
+        'Batas waktu unggah aset terlampaui'
+      );
+      if (serverRes.ok) {
+        const json = await serverRes.json();
+        if (json?.url && typeof json.url === 'string') {
+          return json.url;
+        }
+      }
+    } catch {}
+
+    try {
+      const blob = base64ToBlob(trimmed);
+      if (blob.size > 0) {
+        const uploaded = await uploadImageToStorage(blob, filename, undefined, targetFolder, 10000);
+        if (uploaded && !uploaded.startsWith('blob:')) {
+          return uploaded;
+        }
+      }
+    } catch {}
+  }
+
+  return trimmed;
+}
+

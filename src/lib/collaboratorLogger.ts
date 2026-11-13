@@ -198,10 +198,15 @@ export async function deleteCollaboratorLog(logId: string): Promise<void> {
   } catch {}
 
   // 2. Cloud Firestore
-  try {
-    await deleteDoc(doc(db, 'collaboratorLogs', logId));
-  } catch (e) {
-    console.warn("Delete log firestore error:", e);
+  if (!isQuotaExhausted()) {
+    try {
+      await deleteDoc(doc(db, 'collaboratorLogs', logId));
+    } catch (e) {
+      if (isQuotaError(e)) {
+        markQuotaExhausted();
+      }
+      console.warn("Delete log firestore error:", e);
+    }
   }
 }
 

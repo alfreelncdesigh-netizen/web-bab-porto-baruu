@@ -2,9 +2,11 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Sparkles, ChevronDown, ChevronUp, HelpCircle, Check, Copy, Share2, Layers } from 'lucide-react';
 import { QuickFilterItem } from '../types/quickFilter';
-import { getStoredQuickFilterItems, saveStoredQuickFilterItems, cleanQuickFilterItems } from '../lib/quickFilterStorage';
+import { getStoredQuickFilterItems, saveStoredQuickFilterItems, cleanQuickFilterItems, mergeQuickFilterItems } from '../lib/quickFilterStorage';
+import { syncDeletedIdsFromServer } from '../lib/contentStorage';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useTheme } from '../contexts/ThemeContext';
 
 export interface QuickFilterSearchProps {
@@ -87,61 +89,73 @@ export default function QuickFilterSearch({ isSecondHalfLoaded = true }: QuickFi
       if (isMounted) setIsLoading(false);
     }, 600);
 
-    try {
-      const unsubscribe = onSnapshot(
-        collection(db, 'quickFilterQA'),
-        (snapshot) => {
-          if (!isMounted) return;
-          const loaded: QuickFilterItem[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            loaded.push({
-              id: docSnap.id,
-              question: data.question || '',
-              answer: data.answer || '',
-              category: data.category || 'Tren Desain',
-              tags: data.tags || [],
-              order: data.order ?? 0,
-              published: data.published !== false,
-              createdAt: data.createdAt,
-              updatedAt: data.updatedAt
-            });
-          });
-
-          if (loaded.length > 0) {
-            const cleaned = cleanQuickFilterItems(loaded);
-            setItems(cleaned);
-            saveStoredQuickFilterItems(cleaned);
-          } else {
-            // Keep seeded storage if Firestore collection is newly initialized
-            const current = getStoredQuickFilterItems();
-            setItems(current);
-          }
-          setIsLoading(false);
-        },
-        (error) => {
-          console.warn('Firestore QuickFilter listener notice (using local data):', error);
-          if (isMounted) {
-            setItems(getStoredQuickFilterItems());
+    (async () => {
+      await syncDeletedIdsFromServer();
+      try {
+        const res = await fetch('/api/quick-filter');
+        if (res.ok) {
+          const apiData = await res.json();
+          if (Array.isArray(apiData) && isMounted) {
+            const merged = mergeQuickFilterItems(getStoredQuickFilterItems(), apiData);
+            setItems(merged);
+            saveStoredQuickFilterItems(merged);
             setIsLoading(false);
           }
         }
-      );
+      } catch {}
+    })();
 
-      return () => {
-        isMounted = false;
-        clearTimeout(loadTimer);
-        unsubscribe();
-        window.removeEventListener('quick_filter_updated', handleLocalUpdate);
-      };
-    } catch {
+    let unsubscribe = () => {};
+    if (!isQuotaExhausted()) {
+      try {
+        unsubscribe = onSnapshot(
+          collection(db, 'quickFilterQA'),
+          (snapshot) => {
+            if (!isMounted) return;
+            const loaded: QuickFilterItem[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+              loaded.push({
+                id: docSnap.id,
+                question: data.question || '',
+                answer: data.answer || '',
+                category: data.category || 'Tren Desain',
+                images: Array.isArray(data.images) ? data.images : (typeof data.image === 'string' && data.image ? [data.image] : []),
+                tags: data.tags || [],
+                order: data.order ?? 0,
+                published: data.published !== false,
+                createdAt: data.createdAt,
+                updatedAt: data.updatedAt
+              });
+            });
+
+            const merged = mergeQuickFilterItems(getStoredQuickFilterItems(), loaded);
+            setItems(merged);
+            saveStoredQuickFilterItems(merged);
+            setIsLoading(false);
+          },
+          (error) => {
+            if (isQuotaError(error)) markQuotaExhausted();
+            logFirestoreError(error, OperationType.LIST, 'quickFilterQA');
+            if (isMounted) {
+              setItems(getStoredQuickFilterItems());
+              setIsLoading(false);
+            }
+          }
+        );
+      } catch {
+        setIsLoading(false);
+      }
+    } else {
       setIsLoading(false);
-      return () => {
-        isMounted = false;
-        clearTimeout(loadTimer);
-        window.removeEventListener('quick_filter_updated', handleLocalUpdate);
-      };
     }
+
+    return () => {
+      isMounted = false;
+      clearTimeout(loadTimer);
+      unsubscribe();
+      window.removeEventListener('quick_filter_updated', handleLocalUpdate);
+    };
   }, []);
 
   // Compute available preset categories dynamically from items

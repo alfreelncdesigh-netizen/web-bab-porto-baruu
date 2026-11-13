@@ -4,6 +4,8 @@ import { ShoppingCart, Trash2, Calendar, Phone, CheckCircle, Clock, Search, Mess
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import ConfirmModal from './ConfirmModal';
+import { getDeletedIds, markDeletedIds, syncDeletedIdsFromServer, getTimestampMs } from '../lib/contentStorage';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 
 interface OrderItem {
   id: string;
@@ -39,7 +41,64 @@ export default function StoreAdmin() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const mergeOrdersList = (...lists: OrderItem[][]): OrderItem[] => {
+    const deletedSet = getDeletedIds('orders');
+    const map = new Map<string, OrderItem>();
+    for (const list of lists) {
+      for (const item of list || []) {
+        if (!item) continue;
+        const id = String(item.id || '').trim();
+        if (!id || deletedSet.has(id)) continue;
+        const prev = map.get(id);
+        map.set(id, prev ? { ...prev, ...item, id } : { ...item, id });
+      }
+    }
+    const merged = Array.from(map.values());
+    merged.sort((a, b) => getTimestampMs(b.createdAt) - getTimestampMs(a.createdAt));
+    return merged;
+  };
+
   useEffect(() => {
+    const loadInitialOrders = async () => {
+      await syncDeletedIdsFromServer().catch(() => {});
+
+      let localOrders: OrderItem[] = [];
+      try {
+        const raw = localStorage.getItem('orders');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            localOrders = parsed.map((o: any, idx: number) => ({
+              ...o,
+              id: o.id || `local_order_${idx}_${o.createdAt || Date.now()}`
+            }));
+          }
+        }
+      } catch {}
+
+      let serverOrders: OrderItem[] = [];
+      try {
+        const res = await fetch('/api/orders');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) serverOrders = data;
+        }
+      } catch {}
+
+      const initialMerged = mergeOrdersList(localOrders, serverOrders);
+      if (initialMerged.length > 0) {
+        setOrders(initialMerged);
+        setLoading(false);
+      }
+    };
+
+    loadInitialOrders();
+
+    if (isQuotaExhausted()) {
+      setLoading(false);
+      return;
+    }
+
     const unsub = onSnapshot(
       collection(db, 'orders'),
       (snapshot) => {
@@ -47,15 +106,11 @@ export default function StoreAdmin() {
         snapshot.forEach((d) => {
           loaded.push({ id: d.id, ...d.data() } as OrderItem);
         });
-        loaded.sort((a, b) => {
-          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : new Date(a.createdAt || 0).getTime();
-          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : new Date(b.createdAt || 0).getTime();
-          return timeB - timeA;
-        });
-        setOrders(loaded);
+        setOrders(prev => mergeOrdersList(prev, loaded));
         setLoading(false);
       },
       (error) => {
+        if (isQuotaError(error)) markQuotaExhausted();
         console.warn('Orders Admin Error:', error);
         setLoading(false);
       }
@@ -70,17 +125,30 @@ export default function StoreAdmin() {
   const handleConfirmDelete = async () => {
     if (!orderToDelete) return;
     setIsDeleting(true);
-    const id = orderToDelete.id;
+    const id = String(orderToDelete.id);
 
-    // Optimistic local state update
-    setOrders(prev => prev.filter(o => o.id !== id));
+    // Optimistic local state update & tombstones
+    await markDeletedIds('orders', [id]);
+    setOrders(prev => {
+      const next = prev.filter(o => String(o.id) !== id);
+      try { localStorage.setItem('orders', JSON.stringify(next)); } catch {}
+      return next;
+    });
     if (selectedOrder?.id === id) setSelectedOrder(null);
     showToast(`Order dari ${orderToDelete.nama || 'Pelanggan'} berhasil dihapus.`);
     setOrderToDelete(null);
 
     try {
-      await deleteDoc(doc(db, 'orders', id));
+      await fetch(`/api/orders/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-token': 'alfreelnc_admin_auth_verified' }
+      }).catch(() => {});
+
+      if (!isQuotaExhausted()) {
+        await deleteDoc(doc(db, 'orders', id));
+      }
     } catch (e) {
+      if (isQuotaError(e)) markQuotaExhausted();
       console.warn("Delete order error:", e);
     } finally {
       setIsDeleting(false);
@@ -88,18 +156,40 @@ export default function StoreAdmin() {
   };
 
   const handleUpdateStatus = async (id: string, status: 'pending' | 'proses' | 'selesai') => {
+    setOrders(prev => {
+      const next = prev.map(o => o.id === id ? { ...o, status } : o);
+      try { localStorage.setItem('orders', JSON.stringify(next)); } catch {}
+      return next;
+    });
+    if (selectedOrder && selectedOrder.id === id) {
+      setSelectedOrder({ ...selectedOrder, status });
+    }
+
     try {
-      await updateDoc(doc(db, 'orders', id), { 
-        status,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
-      });
-      showToast(`Status order diperbarui menjadi ${status}.`);
-      if (selectedOrder && selectedOrder.id === id) {
-        setSelectedOrder({ ...selectedOrder, status });
+      await fetch(`/api/orders/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': 'alfreelnc_admin_auth_verified'
+        },
+        body: JSON.stringify({ status })
+      }).catch(() => {});
+
+      if (!isQuotaExhausted()) {
+        await updateDoc(doc(db, 'orders', id), { 
+          status,
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true
+        });
       }
+      showToast(`Status order diperbarui menjadi ${status}.`);
     } catch (e) {
-      showToast('Gagal memperbarui status.', 'error');
+      if (isQuotaError(e)) {
+        markQuotaExhausted();
+        showToast(`Status order diperbarui menjadi ${status} (tersimpan di server).`);
+      } else {
+        showToast('Gagal memperbarui status.', 'error');
+      }
     }
   };
 

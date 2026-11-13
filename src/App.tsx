@@ -23,11 +23,13 @@ import { db } from './lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, increment, collection, getDocs } from 'firebase/firestore';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from './lib/firestoreErrorHandler';
 import { 
-  getStoredSettings, setLocalSettings, saveStoredSettings, cleanSettings,
-  getStoredProjects, saveStoredProjects, cleanProjects,
-  getStoredBlogs, saveStoredBlogs, cleanBlogs,
-  getStoredExperiences, saveStoredExperiences 
+  getStoredSettings, setLocalSettings, mergeSettingsByTimestamp,
+  getStoredProjects, saveStoredProjects, mergeProjects,
+  getStoredBlogs, saveStoredBlogs, mergeBlogs,
+  getStoredExperiences, saveStoredExperiences, mergeExperiences,
+  syncDeletedIdsFromServer, getTimestampMs, getRecencyTimestamp
 } from './lib/contentStorage';
+import { getStoredQuickFilterItems, saveStoredQuickFilterItems, mergeQuickFilterItems } from './lib/quickFilterStorage';
 import { defaultSettings } from './data/settings';
 import { resolveImageUrl } from './lib/imageResolver';
 import { syncFirestoreSnapshotToSW, getCachedFirestoreSnapshot } from './lib/firestoreSnapshotCache';
@@ -510,197 +512,237 @@ export default function App() {
           });
         }
 
-        // 2. Sync from Firebase Firestore and propagate to state/listeners
+        // 2. Sync from Server Disk & Firebase Firestore without overwriting newer local changes
         const cloudSync = async () => {
           try {
-            // Settings: Sinkronisasi server disk & Firestore dengan proteksi timestamp
-            const serverSyncPromise = fetch('/api/settings')
-              .then(res => res.ok ? res.json() : null)
-              .then(serverData => {
-                if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
-                  const current = getStoredSettings();
-                  const serverTime = serverData.savedAt || 0;
-                  const localTime = current.savedAt || 0;
-                  if (serverTime >= localTime) {
-                    const cleaned = cleanSettings(serverData);
-                    const merged = { ...defaultSettings, ...cleaned };
-                    setLocalSettings(merged);
-                  }
-                }
-              }).catch(() => {});
+            await syncDeletedIdsFromServer().catch(() => {});
+            const quotaHit = isQuotaExhausted();
 
+            // Settings: Sinkronisasi server disk & Firestore dengan proteksi timestamp
             const settingsPromise = Promise.all([
-              serverSyncPromise,
-              getDoc(doc(db, 'settings', 'global')),
-              getDoc(doc(db, 'settings', 'cv')).catch(() => null),
-              getDoc(doc(db, 'settings', 'hero')).catch(() => null),
-              fetch('/api/hero-image').then(r => r.ok ? r.json() : null).catch(() => null)
-            ]).then(async ([, snapGlobal, snapCv, snapHero, serverHeroData]) => {
-              if (snapGlobal && (snapGlobal.exists() || (snapCv && snapCv.exists()) || (snapHero && snapHero.exists()))) {
-                const data = snapGlobal.exists() ? snapGlobal.data() : {};
+              fetch('/api/settings').then(res => res.ok ? res.json() : null).catch(() => null),
+              fetch('/api/hero-image').then(r => r.ok ? r.json() : null).catch(() => null),
+              !quotaHit ? getDoc(doc(db, 'settings', 'global')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null),
+              !quotaHit ? getDoc(doc(db, 'settings', 'cv')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null),
+              !quotaHit ? getDoc(doc(db, 'settings', 'hero')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null)
+            ]).then(async ([serverData, serverHeroData, snapGlobal, snapCv, snapHero]) => {
+              let merged = getStoredSettings();
+
+              if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
+                merged = mergeSettingsByTimestamp(merged, serverData);
+              }
+
+              if (snapGlobal || snapCv || snapHero) {
+                const data = snapGlobal && snapGlobal.exists() ? snapGlobal.data() : {};
                 const cvData = snapCv && snapCv.exists() ? snapCv.data() : null;
                 const heroData = snapHero && snapHero.exists() ? snapHero.data() : null;
-                const cloudCvSections = (cvData?.cvSections && cvData.cvSections.length > 0)
-                  ? cvData.cvSections
-                  : data.cvSections;
-                const cloudSavedAt = data.savedAt || 0;
-                const current = getStoredSettings();
-                const cachedUserHero = localStorage.getItem('app_custom_hero_image');
-
-                const filterHeroCandidate = (val?: any): string => {
-                  if (typeof val !== 'string') return '';
-                  const trimmed = val.trim();
-                  if (!trimmed || trimmed.includes('cover_web_') || trimmed.includes('editing_tools_3d')) return '';
-                  if (trimmed.includes('hero-albi')) return '/images/hero-albi.png';
-                  return trimmed;
-                };
-
-                const rawHero = filterHeroCandidate(heroData?.heroImage)
-                  || filterHeroCandidate(data.heroImage)
-                  || filterHeroCandidate(serverHeroData?.heroImage)
-                  || filterHeroCandidate(cachedUserHero)
-                  || filterHeroCandidate(current.heroImage)
-                  || defaultSettings.heroImage;
-
-                const finalHero = rawHero || defaultSettings.heroImage;
-                if (finalHero && finalHero !== defaultSettings.heroImage) {
-                  localStorage.setItem('app_custom_hero_image', finalHero);
-                }
-
-                const cleaned = cleanSettings({
-                  ...data,
-                  heroImage: finalHero,
-                  cvSections: cloudCvSections,
-                  cvRole: cvData?.cvRole || data.cvRole,
-                  cvPdfFile: cvData?.cvPdfFile || data.cvPdfFile,
-                  savedAt: cloudSavedAt || Date.now()
-                });
-                const merged = { ...defaultSettings, ...cleaned, heroImage: finalHero };
-                setLocalSettings(merged);
-                syncFirestoreSnapshotToSW('settings', [merged]);
-                window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: merged }));
-                const extraImgs: Promise<void>[] = [];
-                if (merged?.heroImage) extraImgs.push(preloadImage(merged.heroImage));
-                if (merged?.aboutImage) extraImgs.push(preloadImage(merged.aboutImage));
-                if (merged?.heroBanners) {
-                  merged.heroBanners.forEach(b => { if (b?.image) extraImgs.push(preloadImage(b.image)); });
-                }
-                await Promise.all(extraImgs);
-              }
-            }).catch(e => console.warn("Cloud settings sync fallback:", e));
-
-            // Projects: Sinkronisasi server disk (/api/projects) & Cloud Firestore
-            const serverProjectsPromise = fetch('/api/projects')
-              .then(res => res.ok ? res.json() : null)
-              .then(async serverProjs => {
-                if (Array.isArray(serverProjs) && serverProjs.length > 0) {
-                  const cleaned = cleanProjects(serverProjs);
-                  if (cleaned.length > 0) {
-                    saveStoredProjects(cleaned);
-                    syncFirestoreSnapshotToSW('projects', cleaned);
-                    window.dispatchEvent(new CustomEvent('user_projects_updated', { detail: cleaned }));
-                    await Promise.all(cleaned.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
-                  }
-                }
-              }).catch(() => {});
-
-            const projectsPromise = getDocs(collection(db, 'projects')).then(async (snap) => {
-              if (!snap.empty) {
-                const projs: any[] = [];
-                snap.forEach(d => { if(!d.data().isArchived) projs.push({ id: d.id, ...d.data() }) });
-                const cleanedProjs = cleanProjects(projs);
-                if (cleanedProjs.length > 0) {
-                  cleanedProjs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-                  saveStoredProjects(cleanedProjs);
-                  syncFirestoreSnapshotToSW('projects', cleanedProjs);
-                  await Promise.all(cleanedProjs.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
+                if ((data && Object.keys(data).length > 0) || cvData || heroData) {
+                  const cloudCvSections = (cvData?.cvSections && cvData.cvSections.length > 0)
+                    ? cvData.cvSections
+                    : data.cvSections;
+                  const cloudSavedAt = Math.max(
+                    getTimestampMs(data?.savedAt || data?.updatedAt),
+                    getTimestampMs(cvData?.savedAt || cvData?.updatedAt),
+                    getTimestampMs(heroData?.savedAt || heroData?.updatedAt)
+                  );
+                  merged = mergeSettingsByTimestamp(merged, {
+                    ...data,
+                    ...(cvData ? {
+                      cvSections: cloudCvSections,
+                      cvRole: cvData.cvRole || data.cvRole,
+                      cvPdfFile: cvData.cvPdfFile || data.cvPdfFile,
+                    } : {}),
+                    ...(heroData?.heroImage ? { heroImage: heroData.heroImage } : {}),
+                    ...(cloudSavedAt > 0 ? { savedAt: cloudSavedAt } : {})
+                  });
                 }
               }
-            }).catch(e => console.warn("Cloud projects sync fallback:", e));
 
-            // Blogs: Sinkronisasi server disk (/api/blogs) & Cloud Firestore
-            const serverBlogsPromise = fetch('/api/blogs')
-              .then(res => res.ok ? res.json() : null)
-              .then(async serverBlogs => {
-                if (Array.isArray(serverBlogs) && serverBlogs.length > 0) {
-                  const cleaned = cleanBlogs(serverBlogs);
-                  if (cleaned.length > 0) {
-                    saveStoredBlogs(cleaned);
-                    syncFirestoreSnapshotToSW('blogPosts', cleaned);
-                    window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: cleaned }));
-                    await Promise.all(cleaned.slice(0, 2).map(b => b.image ? preloadImage(b.image) : Promise.resolve()));
-                  }
-                }
-              }).catch(() => {});
+              const filterHeroCandidate = (val?: any): string => {
+                if (typeof val !== 'string') return '';
+                const trimmed = val.trim();
+                if (!trimmed || trimmed.includes('cover_web_') || trimmed.includes('editing_tools_3d')) return '';
+                if (trimmed.includes('hero-albi')) return '/images/hero-albi.png';
+                return trimmed;
+              };
 
-            const blogsPromise = Promise.all([
-              serverBlogsPromise,
-              getDocs(collection(db, 'blogPosts'))
-            ]).then(async ([, snap]) => {
+              const cachedUserHero = typeof localStorage !== 'undefined' ? localStorage.getItem('app_custom_hero_image') : '';
+              const finalHero = filterHeroCandidate(merged.heroImage)
+                || filterHeroCandidate(serverHeroData?.heroImage)
+                || filterHeroCandidate(cachedUserHero)
+                || defaultSettings.heroImage;
+
+              if (finalHero && finalHero !== defaultSettings.heroImage && typeof localStorage !== 'undefined') {
+                try { localStorage.setItem('app_custom_hero_image', finalHero); } catch {}
+              }
+
+              const finalSettings = { ...defaultSettings, ...merged, heroImage: finalHero };
+              setLocalSettings(finalSettings);
+              syncFirestoreSnapshotToSW('settings', [finalSettings]);
+
+              const extraImgs: Promise<void>[] = [];
+              if (finalSettings?.heroImage) extraImgs.push(preloadImage(finalSettings.heroImage));
+              if (finalSettings?.aboutImage) extraImgs.push(preloadImage(finalSettings.aboutImage));
+              if (finalSettings?.heroBanners) {
+                finalSettings.heroBanners.forEach(b => { if (b?.image) extraImgs.push(preloadImage(b.image)); });
+              }
+              await Promise.all(extraImgs);
+            }).catch(e => {
+              if (isQuotaError(e)) markQuotaExhausted();
+              console.warn("Cloud settings sync fallback:", e);
+            });
+
+            // Projects: Gabungkan lokal + disk server (/api/projects) + Cloud Firestore dengan merge non-destruktif
+            const projectsPromise = Promise.all([
+              fetch('/api/projects').then(res => res.ok ? res.json() : null).catch(() => null),
+              !quotaHit ? getDocs(collection(db, 'projects')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null)
+            ]).then(async ([serverProjs, snap]) => {
+              const localProjs = getStoredProjects();
+              const localMap = new Map(localProjs.map(p => [String(p.id), p]));
+              const cloudProjs: any[] = [];
               if (snap && !snap.empty) {
-                const posts: any[] = [];
-                snap.forEach(d => { if(!d.data().isArchived) posts.push({ id: d.id, ...d.data() }) });
-                const cleanedPosts = cleanBlogs(posts);
-                saveStoredBlogs(cleanedPosts);
-                syncFirestoreSnapshotToSW('blogPosts', cleanedPosts);
-                window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: cleanedPosts }));
-                await Promise.all(cleanedPosts.slice(0, 2).map(b => {
+                snap.forEach(d => {
+                  const data = d.data();
+                  if (data.isArchived === true) {
+                    const localItem = localMap.get(d.id);
+                    const cloudUpdated = getTimestampMs(data.updatedAt || data.createdAt);
+                    const localUpdated = localItem ? getRecencyTimestamp(localItem) : 0;
+                    if (!localItem || cloudUpdated > localUpdated) {
+                      cloudProjs.push({ id: d.id, ...data });
+                    }
+                    return;
+                  }
+                  cloudProjs.push({ id: d.id, ...data });
+                });
+              }
+
+              const merged = mergeProjects(
+                localProjs,
+                Array.isArray(serverProjs) ? serverProjs : [],
+                cloudProjs
+              );
+
+              if (merged.length > 0 || (Array.isArray(serverProjs) && serverProjs.length === 0 && localProjs.length === 0)) {
+                saveStoredProjects(merged);
+                syncFirestoreSnapshotToSW('projects', merged);
+                await Promise.all(merged.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
+              }
+            }).catch(e => {
+              if (isQuotaError(e)) markQuotaExhausted();
+              console.warn("Cloud projects sync fallback:", e);
+            });
+
+            // Blogs: Gabungkan lokal + disk server (/api/blogs) + Cloud Firestore
+            const blogsPromise = Promise.all([
+              fetch('/api/blogs').then(res => res.ok ? res.json() : null).catch(() => null),
+              !quotaHit ? getDocs(collection(db, 'blogPosts')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null)
+            ]).then(async ([serverBlogs, snap]) => {
+              const localBlogs = getStoredBlogs();
+              const localMap = new Map(localBlogs.map(b => [String(b.id), b]));
+              const cloudBlogs: any[] = [];
+              if (snap && !snap.empty) {
+                snap.forEach(d => {
+                  const data = d.data();
+                  if (data.isArchived === true) {
+                    const localItem = localMap.get(d.id);
+                    const cloudUpdated = getTimestampMs(data.updatedAt || data.createdAt);
+                    const localUpdated = localItem ? getRecencyTimestamp(localItem) : 0;
+                    if (!localItem || cloudUpdated > localUpdated) {
+                      cloudBlogs.push({ id: d.id, ...data });
+                    }
+                    return;
+                  }
+                  cloudBlogs.push({ id: d.id, ...data });
+                });
+              }
+
+              const merged = mergeBlogs(
+                localBlogs,
+                Array.isArray(serverBlogs) ? serverBlogs : [],
+                cloudBlogs
+              );
+
+              if (merged.length > 0) {
+                saveStoredBlogs(merged);
+                syncFirestoreSnapshotToSW('blogPosts', merged);
+                await Promise.all(merged.slice(0, 2).map(b => {
                   const img = b.image || (b as any).coverImage;
                   return img ? preloadImage(img) : Promise.resolve();
                 }));
-              } else {
-                // Jika koleksi Firestore masih kosong, sinkronkan artikel dari server lokal
-                try {
-                  const localRes = await fetch('/api/blogs');
-                  if (localRes.ok) {
-                    const localBlogs = await localRes.json();
-                    if (Array.isArray(localBlogs) && localBlogs.length > 0) {
-                      for (const lb of localBlogs) {
-                        if (lb && lb.id) {
-                          setDoc(doc(db, 'blogPosts', String(lb.id)), {
-                            ...lb,
-                            _adminAuth: 'alfreelnc_admin_auth_verified',
-                            updatedByAdmin: true,
-                            createdAt: lb.date || new Date().toISOString()
-                          }, { merge: true }).catch(() => {});
-                        }
-                      }
+              }
+            }).catch(e => {
+              if (isQuotaError(e)) markQuotaExhausted();
+              console.warn("Cloud blogs sync fallback:", e);
+            });
+
+            // Experiences: Gabungkan lokal + disk server (/api/experiences) + Cloud Firestore
+            const expPromise = Promise.all([
+              fetch('/api/experiences').then(res => res.ok ? res.json() : null).catch(() => null),
+              !quotaHit ? getDocs(collection(db, 'experiences')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null)
+            ]).then(([serverExps, snap]) => {
+              const localExps = getStoredExperiences();
+              const localMap = new Map(localExps.map(ex => [String(ex.id), ex]));
+              const cloudExps: any[] = [];
+              if (snap && !snap.empty) {
+                snap.forEach(d => {
+                  const data = d.data();
+                  if (data.isArchived === true) {
+                    const localItem = localMap.get(d.id);
+                    const cloudUpdated = getTimestampMs(data.updatedAt || data.createdAt);
+                    const localUpdated = localItem ? getRecencyTimestamp(localItem) : 0;
+                    if (!localItem || cloudUpdated > localUpdated) {
+                      cloudExps.push({ id: d.id, ...data });
                     }
+                    return;
                   }
-                } catch {}
-              }
-            }).catch(e => console.warn("Cloud blogs sync fallback:", e));
-
-            // Experiences: Sinkronkan disk server & Cloud Firestore
-            const serverExpPromise = fetch('/api/experiences')
-              .then(res => res.ok ? res.json() : null)
-              .then(serverData => {
-                if (Array.isArray(serverData) && serverData.length > 0) {
-                  const current = getStoredExperiences();
-                  if (!current || current.length === 0) {
-                    saveStoredExperiences(serverData);
-                    syncFirestoreSnapshotToSW('experiences', serverData);
-                    window.dispatchEvent(new CustomEvent('user_experiences_updated', { detail: serverData }));
-                  }
-                }
-              }).catch(() => {});
-
-            const expPromise = getDocs(collection(db, 'experiences')).then((snap) => {
-              if (!snap.empty) {
-                const exps: any[] = [];
-                snap.forEach(d => { if(!d.data().isArchived) exps.push({ id: d.id, ...d.data() }) });
-                exps.sort((a, b) => {
-                  const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;
-                  const dB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : 0;
-                  return dB - dA;
+                  cloudExps.push({ id: d.id, ...data });
                 });
-                saveStoredExperiences(exps);
-                syncFirestoreSnapshotToSW('experiences', exps);
-                window.dispatchEvent(new CustomEvent('user_experiences_updated', { detail: exps }));
               }
-            }).catch(e => console.warn("Cloud exp sync fallback:", e));
 
-            await Promise.all([settingsPromise, projectsPromise, serverProjectsPromise, blogsPromise, expPromise, serverExpPromise]);
+              const merged = mergeExperiences(
+                localExps,
+                Array.isArray(serverExps) ? serverExps : [],
+                cloudExps
+              );
+
+              if (merged.length > 0) {
+                saveStoredExperiences(merged);
+                syncFirestoreSnapshotToSW('experiences', merged);
+              }
+            }).catch(e => {
+              if (isQuotaError(e)) markQuotaExhausted();
+              console.warn("Cloud exp sync fallback:", e);
+            });
+
+            // QuickFilterQA: Gabungkan lokal + disk server (/api/quick-filter) + Cloud Firestore
+            const quickFilterPromise = Promise.all([
+              fetch('/api/quick-filter').then(res => res.ok ? res.json() : null).catch(() => null),
+              !quotaHit ? getDocs(collection(db, 'quickFilterQA')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null)
+            ]).then(([serverQF, snap]) => {
+              const localQF = getStoredQuickFilterItems();
+              const cloudQF: any[] = [];
+              if (snap && !snap.empty) {
+                snap.forEach(d => {
+                  const data = d.data();
+                  if (!data.isArchived) {
+                    cloudQF.push({ id: d.id, ...data });
+                  }
+                });
+              }
+              const merged = mergeQuickFilterItems(
+                localQF,
+                Array.isArray(serverQF) ? serverQF : [],
+                cloudQF
+              );
+              if (merged.length > 0) {
+                saveStoredQuickFilterItems(merged);
+              }
+            }).catch(e => {
+              if (isQuotaError(e)) markQuotaExhausted();
+              console.warn("Cloud quickFilter sync fallback:", e);
+            });
+
+            await Promise.all([settingsPromise, projectsPromise, blogsPromise, expPromise, quickFilterPromise]);
           } catch (err) {
             console.warn("Cloud sync offline fallback, reading SW snapshot cache:", err);
             try {

@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { defaultSettings, defaultCvSections, SiteSettings, CvSectionItem } from '../data/settings';
-import { getStoredSettings, cleanSettings } from '../lib/contentStorage';
+import { getStoredSettings, mergeSettingsByTimestamp } from '../lib/contentStorage';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 import { Download, Mail, Phone, MapPin, Link as LinkIcon, Copy, Check, X, ChevronLeft, ChevronRight, Maximize2, ImageOff, Image as ImageIcon } from 'lucide-react';
 
 import { resolveImageUrl, handleImageError as globalHandleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
@@ -162,74 +163,90 @@ export default function CvDetail() {
     // 1. Dengarkan event lokal untuk update seketika di tab yang sama
     const handleUpdate = (e: any) => {
       if (e.detail) {
-        const cleaned = cleanSettings(e.detail as Partial<SiteSettings>);
-        setSettings(prev => ({ ...prev, ...defaultSettings, ...cleaned }));
+        setSettings(prev => mergeSettingsByTimestamp(prev, e.detail as Partial<SiteSettings>));
         setIsLoading(false);
       }
     };
     window.addEventListener('app_settings_updated', handleUpdate);
 
-    // 2. Dengarkan perubahan Firestore settings/global
-    const docRef = doc(db, 'settings', 'global');
-    const unsubscribeGlobal = onSnapshot(
-      docRef,
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const local = getStoredSettings();
-          const cloudTime = (data as any)?.savedAt || 0;
-          const localTime = local?.savedAt || 0;
-          if (cloudTime >= localTime) {
-            const cleaned = cleanSettings(data as Partial<SiteSettings>);
+    // 1b. Sinkronisasi dari server disk (/api/settings) agar tetap fresh saat kuota Firestore habis
+    fetch('/api/settings')
+      .then(r => r.ok ? r.json() : null)
+      .then(serverData => {
+        if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
+          setSettings(prev => mergeSettingsByTimestamp(prev, serverData));
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {});
+
+    let unsubscribeGlobal = () => {};
+    let unsubscribeCv = () => {};
+
+    if (!isQuotaExhausted()) {
+      // 2. Dengarkan perubahan Firestore settings/global
+      const docRef = doc(db, 'settings', 'global');
+      unsubscribeGlobal = onSnapshot(
+        docRef,
+        (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            const local = getStoredSettings();
+            const merged = mergeSettingsByTimestamp(local, data as Partial<SiteSettings>);
             setSettings(prev => {
-              const finalSections = (cleaned.cvSections && cleaned.cvSections.length > 0)
-                ? cleaned.cvSections
+              const nextMerged = mergeSettingsByTimestamp(prev, merged);
+              const finalSections = (nextMerged.cvSections && nextMerged.cvSections.length > 0)
+                ? nextMerged.cvSections
                 : prev.cvSections;
-              return { ...prev, ...defaultSettings, ...cleaned, cvSections: finalSections };
+              return { ...nextMerged, cvSections: finalSections };
             });
           }
+          setIsLoading(false);
+        },
+        (error) => {
+          if (isQuotaError(error)) markQuotaExhausted();
+          console.warn("CvDetail global settings error (using stored):", error);
+          setSettings(getStoredSettings());
+          setIsLoading(false);
         }
-        setIsLoading(false);
-      },
-      (error) => {
-        console.warn("CvDetail global settings error (using stored):", error);
-        setSettings(getStoredSettings());
-        setIsLoading(false);
-      }
-    );
+      );
 
-    // 3. Dengarkan perubahan Firestore settings/cv (sinkronisasi dokumen CV khusus)
-    const cvDocRef = doc(db, 'settings', 'cv');
-    const unsubscribeCv = onSnapshot(
-      cvDocRef,
-      (cvSnap) => {
-        if (cvSnap.exists()) {
-          const cvData = cvSnap.data();
-          const local = getStoredSettings();
-          const cloudTime = (cvData as any)?.savedAt || 0;
-          const localTime = local?.savedAt || 0;
-          if (cloudTime >= localTime && cvData.cvSections && Array.isArray(cvData.cvSections) && cvData.cvSections.length > 0) {
-            const cleanedCvSections = cvData.cvSections.map((s: any) => ({
-              title: s.title || '',
-              content: s.content || '',
-              images: Array.isArray(s.images)
-                ? s.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0)
-                : (s.image ? [s.image.trim()] : [])
-            }));
-            setSettings(prev => ({
-              ...prev,
-              cvRole: cvData.cvRole || prev.cvRole,
-              cvPdfFile: cvData.cvPdfFile || prev.cvPdfFile,
-              cvSections: cleanedCvSections
-            }));
+      // 3. Dengarkan perubahan Firestore settings/cv (sinkronisasi dokumen CV khusus)
+      const cvDocRef = doc(db, 'settings', 'cv');
+      unsubscribeCv = onSnapshot(
+        cvDocRef,
+        (cvSnap) => {
+          if (cvSnap.exists()) {
+            const cvData = cvSnap.data();
+            const local = getStoredSettings();
+            const cloudTime = Number((cvData as any)?.savedAt || 0);
+            const localTime = Number(local?.savedAt || 0);
+            if ((cloudTime === 0 || cloudTime >= localTime) && cvData.cvSections && Array.isArray(cvData.cvSections) && cvData.cvSections.length > 0) {
+              const cleanedCvSections = cvData.cvSections.map((s: any) => ({
+                title: s.title || '',
+                content: s.content || '',
+                images: Array.isArray(s.images)
+                  ? s.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0 && !img.startsWith('blob:'))
+                  : (s.image && !s.image.startsWith('blob:') ? [s.image.trim()] : [])
+              }));
+              setSettings(prev => ({
+                ...prev,
+                cvRole: cvData.cvRole || prev.cvRole,
+                cvPdfFile: cvData.cvPdfFile || prev.cvPdfFile,
+                cvSections: cleanedCvSections
+              }));
+            }
           }
+          setIsLoading(false);
+        },
+        (err) => {
+          if (isQuotaError(err)) markQuotaExhausted();
+          setIsLoading(false);
         }
-        setIsLoading(false);
-      },
-      () => {
-        setIsLoading(false);
-      }
-    );
+      );
+    } else {
+      setIsLoading(false);
+    }
 
     // Jaminan skeleton loading selesai jika koneksi lambat
     const safetyTimer = setTimeout(() => {

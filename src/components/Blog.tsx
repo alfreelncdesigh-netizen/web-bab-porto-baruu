@@ -5,8 +5,9 @@ import { X, ArrowRight, BookOpen, Sparkles, Handshake, MessageSquare, Send, Cloc
 import { useTheme } from '../contexts/ThemeContext';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, addDoc, doc, setDoc } from 'firebase/firestore';
-import { getStoredBlogs, saveStoredBlogs, cleanBlogs } from '../lib/contentStorage';
+import { getStoredBlogs, saveStoredBlogs, cleanBlogs, mergeBlogs, syncDeletedIdsFromServer } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import { 
   sectionStaggerContainer, 
@@ -115,6 +116,7 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
       return;
     }
 
+    const blogId = String(selectedPost.id);
     setLoadingComments(true);
     let isMounted = true;
 
@@ -122,32 +124,63 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
       if (isMounted) setLoadingComments(false);
     }, 2000);
 
-    let unsub = () => {};
-    try {
-      unsub = onSnapshot(
-        collection(db, 'blogPosts', String(selectedPost.id), 'comments'),
-        (snapshot) => {
-          if (!isMounted) return;
-          const loaded: any[] = [];
-          snapshot.forEach((d) => {
-            loaded.push({ id: d.id, ...d.data() });
+    // Load komentar dari endpoint server lokal terlebih dahulu
+    fetch(`/api/blog-comments/${encodeURIComponent(blogId)}`)
+      .then(res => res.ok ? res.json() : [])
+      .then(serverComments => {
+        if (!isMounted || !Array.isArray(serverComments)) return;
+        setComments(prev => {
+          const map = new Map<string, any>();
+          [...serverComments, ...prev].forEach((c: any) => {
+            const key = c?.id ? String(c.id) : `${c?.createdAt}_${c?.message}`;
+            map.set(key, c);
           });
-          loaded.sort((a, b) => {
+          return Array.from(map.values()).sort((a, b) => {
             const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
             const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
             return timeB - timeA;
           });
-          setComments(loaded);
-          setLoadingComments(false);
-        },
-        (error) => {
-          console.warn("Notice: Blog comments fetch error (resilient fallback):", error);
-          if (isMounted) setLoadingComments(false);
-        }
-      );
-    } catch (e) {
-      console.warn("Notice: Error listening to blog comments:", e);
-      if (isMounted) setLoadingComments(false);
+        });
+        setLoadingComments(false);
+      })
+      .catch(() => {});
+
+    let unsub = () => {};
+    if (!isQuotaExhausted()) {
+      try {
+        unsub = onSnapshot(
+          collection(db, 'blogPosts', blogId, 'comments'),
+          (snapshot) => {
+            if (!isMounted) return;
+            const loaded: any[] = [];
+            snapshot.forEach((d) => {
+              loaded.push({ id: d.id, ...d.data() });
+            });
+            setComments(prev => {
+              const map = new Map<string, any>();
+              [...prev, ...loaded].forEach((c: any) => {
+                const key = c?.id ? String(c.id) : `${c?.createdAt}_${c?.message}`;
+                map.set(key, c);
+              });
+              return Array.from(map.values()).sort((a, b) => {
+                const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                return timeB - timeA;
+              });
+            });
+            setLoadingComments(false);
+          },
+          (error) => {
+            if (isQuotaError(error)) markQuotaExhausted();
+            logFirestoreError(error, OperationType.LIST, `blogPosts/${blogId}/comments`);
+            if (isMounted) setLoadingComments(false);
+          }
+        );
+      } catch (e) {
+        if (isMounted) setLoadingComments(false);
+      }
+    } else {
+      setLoadingComments(false);
     }
 
     return () => {
@@ -162,10 +195,12 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
     if (!selectedPost || !commentForm.message.trim() || isSubmittingComment) return;
 
     setIsSubmittingComment(true);
+    const blogId = String(selectedPost.id);
     const authorName = commentForm.name.trim() || 'Pengunjung';
     const messageText = commentForm.message.trim();
     const newComment = {
-      blogId: String(selectedPost.id),
+      id: `cmt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      blogId,
       name: authorName,
       message: messageText,
       createdAt: new Date().toISOString()
@@ -176,14 +211,25 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
     setCommentForm({ name: '', message: '' });
 
     try {
-      await addDoc(collection(db, 'blogPosts', String(selectedPost.id), 'comments'), newComment);
-      showCommentToast("Komentar Anda berhasil dikirim!");
-    } catch (err: any) {
-      console.warn("Failed to persist blog comment to Firestore:", err);
-      showCommentToast("Komentar tersimpan secara lokal.", "success");
-    } finally {
-      setIsSubmittingComment(false);
+      await fetch(`/api/blog-comments/${encodeURIComponent(blogId)}`, {
+        method: 'POST',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newComment)
+      });
+    } catch {}
+
+    if (!isQuotaExhausted()) {
+      try {
+        await addDoc(collection(db, 'blogPosts', blogId, 'comments'), newComment);
+      } catch (err: any) {
+        if (isQuotaError(err)) markQuotaExhausted();
+        else logFirestoreError(err, OperationType.CREATE, `blogPosts/${blogId}/comments`);
+      }
     }
+
+    showCommentToast("Komentar Anda berhasil dikirim!");
+    setIsSubmittingComment(false);
   };
 
   const formatCommentDate = (dateVal: any): string => {
@@ -232,33 +278,27 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
       });
     }
 
-    // 2. Fetch parallel dari endpoint server lokal (/api/blogs)
-    fetch('/api/blogs')
-      .then(res => res.ok ? res.json() : [])
-      .then(apiBlogs => {
-        if (!isMounted) return;
-        if (Array.isArray(apiBlogs) && apiBlogs.length > 0) {
-          const cleaned = cleanBlogs(apiBlogs);
-          const published = cleaned.filter(p => p.published).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          if (published.length > 0) {
-            setPosts(prev => {
-              const map = new Map<string, BlogPost>();
-              prev.forEach(p => map.set(String(p.id), p));
-              published.forEach(p => map.set(String(p.id), p));
-              return Array.from(map.values()).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-            });
-            saveStoredBlogs(cleaned);
-            setLoading(false);
-          }
-        }
-      })
-      .catch(() => {});
+    // 2. Sinkronisasi tombstone & fetch dari endpoint server lokal (/api/blogs)
+    (async () => {
+      await syncDeletedIdsFromServer();
+      try {
+        const res = await fetch('/api/blogs');
+        const apiBlogs = res.ok ? await res.json() : [];
+        if (!isMounted || !Array.isArray(apiBlogs)) return;
+        const mergedAll = mergeBlogs(getStoredBlogs(), apiBlogs);
+        const published = mergedAll.filter(p => p.published);
+        setPosts(published);
+        saveStoredBlogs(mergedAll);
+        setLoading(false);
+      } catch {}
+    })();
 
     // 3. Listener pembaruan kustom
     const handleUpdate = (e: any) => {
       if (!isMounted) return;
       if (e.detail && Array.isArray(e.detail)) {
-        const pub = e.detail.filter((p: any) => p.published);
+        const mergedAll = mergeBlogs(e.detail);
+        const pub = mergedAll.filter((p: any) => p.published);
         setPosts(pub);
         preloadBlogImages(pub).then(() => {
           if (isMounted) setLoading(false);
@@ -267,50 +307,42 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
     };
     window.addEventListener('blog_posts_updated', handleUpdate);
 
-    // 4. Firestore real-time listener dengan penanganan error & timeout aman
+    // 4. Firestore real-time listener dengan penanganan error & kuota aman
     let unsubscribe = () => {};
-    try {
-      unsubscribe = onSnapshot(
-        collection(db, 'blogPosts'),
-        (snapshot) => {
-          if (!isMounted) return;
-          const loadedPosts: BlogPost[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data() as any;
-            if (!data.isArchived) loadedPosts.push({ id: docSnap.id, ...data });
-          });
-          const cleaned = cleanBlogs(loadedPosts);
-          const published = cleaned.filter(p => p.published).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          
-          if (published.length > 0) {
+    if (!isQuotaExhausted()) {
+      try {
+        unsubscribe = onSnapshot(
+          collection(db, 'blogPosts'),
+          (snapshot) => {
+            if (!isMounted) return;
+            const loadedPosts: BlogPost[] = [];
+            snapshot.forEach((docSnap) => {
+              loadedPosts.push({ id: docSnap.id, ...docSnap.data() } as BlogPost);
+            });
+            const mergedAll = mergeBlogs(getStoredBlogs(), loadedPosts);
+            const published = mergedAll.filter(p => p.published);
             setPosts(published);
-            saveStoredBlogs(cleaned);
-          } else {
-            // Jika Firestore belum memiliki data, gunakan cache tersimpan
+            saveStoredBlogs(mergedAll);
+            preloadBlogImages(published).then(() => {
+              if (isMounted) setLoading(false);
+            });
+          },
+          (error) => {
+            if (isQuotaError(error)) markQuotaExhausted();
+            logFirestoreError(error, OperationType.LIST, 'blogPosts');
+            if (!isMounted) return;
             const stored = getStoredBlogs().filter(p => p.published);
-            if (stored.length > 0) {
-              setPosts(stored);
-            } else {
-              setPosts([]);
-            }
+            setPosts(stored);
+            preloadBlogImages(stored).then(() => {
+              if (isMounted) setLoading(false);
+            });
           }
-          preloadBlogImages(published.length > 0 ? published : posts).then(() => {
-            if (isMounted) setLoading(false);
-          });
-        },
-        (error) => {
-          console.warn("Notice: Firestore Blog Error (fallback to stored cache):", error);
-          if (!isMounted) return;
-          const stored = getStoredBlogs().filter(p => p.published);
-          setPosts(stored);
-          preloadBlogImages(stored).then(() => {
-            if (isMounted) setLoading(false);
-          });
-        }
-      );
-    } catch (e) {
-      console.warn("Notice: Error listening to Firestore Blog collection:", e);
-      if (isMounted) setLoading(false);
+        );
+      } catch (e) {
+        if (isMounted) setLoading(false);
+      }
+    } else {
+      setLoading(false);
     }
 
     // Safety timeout: loading tidak akan pernah menggantung lebih dari 2000ms

@@ -2,9 +2,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, MapPin, Phone, Check, ArrowRight, MessageSquare, MessageCircle, Send, CheckCircle2, X, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { db } from '../lib/firebase';
-import { doc, onSnapshot, collection, addDoc, query, orderBy } from 'firebase/firestore';
+import { doc, onSnapshot, collection, setDoc } from 'firebase/firestore';
 import { defaultSettings, SiteSettings } from '../data/settings';
-import { getStoredSettings } from '../lib/contentStorage';
+import { getStoredSettings, getDeletedIds, syncDeletedIdsFromServer, mergeSettingsByTimestamp } from '../lib/contentStorage';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
 import { FastInput, FastTextarea } from './FastInput';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -107,15 +107,22 @@ export default function Contact() {
   window.addEventListener('message_deleted', handleMessageDeleted);
 
   // 1. Muat komentar yang sudah ada dari endpoint server disk (/api/messages)
+  syncDeletedIdsFromServer().catch(() => {});
+
+  fetch('/api/settings')
+    .then(r => r.ok ? r.json() : null)
+    .then(serverData => {
+      if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
+        setSettings(prev => mergeSettingsByTimestamp(prev, serverData));
+      }
+    })
+    .catch(() => {});
+
   fetch('/api/messages')
     .then(res => res.ok ? res.json() : [])
     .then(apiData => {
       if (Array.isArray(apiData) && apiData.length > 0) {
-        let localDeleted: Set<string> = new Set();
-        try {
-          const rawDel = localStorage.getItem('deleted_message_ids');
-          if (rawDel) localDeleted = new Set(JSON.parse(rawDel));
-        } catch {}
+        const localDeleted = getDeletedIds('messages');
 
         setMessages(prev => {
           const map = new Map<string, any>();
@@ -159,84 +166,88 @@ export default function Contact() {
       setLoadingMessages(false);
     });
 
-  // 2. Berlangganan data seluruh komentar secara publik untuk sinkronisasi cloud jika tersedia
-  const unsubscribeMessages = onSnapshot(
-    collection(db, 'messages'),
-    (snapshot) => {
-      let localDeletedIds: string[] = [];
-      try {
-        const raw = localStorage.getItem('deleted_message_ids');
-        if (raw) localDeletedIds = JSON.parse(raw);
-      } catch {}
+  let unsubscribeMessages = () => {};
+  let unsubscribe = () => {};
 
-      const currentStored = getStoredSettings();
-      const cloudDeleted = currentStored.deletedMessageIds || [];
-      const deletedSet = new Set([...localDeletedIds, ...cloudDeleted]);
+  if (!isQuotaExhausted()) {
+    // 2. Berlangganan data seluruh komentar secara publik untuk sinkronisasi cloud jika tersedia
+    unsubscribeMessages = onSnapshot(
+      collection(db, 'messages'),
+      (snapshot) => {
+        const currentStored = getStoredSettings();
+        const cloudDeleted = currentStored.deletedMessageIds || [];
+        const deletedSet = new Set([...Array.from(getDeletedIds('messages')), ...cloudDeleted]);
 
-      const msgData: any[] = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (
-          data.isDeleted === true || 
-          data.status === 'deleted' || 
-          deletedSet.has(docSnap.id) ||
-          DUMMY_COMMENT_IDS.has(docSnap.id) ||
-          DUMMY_COMMENT_NAMES.has(String(data.name || '').trim())
-        ) {
-          return;
-        }
-        msgData.push({ id: docSnap.id, ...data });
-      });
-
-      setMessages(prev => {
-        const map = new Map<string, any>();
-        prev.forEach((m: any) => {
-          if (!DUMMY_COMMENT_IDS.has(String(m.id)) && !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())) {
-            map.set(String(m.id), m);
+        const msgData: any[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (
+            data.isDeleted === true || 
+            data.status === 'deleted' || 
+            deletedSet.has(docSnap.id) ||
+            DUMMY_COMMENT_IDS.has(docSnap.id) ||
+            DUMMY_COMMENT_NAMES.has(String(data.name || '').trim())
+          ) {
+            return;
           }
+          msgData.push({ id: docSnap.id, ...data });
         });
-        msgData.forEach((m: any) => map.set(String(m.id), m));
-        const merged = Array.from(map.values()).filter(m => !deletedSet.has(String(m.id)));
-        merged.sort((a, b) => {
-          const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
-          const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
-          return timeB - timeA;
+
+        setMessages(prev => {
+          const map = new Map<string, any>();
+          prev.forEach((m: any) => {
+            if (!DUMMY_COMMENT_IDS.has(String(m.id)) && !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())) {
+              map.set(String(m.id), m);
+            }
+          });
+          msgData.forEach((m: any) => map.set(String(m.id), m));
+          const merged = Array.from(map.values()).filter(m => !deletedSet.has(String(m.id)));
+          merged.sort((a, b) => {
+            const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+            const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+            return timeB - timeA;
+          });
+          try {
+            localStorage.setItem('user_messages', JSON.stringify(merged));
+          } catch {}
+          return merged;
         });
-        try {
-          localStorage.setItem('user_messages', JSON.stringify(merged));
-        } catch {}
-        return merged;
-      });
-      setLoadingMessages(false);
-    },
-    (err) => {
-      console.warn("Messages public subscription notice (retaining disk/cached messages):", err);
-      setLoadingMessages(false);
-    }
-  );
+        setLoadingMessages(false);
+      },
+      (err) => {
+        if (isQuotaError(err)) markQuotaExhausted();
+        console.warn("Messages public subscription notice (retaining disk/cached messages):", err);
+        setLoadingMessages(false);
+      }
+    );
+
+    const docRef = doc(db, 'settings', 'global');
+    unsubscribe = onSnapshot(
+     docRef,
+     (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as Partial<SiteSettings>;
+        setSettings(prev => mergeSettingsByTimestamp(prev, data));
+        if (Array.isArray(data.deletedMessageIds) && data.deletedMessageIds.length > 0) {
+          const delSet = new Set(data.deletedMessageIds);
+          setMessages(prev => prev.filter(m => !delSet.has(m.id)));
+        }
+      }
+     },
+     (err) => {
+      if (isQuotaError(err)) markQuotaExhausted();
+      console.warn("Contact settings error (using stored):", err);
+      setSettings(getStoredSettings());
+     }
+    );
+  } else {
+    setLoadingMessages(false);
+  }
 
   const commentsTimeout = setTimeout(() => {
     setLoadingMessages(false);
   }, 2000);
 
-  const docRef = doc(db, 'settings', 'global');
-  const unsubscribe = onSnapshot(
-   docRef,
-   (docSnap) => {
-    if (docSnap.exists()) {
-      const data = docSnap.data() as Partial<SiteSettings>;
-      setSettings({ ...defaultSettings, ...data });
-      if (Array.isArray(data.deletedMessageIds) && data.deletedMessageIds.length > 0) {
-        const delSet = new Set(data.deletedMessageIds);
-        setMessages(prev => prev.filter(m => !delSet.has(m.id)));
-      }
-    }
-   },
-   (err) => {
-    console.warn("Contact settings error (using stored):", err);
-    setSettings(getStoredSettings());
-   }
-  );
   return () => {
     clearTimeout(commentsTimeout);
     unsubscribe();
@@ -275,17 +286,17 @@ export default function Contact() {
   try {
     fetch('/api/messages', {
       method: 'POST',
+      keepalive: true,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newCommentObj)
     }).catch(() => {});
   } catch {}
 
-  // 4. Sinkronkan ke Cloud Firestore di latar belakang
+  // 4. Sinkronkan ke Cloud Firestore di latar belakang dengan ID yang sama
   if (!isQuotaExhausted()) {
-    addDoc(collection(db, 'messages'), {
-      ...formData,
-      dateAdded: new Date()
-    }).catch((error: any) => {
+    setDoc(doc(db, 'messages', newCommentObj.id), {
+      ...newCommentObj
+    }, { merge: true }).catch((error: any) => {
       if (isQuotaError(error)) {
         markQuotaExhausted();
       }

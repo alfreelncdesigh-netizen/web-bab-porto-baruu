@@ -4,6 +4,8 @@ import { collection, onSnapshot, deleteDoc, doc, setDoc, getDoc } from 'firebase
 import { Trash2, Mail, Calendar, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import ConfirmModal from './ConfirmModal';
+import { getDeletedIds, markDeletedIds, syncDeletedIdsFromServer } from '../lib/contentStorage';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 
 export default function MessagesAdmin() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -13,25 +15,30 @@ export default function MessagesAdmin() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    // 1. Muat pesan dari disk server (/api/messages)
-    fetch('/api/messages')
-      .then(res => res.ok ? res.json() : [])
-      .then(apiData => {
-        if (Array.isArray(apiData) && apiData.length > 0) {
-          let localDeleted: Set<string> = new Set();
-          try {
-            const raw = localStorage.getItem('deleted_message_ids');
-            if (raw) localDeleted = new Set(JSON.parse(raw));
-          } catch {}
+    const DUMMY_COMMENT_NAMES = new Set(['Rahmat Hidayat', 'Siti Nurhaliza', 'Dimas Pratama', 'Putri Ayu Lestari']);
+    const DUMMY_COMMENT_IDS = new Set(['msg_1730000101', 'msg_1730000102', 'msg_1730000103', 'msg_1730000104']);
 
-          const DUMMY_COMMENT_NAMES = new Set(['Rahmat Hidayat', 'Siti Nurhaliza', 'Dimas Pratama', 'Putri Ayu Lestari']);
-          const DUMMY_COMMENT_IDS = new Set(['msg_1730000101', 'msg_1730000102', 'msg_1730000103', 'msg_1730000104']);
+    const loadApiMessages = async () => {
+      await syncDeletedIdsFromServer().catch(() => {});
+      const localDeleted = getDeletedIds('messages');
 
+      try {
+        const res = await fetch('/api/messages');
+        const apiData = res.ok ? await res.json() : [];
+        let localCache: any[] = [];
+        try {
+          const raw = localStorage.getItem('user_messages');
+          if (raw) localCache = JSON.parse(raw);
+        } catch {}
+
+        const combined = [...(Array.isArray(apiData) ? apiData : []), ...(Array.isArray(localCache) ? localCache : [])];
+        if (combined.length > 0) {
           setMessages(prev => {
             const map = new Map<string, any>();
-            apiData.forEach((m: any) => {
+            combined.forEach((m: any) => {
               if (
-                !localDeleted.has(String(m.id)) && 
+                m &&
+                !localDeleted.has(String(m.id)) &&
                 m.isDeleted !== true &&
                 !DUMMY_COMMENT_IDS.has(String(m.id)) &&
                 !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
@@ -41,7 +48,8 @@ export default function MessagesAdmin() {
             });
             prev.forEach((m: any) => {
               if (
-                !localDeleted.has(String(m.id)) && 
+                m &&
+                !localDeleted.has(String(m.id)) &&
                 m.isDeleted !== true &&
                 !DUMMY_COMMENT_IDS.has(String(m.id)) &&
                 !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
@@ -57,34 +65,29 @@ export default function MessagesAdmin() {
             });
             return list;
           });
-          setLoading(false);
-        } else {
-          setLoading(false);
         }
-      })
-      .catch(() => {
-        setLoading(false);
-      });
+      } catch {}
+      setLoading(false);
+    };
 
-    // 2. Berlangganan pesan dari Firestore jika tersedia
+    loadApiMessages();
+
+    if (isQuotaExhausted()) {
+      return;
+    }
+
+    // 2. Berlangganan pesan dari Firestore jika kuota tersedia
     const unsubscribe = onSnapshot(
       collection(db, 'messages'),
       (snapshot) => {
-        let localDeleted: Set<string> = new Set();
-        try {
-          const raw = localStorage.getItem('deleted_message_ids');
-          if (raw) localDeleted = new Set(JSON.parse(raw));
-        } catch {}
-
-        const DUMMY_COMMENT_NAMES = new Set(['Rahmat Hidayat', 'Siti Nurhaliza', 'Dimas Pratama', 'Putri Ayu Lestari']);
-        const DUMMY_COMMENT_IDS = new Set(['msg_1730000101', 'msg_1730000102', 'msg_1730000103', 'msg_1730000104']);
+        const localDeleted = getDeletedIds('messages');
 
         const msgData: any[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
           if (
-            data.isDeleted === true || 
-            data.status === 'deleted' || 
+            data.isDeleted === true ||
+            data.status === 'deleted' ||
             localDeleted.has(docSnap.id) ||
             DUMMY_COMMENT_IDS.has(docSnap.id) ||
             DUMMY_COMMENT_NAMES.has(String(data.name || '').trim())
@@ -112,6 +115,7 @@ export default function MessagesAdmin() {
         setLoading(false);
       },
       (err) => {
+        if (isQuotaError(err)) markQuotaExhausted();
         console.warn("Messages error:", err);
         setLoading(false);
       }
@@ -126,67 +130,67 @@ export default function MessagesAdmin() {
   const handleConfirmDelete = async () => {
     if (!messageToDelete) return;
     setIsDeleting(true);
-    const id = messageToDelete.id;
+    const id = String(messageToDelete.id);
 
-    // 1. Optimistic UI update
-    setMessages(prev => prev.filter(m => String(m.id) !== String(id)));
+    // 1. Optimistic UI update & update local cache
+    setMessages(prev => {
+      const next = prev.filter(m => String(m.id) !== id);
+      try { localStorage.setItem('user_messages', JSON.stringify(next)); } catch {}
+      return next;
+    });
     setToast("Pesan berhasil dihapus");
     setTimeout(() => setToast(''), 3000);
     setMessageToDelete(null);
 
-    // 2. Simpan ke blacklist localStorage secara instan
-    try {
-      const raw = localStorage.getItem('deleted_message_ids');
-      const list = raw ? JSON.parse(raw) : [];
-      if (!list.includes(String(id))) {
-        list.push(String(id));
-        localStorage.setItem('deleted_message_ids', JSON.stringify(list));
-      }
-    } catch {}
+    // 2. Simpan ke blacklist permanen (localStorage + server)
+    await markDeletedIds('messages', [id]);
 
     // 3. Hapus dari server disk (/api/messages/:id)
     try {
-      fetch(`/api/messages/${encodeURIComponent(String(id))}`, { method: 'DELETE' }).catch(() => {});
+      await fetch(`/api/messages/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }).catch(() => {});
     } catch {}
 
     // 4. Siarkan event ke seluruh komponen aktif (seperti Contact.tsx di halaman publik)
     window.dispatchEvent(new CustomEvent('message_deleted', { detail: { id } }));
     window.dispatchEvent(new CustomEvent('messages_updated'));
 
-    try {
-      // 5. Tandai dokumen sebagai isDeleted di Firestore (safety net instan)
-      await setDoc(doc(db, 'messages', String(id)), { 
-        isDeleted: true, 
-        status: 'deleted',
-        deletedAt: new Date().toISOString(),
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
-      }, { merge: true }).catch(() => {});
-
-      // 6. Hapus permanen dokumen dari database Firestore
-      await deleteDoc(doc(db, 'messages', String(id))).catch(() => {});
-
-      // 7. Catat ID pesan terhapus di settings/global agar tersimpan permanen di cloud
+    if (!isQuotaExhausted()) {
       try {
-        const globalSnap = await getDoc(doc(db, 'settings', 'global'));
-        const existingDeleted: string[] = globalSnap.exists() && Array.isArray(globalSnap.data().deletedMessageIds) 
-          ? globalSnap.data().deletedMessageIds 
-          : [];
-        if (!existingDeleted.includes(String(id))) {
-          await setDoc(doc(db, 'settings', 'global'), {
-            deletedMessageIds: [...existingDeleted, String(id)],
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true
-          }, { merge: true });
+        // 5. Tandai dokumen sebagai isDeleted di Firestore
+        await setDoc(doc(db, 'messages', id), {
+          isDeleted: true,
+          status: 'deleted',
+          deletedAt: new Date().toISOString(),
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true
+        }, { merge: true }).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); });
+
+        // 6. Hapus permanen dokumen dari database Firestore
+        await deleteDoc(doc(db, 'messages', id)).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); });
+
+        // 7. Catat ID pesan terhapus di settings/global agar tersimpan permanen di cloud
+        try {
+          const globalSnap = await getDoc(doc(db, 'settings', 'global'));
+          const existingDeleted: string[] = globalSnap.exists() && Array.isArray(globalSnap.data().deletedMessageIds)
+            ? globalSnap.data().deletedMessageIds
+            : [];
+          if (!existingDeleted.includes(id)) {
+            await setDoc(doc(db, 'settings', 'global'), {
+              deletedMessageIds: [...existingDeleted, id],
+              _adminAuth: 'alfreelnc_admin_auth_verified',
+              updatedByAdmin: true
+            }, { merge: true });
+          }
+        } catch (cloudErr) {
+          if (isQuotaError(cloudErr)) markQuotaExhausted();
+          console.warn("Notice: sync deletedMessageIds cloud:", cloudErr);
         }
-      } catch (cloudErr) {
-        console.warn("Notice: sync deletedMessageIds cloud:", cloudErr);
+      } catch (err) {
+        if (isQuotaError(err)) markQuotaExhausted();
+        console.warn("Delete message error:", err);
       }
-    } catch (err) {
-      console.warn("Delete message error:", err);
-    } finally {
-      setIsDeleting(false);
     }
+    setIsDeleting(false);
   };
 
   const formatDate = (timestamp: any) => {

@@ -43,11 +43,16 @@ import {
   getStoredProjects, 
   saveStoredProjects, 
   cleanProjects,
+  mergeProjects,
   getStoredBlogs,
   saveStoredBlogs,
   getStoredExperiences,
-  saveStoredExperiences
+  saveStoredExperiences,
+  markDeletedIds,
+  unmarkDeletedIds,
+  syncDeletedIdsFromServer
 } from '../lib/contentStorage';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 import { resolveImageUrl } from '../lib/imageResolver';
 import ConfirmModal from './ConfirmModal';
 
@@ -62,6 +67,61 @@ interface ArchivedItem {
   type: 'projects' | 'blogPosts' | 'experiences';
   image?: string;
   category?: string;
+}
+
+const FOLDERS_CACHE_KEY = 'archive_folders_cache';
+const ARCHIVED_ITEMS_CACHE_KEY = 'archived_items_cache';
+
+function readCachedFolders(): ArchiveFolder[] {
+  try {
+    const raw = localStorage.getItem(FOLDERS_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+function writeCachedFolders(folders: ArchiveFolder[]): void {
+  try {
+    localStorage.setItem(FOLDERS_CACHE_KEY, JSON.stringify(folders));
+  } catch {}
+}
+
+function readCachedArchivedItems(): any[] {
+  try {
+    const raw = localStorage.getItem(ARCHIVED_ITEMS_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+function writeCachedArchivedItems(items: any[]): void {
+  try {
+    localStorage.setItem(ARCHIVED_ITEMS_CACHE_KEY, JSON.stringify(items.slice(0, 200)));
+  } catch {}
+}
+
+function upsertCachedArchivedItems(entries: any[]): void {
+  const existing = readCachedArchivedItems();
+  const map = new Map<string, any>();
+  existing.forEach(item => {
+    if (item?.id && item?.type) map.set(`${item.type}:${item.id}`, item);
+  });
+  entries.forEach(item => {
+    if (item?.id && item?.type) map.set(`${item.type}:${item.id}`, item);
+  });
+  writeCachedArchivedItems(Array.from(map.values()));
+}
+
+function removeCachedArchivedItems(keys: { type: string; id: string }[]): void {
+  const dropSet = new Set(keys.map(k => `${k.type}:${k.id}`));
+  const filtered = readCachedArchivedItems().filter(item => !dropSet.has(`${item.type}:${item.id}`));
+  writeCachedArchivedItems(filtered);
 }
 
 export default function ArchiveAdmin() {
@@ -124,17 +184,35 @@ export default function ArchiveAdmin() {
   };
 
   useEffect(() => {
+    syncDeletedIdsFromServer().catch(() => {});
     loadAvailableProjects();
+
+    const cachedFolders = readCachedFolders();
+    if (cachedFolders.length > 0) {
+      setFolders(cachedFolders);
+      setLoading(false);
+    }
+
+    if (isQuotaExhausted()) {
+      setLoading(false);
+      return;
+    }
 
     const unsubFolders = onSnapshot(
       collection(db, 'archiveFolders'),
       (snap) => {
-        const f: ArchiveFolder[] = [];
-        snap.forEach(d => f.push({ id: d.id, name: d.data().name }));
-        setFolders(f);
+        const cloud: ArchiveFolder[] = [];
+        snap.forEach(d => cloud.push({ id: d.id, name: d.data().name }));
+        const map = new Map<string, ArchiveFolder>();
+        readCachedFolders().forEach(f => map.set(f.id, f));
+        cloud.forEach(f => map.set(f.id, f));
+        const merged = Array.from(map.values());
+        setFolders(merged);
+        writeCachedFolders(merged);
         setLoading(false);
       },
       (err) => {
+        if (isQuotaError(err)) markQuotaExhausted();
         console.warn("Failed to listen to archive folders:", err);
         loadFolders();
       }
@@ -154,13 +232,26 @@ export default function ArchiveAdmin() {
 
   // Load list of folders
   const loadFolders = async () => {
-    setLoading(true);
+    const cached = readCachedFolders();
+    if (cached.length > 0) setFolders(cached);
+
+    if (isQuotaExhausted()) {
+      setLoading(false);
+      return;
+    }
+    setLoading(cached.length === 0);
     try {
       const snap = await getDocs(collection(db, 'archiveFolders'));
-      const f: ArchiveFolder[] = [];
-      snap.forEach(d => f.push({ id: d.id, name: d.data().name }));
-      setFolders(f);
+      const cloud: ArchiveFolder[] = [];
+      snap.forEach(d => cloud.push({ id: d.id, name: d.data().name }));
+      const map = new Map<string, ArchiveFolder>();
+      readCachedFolders().forEach(f => map.set(f.id, f));
+      cloud.forEach(f => map.set(f.id, f));
+      const merged = Array.from(map.values());
+      setFolders(merged);
+      writeCachedFolders(merged);
     } catch (e) {
+      if (isQuotaError(e)) markQuotaExhausted();
       console.warn("Failed to load archive folders:", e);
     } finally {
       setLoading(false);
@@ -170,72 +261,113 @@ export default function ArchiveAdmin() {
   // Load available unarchived projects
   const loadAvailableProjects = async () => {
     try {
-      // Prioritize local storage for instant access
-      const stored = getStoredProjects();
-      setAvailableProjects(cleanProjects(stored));
+      const localProjs = getStoredProjects();
+      setAvailableProjects(cleanProjects(localProjs));
 
-      // Check Firestore to get up-to-date projects
-      const snap = await getDocs(collection(db, 'projects'));
-      if (!snap.empty) {
-        const projs: Project[] = [];
-        snap.forEach((docSnap) => {
-          const data = docSnap.data() as any;
-          if (!data.isArchived) {
-            projs.push({ id: docSnap.id, ...data } as Project);
+      let serverProjs: Project[] = [];
+      try {
+        const res = await fetch('/api/projects');
+        if (res.ok) {
+          const parsed = await res.json();
+          if (Array.isArray(parsed)) serverProjs = parsed;
+        }
+      } catch {}
+
+      let cloudProjs: Project[] = [];
+      if (!isQuotaExhausted()) {
+        try {
+          const snap = await getDocs(collection(db, 'projects'));
+          if (!snap.empty) {
+            snap.forEach((docSnap) => {
+              const data = docSnap.data() as any;
+              if (!data.isArchived) {
+                cloudProjs.push({ id: docSnap.id, ...data } as Project);
+              }
+            });
           }
-        });
-        const cleaned = cleanProjects(projs);
-        if (cleaned.length > 0) {
-          setAvailableProjects(cleaned);
+        } catch (err) {
+          if (isQuotaError(err)) markQuotaExhausted();
         }
       }
+
+      const merged = mergeProjects(localProjs, serverProjs, cloudProjs);
+      setAvailableProjects(merged);
     } catch (err) {
+      if (isQuotaError(err)) markQuotaExhausted();
       console.warn("Failed to load available projects:", err);
     }
   };
 
   // Load items inside a folder
   const loadItems = async (folderId: string) => {
-    setLoading(true);
+    const cachedInFolder = readCachedArchivedItems()
+      .filter(entry => entry.archiveFolderId === folderId)
+      .map((entry): ArchivedItem => ({
+        id: String(entry.id),
+        title: entry.title || `${entry.header || entry.role || ''} at ${entry.company || ''}`.trim() || 'Tanpa Judul',
+        type: entry.type,
+        image: entry.image || (Array.isArray(entry.images) ? entry.images[0] : undefined),
+        category: entry.category
+      }));
+
+    if (cachedInFolder.length > 0) {
+      setItems(cachedInFolder);
+    }
+
+    if (isQuotaExhausted()) {
+      setLoading(false);
+      return;
+    }
+
+    setLoading(cachedInFolder.length === 0);
     try {
-      const itemsList: ArchivedItem[] = [];
-      
+      const map = new Map<string, ArchivedItem>();
+      cachedInFolder.forEach(item => map.set(`${item.type}:${item.id}`, item));
+      const fullRecordsToCache: any[] = [];
+
       const pSnap = await getDocs(query(collection(db, 'projects'), where('archiveFolderId', '==', folderId)));
       pSnap.forEach(d => {
         const data = d.data();
-        itemsList.push({ 
-          id: d.id, 
-          title: data.title || 'Tanpa Judul', 
-          type: 'projects', 
+        map.set(`projects:${d.id}`, {
+          id: d.id,
+          title: data.title || 'Tanpa Judul',
+          type: 'projects',
           image: data.image,
           category: data.category
         });
+        fullRecordsToCache.push({ ...data, id: d.id, type: 'projects', isArchived: true, archiveFolderId: folderId });
       });
-      
+
       const bSnap = await getDocs(query(collection(db, 'blogPosts'), where('archiveFolderId', '==', folderId)));
       bSnap.forEach(d => {
         const data = d.data();
-        itemsList.push({ 
-          id: d.id, 
-          title: data.title || 'Tanpa Judul', 
-          type: 'blogPosts', 
-          image: data.image 
+        map.set(`blogPosts:${d.id}`, {
+          id: d.id,
+          title: data.title || 'Tanpa Judul',
+          type: 'blogPosts',
+          image: data.image
         });
+        fullRecordsToCache.push({ ...data, id: d.id, type: 'blogPosts', isArchived: true, archiveFolderId: folderId });
       });
-      
+
       const eSnap = await getDocs(query(collection(db, 'experiences'), where('archiveFolderId', '==', folderId)));
       eSnap.forEach(d => {
         const data = d.data();
-        itemsList.push({ 
-          id: d.id, 
-          title: `${data.header || data.role || ''} at ${data.company || ''}`, 
-          type: 'experiences', 
-          image: (data.images && data.images.length > 0) ? data.images[0] : undefined 
+        map.set(`experiences:${d.id}`, {
+          id: d.id,
+          title: `${data.header || data.role || ''} at ${data.company || ''}`,
+          type: 'experiences',
+          image: (data.images && data.images.length > 0) ? data.images[0] : undefined
         });
+        fullRecordsToCache.push({ ...data, id: d.id, type: 'experiences', isArchived: true, archiveFolderId: folderId });
       });
-      
-      setItems(itemsList);
+
+      if (fullRecordsToCache.length > 0) {
+        upsertCachedArchivedItems(fullRecordsToCache);
+      }
+      setItems(Array.from(map.values()));
     } catch (e) {
+      if (isQuotaError(e)) markQuotaExhausted();
       console.warn("Error loading archived items:", e);
     } finally {
       setLoading(false);
@@ -247,45 +379,76 @@ export default function ArchiveAdmin() {
     if (e && 'preventDefault' in e) e.preventDefault();
     if (!newFolderName.trim() || isProcessing) return;
     setIsProcessing(true);
+    const trimmedName = newFolderName.trim();
+    const nowIso = new Date().toISOString();
 
     try {
-      // 1. Create Archive Folder in Firestore
-      const folderRef = await addDoc(collection(db, 'archiveFolders'), {
-        name: newFolderName.trim(),
-        createdAt: serverTimestamp()
-      });
-      const newFolder: ArchiveFolder = { id: folderRef.id, name: newFolderName.trim() };
+      // 1. Create Archive Folder in Firestore or local cache
+      let folderId = `folder_${Date.now()}`;
+      if (!isQuotaExhausted()) {
+        try {
+          const folderRef = await addDoc(collection(db, 'archiveFolders'), {
+            name: trimmedName,
+            createdAt: serverTimestamp()
+          });
+          folderId = folderRef.id;
+        } catch (err) {
+          if (isQuotaError(err)) markQuotaExhausted();
+        }
+      }
+      const newFolder: ArchiveFolder = { id: folderId, name: trimmedName };
 
       // 2. If user selected projects to include in this archive
       if (selectedProjectIdsForNewArchive.length > 0) {
-        const batch = writeBatch(db);
-        for (const projId of selectedProjectIdsForNewArchive) {
-          const projObj = availableProjects.find(p => p.id.toString() === projId);
-          batch.set(doc(db, 'projects', projId), {
-            ...(projObj ? {
-              title: projObj.title || '',
-              category: projObj.category || '',
-              image: projObj.image || '',
-              description: projObj.description || '',
-              date: projObj.date || ''
-            } : {}),
+        const selectedObjects = selectedProjectIdsForNewArchive
+          .map(projId => availableProjects.find(p => p.id.toString() === projId))
+          .filter(Boolean) as Project[];
+
+        upsertCachedArchivedItems(
+          selectedObjects.map(projObj => ({
+            ...projObj,
+            id: projObj.id.toString(),
+            type: 'projects',
             isArchived: true,
-            archiveFolderId: folderRef.id,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
+            archiveFolderId: folderId,
+            updatedAt: nowIso
+          }))
+        );
+
+        if (!isQuotaExhausted()) {
+          try {
+            const batch = writeBatch(db);
+            for (const projId of selectedProjectIdsForNewArchive) {
+              const projObj = availableProjects.find(p => p.id.toString() === projId);
+              batch.set(doc(db, 'projects', projId), {
+                ...(projObj || {}),
+                isArchived: true,
+                archiveFolderId: folderId,
+                updatedAt: nowIso,
+                _adminAuth: 'alfreelnc_admin_auth_verified',
+                updatedByAdmin: true
+              }, { merge: true });
+            }
+            await batch.commit();
+          } catch (err) {
+            if (isQuotaError(err)) markQuotaExhausted();
+          }
         }
-        await batch.commit();
 
         // 3. Immediately remove archived works from public website & stored projects
         const currentProjects = getStoredProjects();
         const remaining = currentProjects.filter(p => !selectedProjectIdsForNewArchive.includes(p.id.toString()));
-        saveStoredProjects(remaining);
+        await saveStoredProjects(remaining);
         setAvailableProjects(remaining);
       }
 
-      setFolders(prev => prev.some(f => f.id === newFolder.id) ? prev : [...prev, newFolder]);
+      setFolders(prev => {
+        const next = prev.some(f => f.id === newFolder.id) ? prev : [...prev, newFolder];
+        writeCachedFolders(next);
+        return next;
+      });
       showToast(`Arsip "${newFolder.name}" berhasil dibuat dengan ${selectedProjectIdsForNewArchive.length} karya!`);
-      
+
       // Reset form & close modal
       setNewFolderName('');
       setSelectedProjectIdsForNewArchive([]);
@@ -294,6 +457,7 @@ export default function ArchiveAdmin() {
       // Automatically open the new folder
       setSelectedFolder(newFolder);
     } catch (err: any) {
+      if (isQuotaError(err)) markQuotaExhausted();
       console.error("Failed to create archive:", err);
       showToast(err?.message || "Gagal membuat arsip. Silakan coba lagi.", "error");
     } finally {
@@ -305,31 +469,46 @@ export default function ArchiveAdmin() {
   const handleAddProjectsToCurrentFolder = async () => {
     if (!selectedFolder || selectedProjectIdsForExisting.length === 0 || isProcessing) return;
     setIsProcessing(true);
+    const nowIso = new Date().toISOString();
 
     try {
-      const batch = writeBatch(db);
-      for (const projId of selectedProjectIdsForExisting) {
-        const projObj = availableProjects.find(p => p.id.toString() === projId);
-        batch.set(doc(db, 'projects', projId), {
-          ...(projObj ? {
-            title: projObj.title || '',
-            category: projObj.category || '',
-            image: projObj.image || '',
-            description: projObj.description || '',
-            date: projObj.date || ''
-          } : {}),
-          isArchived: true,
-          archiveFolderId: selectedFolder.id,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      }
-      await batch.commit();
-
-      // Immediately update local stored projects so they disappear from public web
       const currentProjects = getStoredProjects();
       const newlyArchived = currentProjects.filter(p => selectedProjectIdsForExisting.includes(p.id.toString()));
+
+      upsertCachedArchivedItems(
+        newlyArchived.map(projObj => ({
+          ...projObj,
+          id: projObj.id.toString(),
+          type: 'projects',
+          isArchived: true,
+          archiveFolderId: selectedFolder.id,
+          updatedAt: nowIso
+        }))
+      );
+
+      if (!isQuotaExhausted()) {
+        try {
+          const batch = writeBatch(db);
+          for (const projId of selectedProjectIdsForExisting) {
+            const projObj = availableProjects.find(p => p.id.toString() === projId);
+            batch.set(doc(db, 'projects', projId), {
+              ...(projObj || {}),
+              isArchived: true,
+              archiveFolderId: selectedFolder.id,
+              updatedAt: nowIso,
+              _adminAuth: 'alfreelnc_admin_auth_verified',
+              updatedByAdmin: true
+            }, { merge: true });
+          }
+          await batch.commit();
+        } catch (err) {
+          if (isQuotaError(err)) markQuotaExhausted();
+        }
+      }
+
+      // Immediately update local stored projects so they disappear from public web
       const remaining = currentProjects.filter(p => !selectedProjectIdsForExisting.includes(p.id.toString()));
-      saveStoredProjects(remaining);
+      await saveStoredProjects(remaining);
       setAvailableProjects(remaining);
 
       // Append new items to current folder view
@@ -340,12 +519,16 @@ export default function ArchiveAdmin() {
         image: p.image,
         category: p.category
       }));
-      setItems(prev => [...prev, ...newArchivedItems]);
+      setItems(prev => {
+        const existingKeys = new Set(prev.map(i => `${i.type}:${i.id}`));
+        return [...prev, ...newArchivedItems.filter(i => !existingKeys.has(`${i.type}:${i.id}`))];
+      });
 
       showToast(`${selectedProjectIdsForExisting.length} karya berhasil dimasukkan ke arsip "${selectedFolder.name}"!`);
       setSelectedProjectIdsForExisting([]);
       setIsAddItemsModalOpen(false);
     } catch (err: any) {
+      if (isQuotaError(err)) markQuotaExhausted();
       console.error("Failed to add projects to folder:", err);
       showToast("Gagal memasukkan karya ke arsip.", "error");
     } finally {
@@ -356,12 +539,23 @@ export default function ArchiveAdmin() {
   const handleRenameFolder = async (folderId: string, e: React.MouseEvent | React.FormEvent) => {
     e.stopPropagation();
     if ('preventDefault' in e) e.preventDefault();
-    if (!editFolderName.trim()) return;
+    const trimmed = editFolderName.trim();
+    if (!trimmed) return;
     try {
-      await updateDoc(doc(db, 'archiveFolders', folderId), { name: editFolderName.trim() });
-      setFolders(folders.map(f => f.id === folderId ? { ...f, name: editFolderName.trim() } : f));
+      if (!isQuotaExhausted()) {
+        try {
+          await updateDoc(doc(db, 'archiveFolders', folderId), { name: trimmed });
+        } catch (err) {
+          if (isQuotaError(err)) markQuotaExhausted();
+        }
+      }
+      setFolders(prev => {
+        const next = prev.map(f => f.id === folderId ? { ...f, name: trimmed } : f);
+        writeCachedFolders(next);
+        return next;
+      });
       if (selectedFolder?.id === folderId) {
-        setSelectedFolder({ ...selectedFolder, name: editFolderName.trim() });
+        setSelectedFolder({ ...selectedFolder, name: trimmed });
       }
       setEditingFolderId(null);
       showToast("Nama folder diperbarui.");
@@ -390,67 +584,135 @@ export default function ArchiveAdmin() {
 
   const executeDeleteFolder = async (folderId: string, mode: 'restore_items' | 'delete_all') => {
     setIsProcessing(true);
+    const nowIso = new Date().toISOString();
     try {
-      const batch = writeBatch(db);
-      
-      const pSnap = await getDocs(query(collection(db, 'projects'), where('archiveFolderId', '==', folderId)));
-      const restoredProjects: Project[] = [];
+      const cachedInFolder = readCachedArchivedItems().filter(entry => entry.archiveFolderId === folderId);
+      const restoredProjectsMap = new Map<string, Project>();
+      const restoredBlogsMap = new Map<string, any>();
+      const restoredExpsMap = new Map<string, any>();
       const deletedProjectIds = new Set<string>();
+      const deletedBlogIds = new Set<string>();
+      const deletedExpIds = new Set<string>();
+      const removeKeys: { type: string; id: string }[] = [];
 
-      pSnap.forEach(d => {
+      cachedInFolder.forEach(entry => {
+        const id = String(entry.id);
+        removeKeys.push({ type: entry.type, id });
         if (mode === 'restore_items') {
-          batch.set(doc(db, 'projects', d.id), { isArchived: false, archiveFolderId: null }, { merge: true });
-          restoredProjects.push({ id: d.id, ...d.data(), isArchived: false, archiveFolderId: null } as unknown as Project);
+          const restoredObj = { ...entry, id, isArchived: false, archiveFolderId: null, updatedAt: nowIso };
+          delete restoredObj.type;
+          if (entry.type === 'projects') restoredProjectsMap.set(id, restoredObj);
+          else if (entry.type === 'blogPosts') restoredBlogsMap.set(id, restoredObj);
+          else if (entry.type === 'experiences') restoredExpsMap.set(id, restoredObj);
         } else {
-          batch.delete(doc(db, 'projects', d.id));
-          deletedProjectIds.add(d.id);
-        }
-      });
-      
-      const bSnap = await getDocs(query(collection(db, 'blogPosts'), where('archiveFolderId', '==', folderId)));
-      bSnap.forEach(d => {
-        if (mode === 'restore_items') {
-          batch.set(doc(db, 'blogPosts', d.id), { isArchived: false, archiveFolderId: null }, { merge: true });
-        } else {
-          batch.delete(doc(db, 'blogPosts', d.id));
-        }
-      });
-      
-      const eSnap = await getDocs(query(collection(db, 'experiences'), where('archiveFolderId', '==', folderId)));
-      eSnap.forEach(d => {
-        if (mode === 'restore_items') {
-          batch.set(doc(db, 'experiences', d.id), { isArchived: false, archiveFolderId: null }, { merge: true });
-        } else {
-          batch.delete(doc(db, 'experiences', d.id));
+          if (entry.type === 'projects') deletedProjectIds.add(id);
+          else if (entry.type === 'blogPosts') deletedBlogIds.add(id);
+          else if (entry.type === 'experiences') deletedExpIds.add(id);
         }
       });
 
-      batch.delete(doc(db, 'archiveFolders', folderId));
-      await batch.commit();
-      
+      if (!isQuotaExhausted()) {
+        try {
+          const batch = writeBatch(db);
+
+          const pSnap = await getDocs(query(collection(db, 'projects'), where('archiveFolderId', '==', folderId)));
+          pSnap.forEach(d => {
+            removeKeys.push({ type: 'projects', id: d.id });
+            if (mode === 'restore_items') {
+              batch.set(doc(db, 'projects', d.id), { isArchived: false, archiveFolderId: null, updatedAt: nowIso }, { merge: true });
+              restoredProjectsMap.set(d.id, { id: d.id, ...d.data(), isArchived: false, archiveFolderId: null, updatedAt: nowIso } as unknown as Project);
+            } else {
+              batch.delete(doc(db, 'projects', d.id));
+              deletedProjectIds.add(d.id);
+            }
+          });
+
+          const bSnap = await getDocs(query(collection(db, 'blogPosts'), where('archiveFolderId', '==', folderId)));
+          bSnap.forEach(d => {
+            removeKeys.push({ type: 'blogPosts', id: d.id });
+            if (mode === 'restore_items') {
+              batch.set(doc(db, 'blogPosts', d.id), { isArchived: false, archiveFolderId: null, updatedAt: nowIso }, { merge: true });
+              restoredBlogsMap.set(d.id, { id: d.id, ...d.data(), isArchived: false, archiveFolderId: null, updatedAt: nowIso });
+            } else {
+              batch.delete(doc(db, 'blogPosts', d.id));
+              deletedBlogIds.add(d.id);
+            }
+          });
+
+          const eSnap = await getDocs(query(collection(db, 'experiences'), where('archiveFolderId', '==', folderId)));
+          eSnap.forEach(d => {
+            removeKeys.push({ type: 'experiences', id: d.id });
+            if (mode === 'restore_items') {
+              batch.set(doc(db, 'experiences', d.id), { isArchived: false, archiveFolderId: null, updatedAt: nowIso }, { merge: true });
+              restoredExpsMap.set(d.id, { id: d.id, ...d.data(), isArchived: false, archiveFolderId: null, updatedAt: nowIso });
+            } else {
+              batch.delete(doc(db, 'experiences', d.id));
+              deletedExpIds.add(d.id);
+            }
+          });
+
+          batch.delete(doc(db, 'archiveFolders', folderId));
+          await batch.commit();
+        } catch (err) {
+          if (isQuotaError(err)) markQuotaExhausted();
+        }
+      }
+
+      removeCachedArchivedItems(removeKeys);
+
       if (mode === 'restore_items') {
+        const restoredProjects = Array.from(restoredProjectsMap.values());
         if (restoredProjects.length > 0) {
+          await unmarkDeletedIds('projects', restoredProjects.map(p => p.id));
           const currentProjects = getStoredProjects();
-          const existingIds = new Set(currentProjects.map(p => p.id.toString()));
-          const merged = [...restoredProjects.filter(p => !existingIds.has(p.id.toString())), ...currentProjects];
+          const merged = mergeProjects(restoredProjects, currentProjects);
           await saveStoredProjects(merged);
           setAvailableProjects(merged);
+        }
+        const restoredBlogs = Array.from(restoredBlogsMap.values());
+        if (restoredBlogs.length > 0) {
+          await unmarkDeletedIds('blogPosts', restoredBlogs.map(b => b.id));
+          const currentBlogs = getStoredBlogs();
+          const existingIds = new Set(currentBlogs.map(b => b.id.toString()));
+          await saveStoredBlogs([...restoredBlogs.filter(b => !existingIds.has(b.id.toString())), ...currentBlogs]);
+        }
+        const restoredExps = Array.from(restoredExpsMap.values());
+        if (restoredExps.length > 0) {
+          await unmarkDeletedIds('experiences', restoredExps.map(ex => ex.id));
+          const currentExps = getStoredExperiences();
+          const existingIds = new Set(currentExps.map(ex => ex.id.toString()));
+          await saveStoredExperiences([...restoredExps.filter(ex => !existingIds.has(ex.id.toString())), ...currentExps]);
         }
         showToast("Folder berhasil dihapus & karyanya kembali tampil di web!");
       } else {
         if (deletedProjectIds.size > 0) {
-          const currentProjects = getStoredProjects();
-          const remaining = currentProjects.filter(p => !deletedProjectIds.has(p.id.toString()));
+          await markDeletedIds('projects', Array.from(deletedProjectIds));
+          const remaining = getStoredProjects().filter(p => !deletedProjectIds.has(p.id.toString()));
           await saveStoredProjects(remaining);
           setAvailableProjects(remaining);
+        }
+        if (deletedBlogIds.size > 0) {
+          await markDeletedIds('blogPosts', Array.from(deletedBlogIds));
+          const remainingBlogs = getStoredBlogs().filter(b => !deletedBlogIds.has(b.id.toString()));
+          await saveStoredBlogs(remainingBlogs);
+        }
+        if (deletedExpIds.size > 0) {
+          await markDeletedIds('experiences', Array.from(deletedExpIds));
+          const remainingExps = getStoredExperiences().filter(ex => !deletedExpIds.has(ex.id.toString()));
+          await saveStoredExperiences(remainingExps);
         }
         showToast("Folder dan seluruh isinya berhasil dihapus permanen.");
       }
 
-      setFolders(prev => prev.filter(f => f.id !== folderId));
+      setFolders(prev => {
+        const next = prev.filter(f => f.id !== folderId);
+        writeCachedFolders(next);
+        return next;
+      });
       if (selectedFolder?.id === folderId) setSelectedFolder(null);
       setConfirmModal(prev => ({ ...prev, isOpen: false }));
     } catch (err: any) {
+      if (isQuotaError(err)) markQuotaExhausted();
       console.warn("Failed to delete folder:", err);
       showToast("Gagal menghapus folder. Silakan coba lagi.", "error");
     } finally {
@@ -461,65 +723,93 @@ export default function ArchiveAdmin() {
   // Restore single item back to public
   const handleRestore = async (item: ArchivedItem) => {
     setIsProcessing(true);
+    const nowIso = new Date().toISOString();
     try {
-      await setDoc(doc(db, item.type, item.id), {
-        isArchived: false,
-        archiveFolderId: null,
-        updatedAt: new Date().toISOString()
-      }, { merge: true });
+      await unmarkDeletedIds(item.type, [item.id]);
 
-      // If it's a project, restore it to stored projects so it immediately displays on web
-      if (item.type === 'projects') {
-        let projectData: Project | null = null;
+      const cachedRecord = readCachedArchivedItems().find(
+        entry => String(entry.id) === String(item.id) && entry.type === item.type
+      );
+
+      let cloudData: any = null;
+      if (!isQuotaExhausted()) {
         try {
-          const docSnap = await getDoc(doc(db, 'projects', item.id));
-          if (docSnap.exists()) {
-            projectData = { id: docSnap.id, ...docSnap.data(), isArchived: false, archiveFolderId: null } as unknown as Project;
-          }
-        } catch {}
-
-        if (!projectData) {
-          projectData = {
-            id: item.id,
-            title: item.title,
-            category: item.category || 'UI/UX',
-            image: item.image || '',
-            description: '',
-            date: new Date().toISOString().split('T')[0],
+          await setDoc(doc(db, item.type, item.id), {
             isArchived: false,
-            archiveFolderId: null
-          } as unknown as Project;
+            archiveFolderId: null,
+            updatedAt: nowIso,
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true
+          }, { merge: true });
+          const docSnap = await getDoc(doc(db, item.type, item.id));
+          if (docSnap.exists()) cloudData = { id: docSnap.id, ...docSnap.data() };
+        } catch (err) {
+          if (isQuotaError(err)) markQuotaExhausted();
         }
+      }
+
+      const rawBase = cloudData || (cachedRecord ? { ...cachedRecord } : null);
+      if (rawBase && 'type' in rawBase) delete rawBase.type;
+
+      if (item.type === 'projects') {
+        const projectData: Project = rawBase
+          ? { ...rawBase, id: item.id, isArchived: false, archiveFolderId: null, updatedAt: nowIso }
+          : ({
+              id: item.id,
+              title: item.title,
+              category: item.category || 'UI/UX',
+              image: item.image || '',
+              description: '',
+              date: nowIso.split('T')[0],
+              isArchived: false,
+              archiveFolderId: null,
+              updatedAt: nowIso
+            } as unknown as Project);
 
         const current = getStoredProjects();
         const updated = [projectData, ...current.filter(p => p.id.toString() !== item.id)];
         await saveStoredProjects(updated);
         setAvailableProjects(updated);
       } else if (item.type === 'blogPosts') {
-        try {
-          const docSnap = await getDoc(doc(db, 'blogPosts', item.id));
-          if (docSnap.exists()) {
-            const bData = { id: docSnap.id, ...docSnap.data(), isArchived: false, archiveFolderId: null };
-            const current = getStoredBlogs();
-            const updated = [bData, ...current.filter(b => b.id.toString() !== item.id)];
-            await saveStoredBlogs(updated as any);
-          }
-        } catch {}
+        const blogData = rawBase
+          ? { ...rawBase, id: item.id, isArchived: false, archiveFolderId: null, updatedAt: nowIso }
+          : {
+              id: item.id,
+              title: item.title,
+              image: item.image || '',
+              content: '',
+              excerpt: '',
+              date: nowIso.split('T')[0],
+              isArchived: false,
+              archiveFolderId: null,
+              updatedAt: nowIso
+            };
+        const current = getStoredBlogs();
+        const updated = [blogData, ...current.filter(b => b.id.toString() !== item.id)];
+        await saveStoredBlogs(updated as any);
       } else if (item.type === 'experiences') {
-        try {
-          const docSnap = await getDoc(doc(db, 'experiences', item.id));
-          if (docSnap.exists()) {
-            const eData = { id: docSnap.id, ...docSnap.data(), isArchived: false, archiveFolderId: null };
-            const current = getStoredExperiences();
-            const updated = [eData, ...current.filter(e => e.id.toString() !== item.id)];
-            await saveStoredExperiences(updated);
-          }
-        } catch {}
+        const expData = rawBase
+          ? { ...rawBase, id: item.id, isArchived: false, archiveFolderId: null, updatedAt: nowIso }
+          : {
+              id: item.id,
+              role: item.title,
+              header: item.title,
+              images: item.image ? [item.image] : [],
+              image: item.image || '',
+              isArchived: false,
+              archiveFolderId: null,
+              updatedAt: nowIso
+            };
+        const current = getStoredExperiences();
+        const updated = [expData, ...current.filter(e => e.id.toString() !== item.id)];
+        await saveStoredExperiences(updated);
       }
 
+      removeCachedArchivedItems([{ type: item.type, id: item.id }]);
       setItems(prev => prev.filter(i => i.id !== item.id));
       showToast(`"${item.title}" berhasil dikeluarkan dan kembali tampil di web!`);
     } catch (e: any) {
+      if (isQuotaError(e)) markQuotaExhausted();
       console.warn("Failed to restore item:", e);
       showToast("Gagal mengeluarkan karya.", "error");
     } finally {
@@ -540,7 +830,16 @@ export default function ArchiveAdmin() {
       onConfirm: async () => {
         setIsProcessing(true);
         try {
-          await deleteDoc(doc(db, item.type, item.id));
+          await markDeletedIds(item.type, [item.id]);
+          removeCachedArchivedItems([{ type: item.type, id: item.id }]);
+
+          if (!isQuotaExhausted()) {
+            try {
+              await deleteDoc(doc(db, item.type, item.id));
+            } catch (err) {
+              if (isQuotaError(err)) markQuotaExhausted();
+            }
+          }
 
           if (item.type === 'projects') {
             const current = getStoredProjects();
@@ -561,6 +860,7 @@ export default function ArchiveAdmin() {
           showToast(`"${item.title}" berhasil dihapus permanen.`);
           setConfirmModal(prev => ({ ...prev, isOpen: false }));
         } catch (err) {
+          if (isQuotaError(err)) markQuotaExhausted();
           console.warn("Failed to delete item:", err);
           showToast("Gagal menghapus konten.", "error");
         } finally {
@@ -600,46 +900,79 @@ export default function ArchiveAdmin() {
       onConfirm: async () => {
         setIsProcessing(true);
         setLoading(true);
+        const nowIso = new Date().toISOString();
         try {
-          const batch = writeBatch(db);
-          for (const itemId of selectedItemsForBulk) {
-            const item = items.find(i => i.id === itemId);
-            if (item) {
-              batch.set(doc(db, item.type, item.id), { isArchived: false, archiveFolderId: null, updatedAt: new Date().toISOString() }, { merge: true });
+          const selectedItems = items.filter(i => selectedItemsForBulk.includes(i.id));
+          const cachedAll = readCachedArchivedItems();
+
+          if (!isQuotaExhausted()) {
+            try {
+              const batch = writeBatch(db);
+              for (const item of selectedItems) {
+                batch.set(doc(db, item.type, item.id), {
+                  isArchived: false,
+                  archiveFolderId: null,
+                  updatedAt: nowIso,
+                  _adminAuth: 'alfreelnc_admin_auth_verified',
+                  updatedByAdmin: true
+                }, { merge: true });
+              }
+              await batch.commit();
+            } catch (err) {
+              if (isQuotaError(err)) markQuotaExhausted();
             }
           }
-          await batch.commit();
 
-          // Fetch restored projects and update storedProjects
           const restoredProjects: Project[] = [];
-          for (const itemId of selectedItemsForBulk) {
-            const item = items.find(i => i.id === itemId);
-            if (item && item.type === 'projects') {
+          const restoredBlogs: any[] = [];
+          const restoredExps: any[] = [];
+
+          for (const item of selectedItems) {
+            let record: any = cachedAll.find(c => String(c.id) === String(item.id) && c.type === item.type);
+            if (!record && !isQuotaExhausted()) {
               try {
-                const docSnap = await getDoc(doc(db, 'projects', itemId));
-                if (docSnap.exists()) {
-                  restoredProjects.push({ id: docSnap.id, ...docSnap.data(), isArchived: false, archiveFolderId: null } as unknown as Project);
-                }
-              } catch {}
+                const docSnap = await getDoc(doc(db, item.type, item.id));
+                if (docSnap.exists()) record = { id: docSnap.id, ...docSnap.data() };
+              } catch (err) {
+                if (isQuotaError(err)) markQuotaExhausted();
+              }
             }
+            const cleanObj = record
+              ? { ...record, id: item.id, isArchived: false, archiveFolderId: null, updatedAt: nowIso }
+              : { id: item.id, title: item.title, image: item.image || '', category: item.category || 'UI/UX', isArchived: false, archiveFolderId: null, updatedAt: nowIso };
+            if ('type' in cleanObj) delete cleanObj.type;
+
+            if (item.type === 'projects') restoredProjects.push(cleanObj as Project);
+            else if (item.type === 'blogPosts') restoredBlogs.push(cleanObj);
+            else if (item.type === 'experiences') restoredExps.push(cleanObj);
           }
 
           if (restoredProjects.length > 0) {
-            const currentProjects = getStoredProjects();
-            const existingIds = new Set(currentProjects.map(p => p.id.toString()));
-            const merged = [
-              ...restoredProjects.filter(p => !existingIds.has(p.id.toString())),
-              ...currentProjects
-            ];
+            await unmarkDeletedIds('projects', restoredProjects.map(p => p.id));
+            const merged = mergeProjects(restoredProjects, getStoredProjects());
             await saveStoredProjects(merged);
             setAvailableProjects(merged);
           }
+          if (restoredBlogs.length > 0) {
+            await unmarkDeletedIds('blogPosts', restoredBlogs.map(b => b.id));
+            const currentBlogs = getStoredBlogs();
+            const existingIds = new Set(currentBlogs.map(b => b.id.toString()));
+            await saveStoredBlogs([...restoredBlogs.filter(b => !existingIds.has(b.id.toString())), ...currentBlogs]);
+          }
+          if (restoredExps.length > 0) {
+            await unmarkDeletedIds('experiences', restoredExps.map(e => e.id));
+            const currentExps = getStoredExperiences();
+            const existingIds = new Set(currentExps.map(e => e.id.toString()));
+            await saveStoredExperiences([...restoredExps.filter(e => !existingIds.has(e.id.toString())), ...currentExps]);
+          }
 
+          removeCachedArchivedItems(selectedItems.map(i => ({ type: i.type, id: i.id })));
           setItems(prev => prev.filter(i => !selectedItemsForBulk.includes(i.id)));
           showToast(`${selectedItemsForBulk.length} karya berhasil dikembalikan ke website publik!`);
           setSelectedItemsForBulk([]);
           setConfirmModal(prev => ({ ...prev, isOpen: false }));
         } catch (e) {
+          if (isQuotaError(e)) markQuotaExhausted();
           console.warn("Failed to bulk restore:", e);
           showToast("Gagal memproses pengembalian karya.", "error");
         } finally {
@@ -663,25 +996,48 @@ export default function ArchiveAdmin() {
         setIsProcessing(true);
         setLoading(true);
         try {
-          const batch = writeBatch(db);
-          for (const itemId of selectedItemsForBulk) {
-            const item = items.find(i => i.id === itemId);
-            if (item) {
-              batch.delete(doc(db, item.type, item.id));
+          const selectedItems = items.filter(i => selectedItemsForBulk.includes(i.id));
+          const projIds = selectedItems.filter(i => i.type === 'projects').map(i => i.id);
+          const blogIds = selectedItems.filter(i => i.type === 'blogPosts').map(i => i.id);
+          const expIds = selectedItems.filter(i => i.type === 'experiences').map(i => i.id);
+
+          if (projIds.length > 0) await markDeletedIds('projects', projIds);
+          if (blogIds.length > 0) await markDeletedIds('blogPosts', blogIds);
+          if (expIds.length > 0) await markDeletedIds('experiences', expIds);
+
+          if (!isQuotaExhausted()) {
+            try {
+              const batch = writeBatch(db);
+              for (const item of selectedItems) {
+                batch.delete(doc(db, item.type, item.id));
+              }
+              await batch.commit();
+            } catch (err) {
+              if (isQuotaError(err)) markQuotaExhausted();
             }
           }
-          await batch.commit();
 
-          const currentProjects = getStoredProjects();
-          const remaining = currentProjects.filter(p => !selectedItemsForBulk.includes(p.id.toString()));
-          await saveStoredProjects(remaining);
-          setAvailableProjects(remaining);
+          if (projIds.length > 0) {
+            const remaining = getStoredProjects().filter(p => !projIds.includes(p.id.toString()));
+            await saveStoredProjects(remaining);
+            setAvailableProjects(remaining);
+          }
+          if (blogIds.length > 0) {
+            const remaining = getStoredBlogs().filter(b => !blogIds.includes(b.id.toString()));
+            await saveStoredBlogs(remaining);
+          }
+          if (expIds.length > 0) {
+            const remaining = getStoredExperiences().filter(ex => !expIds.includes(ex.id.toString()));
+            await saveStoredExperiences(remaining);
+          }
 
+          removeCachedArchivedItems(selectedItems.map(i => ({ type: i.type, id: i.id })));
           setItems(prev => prev.filter(i => !selectedItemsForBulk.includes(i.id)));
           setSelectedItemsForBulk([]);
           showToast(`${selectedItemsForBulk.length} karya berhasil dihapus permanen.`);
           setConfirmModal(prev => ({ ...prev, isOpen: false }));
         } catch (e) {
+          if (isQuotaError(e)) markQuotaExhausted();
           console.warn("Failed to bulk delete:", e);
           showToast("Gagal memproses bulk delete.", "error");
         } finally {

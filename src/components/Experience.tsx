@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { getStoredExperiences, saveStoredExperiences } from '../lib/contentStorage';
-import { logFirestoreError, OperationType, isQuotaExhausted } from '../lib/firestoreErrorHandler';
+import { getStoredExperiences, saveStoredExperiences, mergeExperiences, syncDeletedIdsFromServer } from '../lib/contentStorage';
+import { logFirestoreError, OperationType, isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 import { 
   Briefcase, 
   ArrowRight, 
@@ -190,17 +190,20 @@ export default function Experience() {
       setLoading(false);
     }
 
-    // 2. Ambil dari server disk (/api/experiences) secara instan tanpa hambatan kuota
-    fetch('/api/experiences')
-      .then(res => res.ok ? res.json() : [])
-      .then(apiData => {
-        if (Array.isArray(apiData) && apiData.length > 0 && isMounted) {
-          setExperiences(apiData);
-          saveStoredExperiences(apiData);
+    // 2. Sinkronisasi tombstone & ambil dari server disk (/api/experiences)
+    (async () => {
+      await syncDeletedIdsFromServer();
+      try {
+        const res = await fetch('/api/experiences');
+        const apiData = res.ok ? await res.json() : [];
+        if (Array.isArray(apiData) && isMounted) {
+          const merged = mergeExperiences(getStoredExperiences(), apiData);
+          setExperiences(merged);
+          saveStoredExperiences(merged);
           setLoading(false);
         }
-      })
-      .catch(() => {});
+      } catch {}
+    })();
 
     const handleUpdate = (e: any) => {
       if (e.detail && Array.isArray(e.detail) && isMounted) setExperiences(e.detail);
@@ -213,36 +216,19 @@ export default function Experience() {
       unsub = onSnapshot(
         collection(db, 'experiences'),
         (snap) => {
-          const localExps = getStoredExperiences();
-          const localMap = new Map<string, any>(localExps.map(e => [String(e.id), e]));
-
           const data: any[] = [];
           snap.forEach(d => {
-            const dataDoc = { id: d.id, ...(d.data() as any) };
-            if (!dataDoc.isArchived) {
-              const local = localMap.get(String(d.id));
-              if (local && Array.isArray(local.images) && local.images.length > 0) {
-                const cloudImages = Array.isArray(dataDoc.images) ? dataDoc.images : [];
-                if (local.images.length > cloudImages.length) {
-                  dataDoc.images = Array.from(new Set([...cloudImages, ...local.images]));
-                  dataDoc.image = dataDoc.images[0] || dataDoc.image;
-                }
-              }
-              data.push(dataDoc);
-            }
+            data.push({ id: d.id, ...(d.data() as any) });
           });
-          data.sort((a, b) => {
-            const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;
-            const dB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : 0;
-            return dB - dA;
-          });
+          const merged = mergeExperiences(getStoredExperiences(), data);
           if (isMounted) {
-            setExperiences(data);
-            saveStoredExperiences(data);
+            setExperiences(merged);
+            saveStoredExperiences(merged);
             setLoading(false);
           }
         },
         (error) => {
+          if (isQuotaError(error)) markQuotaExhausted();
           logFirestoreError(error, OperationType.LIST, 'experiences');
           if (isMounted) {
             setExperiences(getStoredExperiences());

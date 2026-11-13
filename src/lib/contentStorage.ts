@@ -44,6 +44,180 @@ const DUMMY_BLOG_TITLES = new Set([
   "Hierarki Tipografi dalam Desain Antarmuka Modern"
 ]);
 
+const DELETED_RECORDS_STORAGE_KEY = 'deleted_record_ids';
+
+const ID_MONTH_MAP: Record<string, number> = {
+  januari: 0, jan: 0, january: 0,
+  februari: 1, feb: 1, february: 1,
+  maret: 2, mar: 2, march: 2,
+  april: 3, apr: 3,
+  mei: 4, may: 4,
+  juni: 5, jun: 5, june: 5,
+  juli: 6, jul: 6, july: 6,
+  agustus: 7, agu: 7, agust: 7, aug: 7, august: 7,
+  september: 8, sep: 8, sept: 8,
+  oktober: 9, okt: 9, oct: 9, october: 9,
+  november: 10, nov: 10, nopember: 10,
+  desember: 11, des: 11, dec: 11, december: 11,
+};
+
+export function getTimestampMs(val: any): number {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  if (typeof val?.toMillis === 'function') {
+    try { return val.toMillis(); } catch { return 0; }
+  }
+  if (typeof val?.seconds === 'number') return val.seconds * 1000;
+  if (typeof val?._seconds === 'number') return val._seconds * 1000;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return 0;
+    if (/^\d{10,15}$/.test(trimmed)) {
+      const n = Number(trimmed);
+      return Number.isFinite(n) ? (trimmed.length === 10 ? n * 1000 : n) : 0;
+    }
+    if (/^\d{4}$/.test(trimmed)) {
+      return new Date(Number(trimmed), 0, 1).getTime();
+    }
+    const idMatch = trimmed.match(/^(\d{1,2})\s+([a-zA-Z]+)\s+(\d{4})$/);
+    if (idMatch) {
+      const day = Math.min(31, Math.max(1, Number(idMatch[1])));
+      const monthName = idMatch[2].toLowerCase();
+      const year = Number(idMatch[3]);
+      if (monthName in ID_MONTH_MAP) {
+        const month = ID_MONTH_MAP[monthName];
+        const maxDay = new Date(year, month + 1, 0).getDate();
+        return new Date(year, month, Math.min(day, maxDay)).getTime();
+      }
+    }
+    const parsed = Date.parse(trimmed);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return 0;
+}
+
+export function getRecencyTimestamp(item: any): number {
+  if (!item || typeof item !== 'object') return 0;
+  const updated = getTimestampMs(item.updatedAt);
+  const created = getTimestampMs(item.createdAt);
+  const added = getTimestampMs(item.dateAdded);
+  const saved = getTimestampMs(item.savedAt);
+  const idStr = String(item.id || '').trim();
+  const idNum = /^\d{12,15}$/.test(idStr) ? Number(idStr) : 0;
+  const dateMs = getTimestampMs(item.date);
+  return Math.max(updated, created, added, saved, idNum, dateMs);
+}
+
+function readAllDeletedRecordsMap(): Record<string, string[]> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(DELETED_RECORDS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return {};
+}
+
+export function getDeletedIds(type: string): Set<string> {
+  const map = readAllDeletedRecordsMap();
+  const list = Array.isArray(map[type]) ? map[type] : [];
+  const result = new Set<string>(list.map(String));
+  if (type === 'messages' && typeof window !== 'undefined') {
+    try {
+      const legacy = JSON.parse(localStorage.getItem('deleted_message_ids') || '[]');
+      if (Array.isArray(legacy)) legacy.forEach((id: any) => result.add(String(id)));
+    } catch {}
+  }
+  return result;
+}
+
+export async function markDeletedIds(type: string, ids: (string | number)[]): Promise<void> {
+  const strIds = ids.map(id => String(id || '').trim()).filter(Boolean);
+  if (strIds.length === 0) return;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const map = readAllDeletedRecordsMap();
+      const set = new Set<string>(Array.isArray(map[type]) ? map[type].map(String) : []);
+      strIds.forEach(id => set.add(id));
+      map[type] = Array.from(set);
+      localStorage.setItem(DELETED_RECORDS_STORAGE_KEY, JSON.stringify(map));
+      if (type === 'messages') {
+        const legacy = JSON.parse(localStorage.getItem('deleted_message_ids') || '[]');
+        const legacySet = new Set<string>([...(Array.isArray(legacy) ? legacy.map(String) : []), ...strIds]);
+        localStorage.setItem('deleted_message_ids', JSON.stringify(Array.from(legacySet)));
+      }
+    } catch {}
+  }
+
+  try {
+    await fetch('/api/deleted-ids', {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-token': 'alfreelnc_admin_auth_verified'
+      },
+      body: JSON.stringify({ action: 'mark', type, ids: strIds })
+    });
+  } catch {}
+}
+
+export async function unmarkDeletedIds(type: string, ids: (string | number)[]): Promise<void> {
+  const strIds = ids.map(id => String(id || '').trim()).filter(Boolean);
+  if (strIds.length === 0) return;
+
+  if (typeof window !== 'undefined') {
+    try {
+      const map = readAllDeletedRecordsMap();
+      const set = new Set<string>(Array.isArray(map[type]) ? map[type].map(String) : []);
+      strIds.forEach(id => set.delete(id));
+      map[type] = Array.from(set);
+      localStorage.setItem(DELETED_RECORDS_STORAGE_KEY, JSON.stringify(map));
+    } catch {}
+  }
+
+  try {
+    await fetch('/api/deleted-ids', {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-token': 'alfreelnc_admin_auth_verified'
+      },
+      body: JSON.stringify({ action: 'unmark', type, ids: strIds })
+    });
+  } catch {}
+}
+
+export async function syncDeletedIdsFromServer(): Promise<Record<string, string[]>> {
+  const localMap = readAllDeletedRecordsMap();
+  try {
+    const res = await fetch('/api/deleted-ids');
+    if (res.ok) {
+      const serverMap = await res.json();
+      if (serverMap && typeof serverMap === 'object' && !Array.isArray(serverMap)) {
+        const merged: Record<string, string[]> = { ...localMap };
+        for (const [k, v] of Object.entries(serverMap)) {
+          if (Array.isArray(v)) {
+            const set = new Set<string>([...(Array.isArray(merged[k]) ? merged[k].map(String) : []), ...v.map(String)]);
+            merged[k] = Array.from(set);
+          }
+        }
+        if (typeof window !== 'undefined') {
+          try { localStorage.setItem(DELETED_RECORDS_STORAGE_KEY, JSON.stringify(merged)); } catch {}
+        }
+        return merged;
+      }
+    }
+  } catch {}
+  return localMap;
+}
+
 export function cleanForFirestore<T>(data: T): T {
   if (data === null || data === undefined) return null as any;
   return JSON.parse(JSON.stringify(data, (_key, value) => {
@@ -54,34 +228,265 @@ export function cleanForFirestore<T>(data: T): T {
 
 export function cleanProjects(projs: Project[]): Project[] {
   const seenIds = new Set<string>();
-  return (projs || []).filter((p: Project) => {
-    if (!p) return false;
+  const deletedIds = getDeletedIds('projects');
+  const cleaned: Project[] = [];
+
+  for (const p of projs || []) {
+    if (!p) continue;
+    if ((p as any).isArchived === true) continue;
     const idStr = String(p.id || '').trim();
     const titleStr = (p.title || '').trim();
-    if (!titleStr && !idStr) return false;
-    if (DUMMY_PROJECT_IDS.has(idStr)) return false;
-    if (DUMMY_PROJECT_TITLES.has(titleStr)) return false;
-    // Hanya muat konten gambar yang ditambahkan pengguna
-    if (!p.image || typeof p.image !== 'string' || !p.image.trim()) return false;
-    if (idStr && seenIds.has(idStr)) return false;
+    if (!titleStr && !idStr) continue;
+    if (idStr && deletedIds.has(idStr)) continue;
+    if (DUMMY_PROJECT_IDS.has(idStr)) continue;
+    if (DUMMY_PROJECT_TITLES.has(titleStr)) continue;
+    if (idStr && seenIds.has(idStr)) continue;
+
+    const rawImages = Array.isArray(p.images) ? p.images : [];
+    const cleanImages = rawImages
+      .map((img: any) => (typeof img === 'string' ? img.trim() : ''))
+      .filter((img: string) => img.length > 0 && !img.startsWith('blob:'));
+
+    const rawMainImg = typeof p.image === 'string' ? p.image.trim() : '';
+    const normImage = rawMainImg && !rawMainImg.startsWith('blob:')
+      ? rawMainImg
+      : (cleanImages[0] || '');
+
+    // Pastikan item tetap valid jika memiliki judul karya atau gambar valid
+    if (!titleStr && !normImage) continue;
+
     if (idStr) seenIds.add(idStr);
-    return true;
+    cleaned.push({
+      ...p,
+      id: idStr || p.id,
+      title: titleStr || 'Tanpa Judul',
+      image: normImage,
+      images: cleanImages.length > 0 ? cleanImages : (normImage ? [normImage] : []),
+    });
+  }
+
+  return cleaned;
+}
+
+export function sortProjectsByRecency(projs: Project[]): Project[] {
+  return [...(projs || [])].sort((a, b) => {
+    const tA = getRecencyTimestamp(a);
+    const tB = getRecencyTimestamp(b);
+    if (tB !== tA) return tB - tA;
+    return (b.date || '').localeCompare(a.date || '');
   });
+}
+
+export function mergeProjects(...lists: Project[][]): Project[] {
+  const deletedIds = getDeletedIds('projects');
+  const archivedIds = new Set<string>();
+  const map = new Map<string, Project>();
+
+  for (const list of lists) {
+    for (const item of list || []) {
+      if (!item) continue;
+      const id = String(item.id || '').trim();
+      if (!id) continue;
+      if (item.isArchived === true) {
+        archivedIds.add(id);
+        map.delete(id);
+        continue;
+      }
+      if (deletedIds.has(id) || archivedIds.has(id)) continue;
+
+      const prev = map.get(id);
+      if (!prev) {
+        map.set(id, { ...item, id });
+      } else {
+        const prevTime = Math.max(getTimestampMs(prev.updatedAt), getTimestampMs(prev.createdAt));
+        const nextTime = Math.max(getTimestampMs(item.updatedAt), getTimestampMs(item.createdAt));
+        const winner = nextTime >= prevTime ? item : prev;
+        const loser = winner === item ? prev : item;
+
+        const winnerImgs = Array.isArray(winner.images) ? winner.images.filter(Boolean) : [];
+        const loserImgs = Array.isArray(loser.images) ? loser.images.filter(Boolean) : [];
+        const combinedImgs = winnerImgs.length >= loserImgs.length
+          ? winnerImgs
+          : Array.from(new Set([...winnerImgs, ...loserImgs]));
+
+        map.set(id, {
+          ...loser,
+          ...winner,
+          id,
+          image: winner.image || combinedImgs[0] || loser.image || '',
+          images: combinedImgs,
+        });
+      }
+    }
+  }
+
+  return sortProjectsByRecency(cleanProjects(Array.from(map.values())));
 }
 
 export function cleanBlogs(blogs: BlogPost[]): BlogPost[] {
   const seenIds = new Set<string>();
-  return (blogs || []).filter((b: BlogPost) => {
-    if (!b) return false;
+  const deletedIds = getDeletedIds('blogPosts');
+  const cleaned: BlogPost[] = [];
+
+  for (const b of blogs || []) {
+    if (!b) continue;
+    if ((b as any).isArchived === true) continue;
     const idStr = String(b.id || '').trim();
     const titleStr = (b.title || '').trim();
-    if (!titleStr && !idStr) return false;
-    if (DUMMY_BLOG_IDS.has(idStr)) return false;
-    if (DUMMY_BLOG_TITLES.has(titleStr)) return false;
-    if (idStr && seenIds.has(idStr)) return false;
+    if (!titleStr && !idStr) continue;
+    if (idStr && deletedIds.has(idStr)) continue;
+    if (DUMMY_BLOG_IDS.has(idStr)) continue;
+    if (DUMMY_BLOG_TITLES.has(titleStr)) continue;
+    if (idStr && seenIds.has(idStr)) continue;
     if (idStr) seenIds.add(idStr);
-    return true;
+
+    const rawImg = typeof b.image === 'string' ? b.image.trim() : '';
+    cleaned.push({
+      ...b,
+      id: idStr || b.id,
+      image: rawImg.startsWith('blob:') ? '' : rawImg,
+    });
+  }
+
+  return cleaned;
+}
+
+export function sortBlogsByRecency(blogs: BlogPost[]): BlogPost[] {
+  return [...(blogs || [])].sort((a, b) => {
+    const tA = getRecencyTimestamp(a);
+    const tB = getRecencyTimestamp(b);
+    if (tB !== tA) return tB - tA;
+    return (b.date || '').localeCompare(a.date || '');
   });
+}
+
+export function mergeBlogs(...lists: BlogPost[][]): BlogPost[] {
+  const deletedIds = getDeletedIds('blogPosts');
+  const archivedIds = new Set<string>();
+  const map = new Map<string, BlogPost>();
+
+  for (const list of lists) {
+    for (const item of list || []) {
+      if (!item) continue;
+      const id = String(item.id || '').trim();
+      if (!id) continue;
+      if (item.isArchived === true) {
+        archivedIds.add(id);
+        map.delete(id);
+        continue;
+      }
+      if (deletedIds.has(id) || archivedIds.has(id)) continue;
+
+      const prev = map.get(id);
+      if (!prev) {
+        map.set(id, { ...item, id });
+      } else {
+        const prevTime = Math.max(getTimestampMs(prev.updatedAt), getTimestampMs(prev.createdAt));
+        const nextTime = Math.max(getTimestampMs(item.updatedAt), getTimestampMs(item.createdAt));
+        const winner = nextTime >= prevTime ? item : prev;
+        const loser = winner === item ? prev : item;
+        map.set(id, { ...loser, ...winner, id });
+      }
+    }
+  }
+
+  return sortBlogsByRecency(cleanBlogs(Array.from(map.values())));
+}
+
+export function cleanExperiences(exps: any[]): any[] {
+  const seenIds = new Set<string>();
+  const deletedIds = getDeletedIds('experiences');
+  const cleaned: any[] = [];
+
+  for (const exp of exps || []) {
+    if (!exp) continue;
+    if (exp.isArchived === true) continue;
+    const idStr = String(exp.id || '').trim();
+    if (!idStr) continue;
+    if (deletedIds.has(idStr)) continue;
+    if (seenIds.has(idStr)) continue;
+    seenIds.add(idStr);
+
+    const imgs = (Array.isArray(exp.images) ? exp.images : [])
+      .map((img: any) => (typeof img === 'string' ? img.trim() : ''))
+      .filter((img: string) => img.length > 0 && !img.startsWith('blob:'));
+    const mainImg = typeof exp.image === 'string' && !exp.image.startsWith('blob:') ? exp.image.trim() : '';
+
+    cleaned.push({
+      ...exp,
+      id: idStr,
+      images: imgs.length > 0 ? imgs : (mainImg ? [mainImg] : []),
+      image: mainImg || imgs[0] || '',
+    });
+  }
+
+  return cleaned;
+}
+
+export function sortExperiencesByRecency(exps: any[]): any[] {
+  return [...(exps || [])].sort((a, b) => getRecencyTimestamp(b) - getRecencyTimestamp(a));
+}
+
+export function mergeExperiences(...lists: any[][]): any[] {
+  const deletedIds = getDeletedIds('experiences');
+  const archivedIds = new Set<string>();
+  const map = new Map<string, any>();
+
+  for (const list of lists) {
+    for (const item of list || []) {
+      if (!item) continue;
+      const id = String(item.id || '').trim();
+      if (!id) continue;
+      if (item.isArchived === true) {
+        archivedIds.add(id);
+        map.delete(id);
+        continue;
+      }
+      if (deletedIds.has(id) || archivedIds.has(id)) continue;
+
+      const prev = map.get(id);
+      if (!prev) {
+        map.set(id, { ...item, id });
+      } else {
+        const prevTime = getRecencyTimestamp(prev);
+        const nextTime = getRecencyTimestamp(item);
+        const winner = nextTime >= prevTime ? item : prev;
+        const loser = winner === item ? prev : item;
+
+        const winnerImgs = Array.isArray(winner.images) ? winner.images.filter(Boolean) : [];
+        const loserImgs = Array.isArray(loser.images) ? loser.images.filter(Boolean) : [];
+        const combinedImgs = winnerImgs.length >= loserImgs.length
+          ? winnerImgs
+          : Array.from(new Set([...winnerImgs, ...loserImgs]));
+
+        map.set(id, {
+          ...loser,
+          ...winner,
+          id,
+          images: combinedImgs,
+          image: winner.image || combinedImgs[0] || loser.image || '',
+        });
+      }
+    }
+  }
+
+  return sortExperiencesByRecency(cleanExperiences(Array.from(map.values())));
+}
+
+export function mergeSettingsByTimestamp(current: Partial<SiteSettings>, incoming: Partial<SiteSettings>): SiteSettings {
+  const currentTime = getTimestampMs(current?.savedAt || (current as any)?.updatedAt);
+  const incomingTime = getTimestampMs(incoming?.savedAt || (incoming as any)?.updatedAt);
+
+  if (currentTime > 0 && incomingTime > 0 && incomingTime < currentTime) {
+    return { ...defaultSettings, ...cleanSettings({ ...incoming, ...current, savedAt: currentTime }) } as SiteSettings;
+  }
+
+  const cleaned = cleanSettings({
+    ...current,
+    ...incoming,
+    savedAt: Math.max(currentTime, incomingTime) || Date.now()
+  });
+  return { ...defaultSettings, ...cleaned } as SiteSettings;
 }
 export function cleanTemplates(_templates: TemplateProduct[]): TemplateProduct[] {
   return [];
@@ -312,14 +717,15 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
 
   // 2. Simpan redundansi ke server disk via /api/settings secara instan dengan otorisasi admin
   try {
-    fetch('/api/settings', {
+    await fetch('/api/settings', {
       method: 'POST',
+      keepalive: true,
       headers: { 
         'Content-Type': 'application/json',
         'x-admin-token': 'alfreelnc_admin_auth_verified'
       },
       body: JSON.stringify(merged)
-    }).catch(() => {});
+    });
   } catch {}
 
   // 3. Simpan ke Cloud Firestore (sanitasi undefined value agar tidak ditolak Firestore SDK)
@@ -437,30 +843,55 @@ export async function saveStoredSettings(newSettings: SiteSettings): Promise<boo
 export function getStoredProjects(): Project[] {
   try {
     const saved = localStorage.getItem('user_projects');
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const cleaned = cleanProjects(parsed);
-        if (cleaned.length > 0) return cleaned;
+      if (Array.isArray(parsed)) {
+        return sortProjectsByRecency(cleanProjects(parsed));
       }
     }
   } catch(e) {}
-  return cleanProjects(defaultProjects);
+  return sortProjectsByRecency(cleanProjects(defaultProjects));
+}
+
+function stripOversizedDataUrlsForLocalStorage<T>(items: T[]): T[] {
+  return items.map((item: any) => {
+    if (!item || typeof item !== 'object') return item;
+    const copy = { ...item };
+    if (typeof copy.image === 'string' && copy.image.startsWith('data:') && copy.image.length > 100000) {
+      copy.image = '';
+    }
+    if (Array.isArray(copy.images)) {
+      copy.images = copy.images.filter((u: any) => typeof u === 'string' && (!u.startsWith('data:') || u.length <= 100000));
+    }
+    if (typeof copy.collaborationLogo === 'string' && copy.collaborationLogo.startsWith('data:') && copy.collaborationLogo.length > 100000) {
+      copy.collaborationLogo = '';
+    }
+    return copy;
+  });
 }
 
 export async function saveStoredProjects(newProjects: Project[]): Promise<void> {
-  const clean = cleanProjects(newProjects || []);
-  window.dispatchEvent(new CustomEvent('user_projects_updated', { detail: clean }));
-  try { localStorage.setItem('user_projects', JSON.stringify(clean)); } catch(e) {}
+  const clean = sortProjectsByRecency(cleanProjects(newProjects || []));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('user_projects_updated', { detail: clean }));
+    try {
+      localStorage.setItem('user_projects', JSON.stringify(clean));
+    } catch {
+      try {
+        localStorage.setItem('user_projects', JSON.stringify(stripOversizedDataUrlsForLocalStorage(clean)));
+      } catch {}
+    }
+  }
   try {
-    fetch('/api/projects', {
+    await fetch('/api/projects', {
       method: 'POST',
+      keepalive: true,
       headers: { 
         'Content-Type': 'application/json',
         'x-admin-token': 'alfreelnc_admin_auth_verified'
       },
       body: JSON.stringify(clean)
-    }).catch(() => {});
+    });
   } catch {}
 }
 
@@ -468,10 +899,10 @@ export async function saveStoredProjects(newProjects: Project[]): Promise<void> 
 export function getStoredBlogs(): BlogPost[] {
   try {
     const saved = localStorage.getItem('blogPosts');
-    if (saved) {
+    if (saved !== null) {
       const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return cleanBlogs(parsed);
+      if (Array.isArray(parsed)) {
+        return sortBlogsByRecency(cleanBlogs(parsed));
       }
     }
   } catch(e) {}
@@ -479,18 +910,27 @@ export function getStoredBlogs(): BlogPost[] {
 }
 
 export async function saveStoredBlogs(newBlogs: BlogPost[]): Promise<void> {
-  const clean = (newBlogs || []).filter((b: BlogPost) => b && (b.title || b.id));
-  window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: clean }));
-  try { localStorage.setItem('blogPosts', JSON.stringify(clean)); } catch(e) {}
+  const clean = sortBlogsByRecency(cleanBlogs(newBlogs || []));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: clean }));
+    try {
+      localStorage.setItem('blogPosts', JSON.stringify(clean));
+    } catch {
+      try {
+        localStorage.setItem('blogPosts', JSON.stringify(stripOversizedDataUrlsForLocalStorage(clean)));
+      } catch {}
+    }
+  }
   try {
-    fetch('/api/blogs', {
+    await fetch('/api/blogs', {
       method: 'POST',
+      keepalive: true,
       headers: { 
         'Content-Type': 'application/json',
         'x-admin-token': 'alfreelnc_admin_auth_verified'
       },
       body: JSON.stringify(clean)
-    }).catch(() => {});
+    });
   } catch {}
 }
 
@@ -498,23 +938,36 @@ export async function saveStoredBlogs(newBlogs: BlogPost[]): Promise<void> {
 export function getStoredExperiences(): any[] {
   try {
     const saved = localStorage.getItem('user_experiences');
-    if (saved) return JSON.parse(saved);
+    if (saved !== null) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return sortExperiencesByRecency(cleanExperiences(parsed));
+    }
   } catch(e) {}
   return [];
 }
 
 export async function saveStoredExperiences(newExps: any[]): Promise<void> {
-  window.dispatchEvent(new CustomEvent('user_experiences_updated', { detail: newExps }));
-  try { localStorage.setItem('user_experiences', JSON.stringify(newExps)); } catch(e) {}
+  const clean = sortExperiencesByRecency(cleanExperiences(newExps || []));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('user_experiences_updated', { detail: clean }));
+    try {
+      localStorage.setItem('user_experiences', JSON.stringify(clean));
+    } catch {
+      try {
+        localStorage.setItem('user_experiences', JSON.stringify(stripOversizedDataUrlsForLocalStorage(clean)));
+      } catch {}
+    }
+  }
   try {
-    fetch('/api/experiences', {
+    await fetch('/api/experiences', {
       method: 'POST',
+      keepalive: true,
       headers: { 
         'Content-Type': 'application/json',
         'x-admin-token': 'alfreelnc_admin_auth_verified'
       },
-      body: JSON.stringify(newExps)
-    }).catch(() => {});
+      body: JSON.stringify(clean)
+    });
   } catch {}
 }
 

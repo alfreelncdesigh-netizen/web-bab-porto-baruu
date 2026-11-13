@@ -6,12 +6,12 @@ import { BlogPost } from '../types/blog';
 import { Edit, Trash, Plus, X, Check, Cloud, Upload, Loader2, Image as ImageIcon, Archive, AlertCircle, Handshake } from 'lucide-react';
 import { db, ensureFreshAuthToken } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { getStoredBlogs, saveStoredBlogs, cleanBlogs, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { getStoredBlogs, saveStoredBlogs, cleanBlogs, mergeBlogs, markDeletedIds, unmarkDeletedIds, syncDeletedIdsFromServer, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { SiteSettings } from '../data/settings';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
-import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
+import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
-import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
+import { isQuotaExhausted, markQuotaExhausted, isQuotaError, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function BlogAdmin() {
   const [posts, setPosts] = useState<BlogPost[]>(() => getStoredBlogs());
@@ -30,29 +30,51 @@ export default function BlogAdmin() {
   };
 
   useEffect(() => {
+    let isMounted = true;
     const handleUpdate = (e: any) => {
-      if (e.detail && Array.isArray(e.detail)) setPosts(e.detail);
+      if (e.detail && Array.isArray(e.detail) && isMounted) setPosts(e.detail);
     };
     window.addEventListener('blog_posts_updated', handleUpdate);
 
-    const unsubscribe = onSnapshot(
-      collection(db, 'blogPosts'),
-      (snapshot) => {
-        const loadedPosts: BlogPost[] = [];
-        snapshot.forEach((docSnap) => {
-          loadedPosts.push({ id: docSnap.id, ...docSnap.data() } as BlogPost);
-        });
-        loadedPosts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        const cleaned = cleanBlogs(loadedPosts);
-        setPosts(cleaned);
-        saveStoredBlogs(cleaned);
-      },
-      (error) => {
-        console.warn("Firestore Admin Blog Error (using stored blogs):", error);
-        setPosts(getStoredBlogs());
-      }
-    );
+    (async () => {
+      await syncDeletedIdsFromServer();
+      try {
+        const res = await fetch('/api/blogs');
+        if (res.ok) {
+          const apiBlogs = await res.json();
+          if (Array.isArray(apiBlogs) && isMounted) {
+            const merged = mergeBlogs(getStoredBlogs(), apiBlogs);
+            setPosts(merged);
+            await saveStoredBlogs(merged);
+          }
+        }
+      } catch {}
+    })();
+
+    let unsubscribe = () => {};
+    if (!isQuotaExhausted()) {
+      unsubscribe = onSnapshot(
+        collection(db, 'blogPosts'),
+        (snapshot) => {
+          if (!isMounted) return;
+          const loadedPosts: BlogPost[] = [];
+          snapshot.forEach((docSnap) => {
+            loadedPosts.push({ id: docSnap.id, ...docSnap.data() } as BlogPost);
+          });
+          const merged = mergeBlogs(getStoredBlogs(), loadedPosts);
+          setPosts(merged);
+          saveStoredBlogs(merged);
+        },
+        (error) => {
+          if (isQuotaError(error)) markQuotaExhausted();
+          logFirestoreError(error, OperationType.LIST, 'blogPosts');
+          if (isMounted) setPosts(getStoredBlogs());
+        }
+      );
+    }
+
     return () => {
+      isMounted = false;
       unsubscribe();
       window.removeEventListener('blog_posts_updated', handleUpdate);
     };
@@ -60,43 +82,48 @@ export default function BlogAdmin() {
 
   const savePosts = async (newPosts: BlogPost[]) => {
     setPosts(newPosts);
-    saveStoredBlogs(newPosts);
+    await saveStoredBlogs(newPosts);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingPost) return;
+    if (!editingPost.title.trim()) {
+      showToast("Judul postingan wajib diisi!", "error");
+      return;
+    }
 
     setSavingPost(true);
+    const nowMs = Date.now();
+    const docId = String(editingPost.id);
 
-    // Pastikan payload HANYA berisi URL publik permanen dari Firebase Storage
-    // Tidak ada Base64 mentah atau blob lokal yang dikirim ke database
-    const cleanImage = editingPost.image && !editingPost.image.startsWith('data:') && !editingPost.image.startsWith('blob:')
-      ? editingPost.image.trim()
+    const cleanImage = await ensurePersistedAssetUrl(editingPost.image || '', 'blogs');
+    const persistedCollabLogo = editingPost.collaborationLogo
+      ? await ensurePersistedAssetUrl(editingPost.collaborationLogo, 'collaboration')
       : '';
 
     const payloadToSave: BlogPost = {
-      id: editingPost.id,
+      id: docId,
       title: editingPost.title.trim(),
       content: editingPost.content || '',
-      image: cleanImage,
-      date: editingPost.date || new Date().toISOString(),
+      image: cleanImage.startsWith('blob:') ? '' : cleanImage,
+      date: editingPost.date || new Date(nowMs).toISOString(),
       category: editingPost.category || 'Umum',
       published: Boolean(editingPost.published),
       isCollaboration: Boolean(editingPost.isCollaboration),
       collaborationPartner: (editingPost.collaborationPartner || '').trim(),
-      collaborationLogo: (editingPost.collaborationLogo || '').trim(),
+      collaborationLogo: persistedCollabLogo,
       collaborationText: (editingPost.collaborationText || '').trim(),
+      createdAt: editingPost.createdAt || nowMs,
+      updatedAt: nowMs,
+      isArchived: false,
+      archiveFolderId: null,
     };
 
-    // Update state & local storage segera agar perubahan langsung terlihat di web
-    let newPosts: BlogPost[];
-    if (posts.find(p => p.id === payloadToSave.id)) {
-      newPosts = posts.map(p => p.id === payloadToSave.id ? payloadToSave : p);
-    } else {
-      newPosts = [payloadToSave, ...posts];
-    }
-    savePosts(newPosts);
+    await unmarkDeletedIds('blogPosts', [docId]);
+
+    const newPosts = mergeBlogs([payloadToSave], posts);
+    await savePosts(newPosts);
 
     // Jika kolaborasi aktif pada blog ini, langsung terapkan ke pengaturan website agar logo langsung tampil di header & website
     if (payloadToSave.isCollaboration) {
@@ -118,7 +145,7 @@ export default function BlogAdmin() {
           },
           savedAt: Date.now()
         };
-        saveStoredSettings(updatedSettings);
+        await saveStoredSettings(updatedSettings);
       } catch (collabErr) {
         console.warn("Notice: Syncing blog collaboration to settings:", collabErr);
       }
@@ -149,7 +176,7 @@ export default function BlogAdmin() {
             ...payloadToSave,
             _adminAuth: 'alfreelnc_admin_auth_verified',
             updatedByAdmin: true,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date(nowMs).toISOString()
           }, { merge: true }),
           4000,
           "Database cloud disinkronkan di latar belakang."
@@ -157,8 +184,9 @@ export default function BlogAdmin() {
       } catch (err: any) {
         if (isQuotaError(err)) {
           markQuotaExhausted();
+        } else {
+          logFirestoreError(err, OperationType.WRITE, `blogPosts/${payloadToSave.id}`);
         }
-        console.warn("Save Blog Cloud background sync notice:", err);
       }
     }
   };
@@ -172,9 +200,11 @@ export default function BlogAdmin() {
     setIsDeleting(true);
     const id = postToDelete.id;
 
+    await markDeletedIds('blogPosts', [id]);
+
     // 1. Langsung hapus dari state & local storage seketika (optimistic update)
     const updated = posts.filter(p => p.id !== id);
-    savePosts(updated);
+    await savePosts(updated);
     showToast(`"${postToDelete.title || 'Postingan'}" berhasil dihapus permanen.`);
     
     // Lacak aktivitas penghapusan artikel oleh kolaborator
@@ -192,43 +222,48 @@ export default function BlogAdmin() {
     setPostToDelete(null);
 
     // 2. Eksekusi penghapusan di cloud
-    try {
-      await withTimeout(
-        deleteDoc(doc(db, 'blogPosts', id)),
-        6000,
-        "Database cloud selesai diperbarui."
-      );
-    } catch (err: any) {
-      console.warn("[DELETE] Notice database cloud blog:", err?.message || err);
-    } finally {
-      setIsDeleting(false);
+    if (!isQuotaExhausted()) {
+      try {
+        await withTimeout(
+          deleteDoc(doc(db, 'blogPosts', id)),
+          6000,
+          "Database cloud selesai diperbarui."
+        );
+      } catch (err: any) {
+        if (isQuotaError(err)) markQuotaExhausted();
+        else logFirestoreError(err, OperationType.DELETE, `blogPosts/${id}`);
+      }
     }
+    setIsDeleting(false);
   };
 
   const togglePublish = async (id: string) => {
     const targetPost = posts.find(p => p.id === id);
     if (!targetPost) return;
-    const updatedPost = { ...targetPost, published: !targetPost.published };
-    try {
-      await withTimeout(
-        setDoc(doc(db, 'blogPosts', id), updatedPost),
-        15000,
-        "Waktu update status habis."
-      );
-      savePosts(posts.map(p => p.id === id ? updatedPost : p));
-      showToast("Status publikasi diperbarui di database.");
-    } catch (err: any) {
-      savePosts(posts.map(p => p.id === id ? updatedPost : p));
-      showToast("Status publikasi diperbarui lokal.");
+    const nowMs = Date.now();
+    const updatedPost = { ...targetPost, published: !targetPost.published, updatedAt: nowMs };
+    await savePosts(posts.map(p => p.id === id ? updatedPost : p));
+    showToast(updatedPost.published ? "Postingan dipublikasikan!" : "Postingan dijadikan Draft.");
+
+    if (!isQuotaExhausted()) {
+      try {
+        await withTimeout(
+          setDoc(doc(db, 'blogPosts', id), {
+            ...updatedPost,
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true,
+            updatedAt: new Date(nowMs).toISOString()
+          }, { merge: true }),
+          5000,
+          "Waktu update status habis."
+        );
+      } catch (err: any) {
+        if (isQuotaError(err)) markQuotaExhausted();
+        else logFirestoreError(err, OperationType.WRITE, `blogPosts/${id}`);
+      }
     }
   };
 
-  /**
-   * 1. Refresh Session Token otomatis sebelum upload agar terhindar dari Session Timeout
-   * 2. Kompresi Otomatis di Client: Canvas WebP/JPEG, max-width 1200px, quality 0.75 (< 200 KB)
-   * 3. Direct/Background Upload: Langsung unggah saat file dipilih untuk mendapatkan URL string
-   * 4. Batas Timeout 15 detik: Batalkan otomatis jika gagal/lambat agar tidak stuck loading
-   */
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0 || !editingPost) return;
@@ -239,54 +274,55 @@ export default function BlogAdmin() {
     try {
       if (fileList.length === 1) {
         setUploadStatusText("Mengompres & Mengunggah Gambar ke Firebase Storage (/blogs/)...");
-        const cleanUrl = await compressAndUpload(fileList[0], 'blogs', 1200, 0.75, 25000);
+        const rawUrl = await compressAndUpload(fileList[0], 'blogs', 1200, 0.75, 25000);
+        const cleanUrl = await ensurePersistedAssetUrl(rawUrl, 'blogs');
         setEditingPost(prev => prev ? ({ ...prev, image: cleanUrl }) : null);
 
-        // Jika dokumen blog sudah tersimpan di Firestore, langsung sinkronkan URL gambar permanen
-        if (editingPost?.id) {
+        if (editingPost?.id && !isQuotaExhausted() && !cleanUrl.startsWith('data:')) {
           try {
             const docRef = doc(db, 'blogPosts', editingPost.id);
             await updateDoc(docRef, {
               image: cleanUrl,
               updatedAt: new Date().toISOString()
             });
-          } catch (syncErr) {
-            console.warn("Direct blog image sync notice:", syncErr);
+          } catch (syncErr: any) {
+            if (isQuotaError(syncErr)) markQuotaExhausted();
           }
         }
 
-        showToast("Gambar berhasil diunggah permanen ke Firebase Storage (/blogs/)!");
+        showToast("Gambar berhasil diunggah!");
       } else {
-        setUploadStatusText(`Mengunggah Gambar ke Firebase Storage (/blogs/) (0/${fileList.length})...`);
-        const cleanUrls = await uploadMultipleImagesInParallel(
+        setUploadStatusText(`Mengunggah Gambar (${0}/${fileList.length})...`);
+        const rawUrls = await uploadMultipleImagesInParallel(
           fileList,
           'blogs',
-          (done, total) => setUploadStatusText(`Mengunggah ke Firebase Storage (${done}/${total})...`),
+          (done, total) => setUploadStatusText(`Mengunggah (${done}/${total})...`),
           1200,
           0.75,
           25000
         );
+        const cleanUrls = await Promise.all(rawUrls.map(u => ensurePersistedAssetUrl(u, 'blogs')));
         if (cleanUrls.length > 0) {
           setEditingPost(prev => prev ? ({ ...prev, image: cleanUrls[0] }) : null);
 
-          if (editingPost?.id) {
+          if (editingPost?.id && !isQuotaExhausted() && !cleanUrls[0].startsWith('data:')) {
             try {
               const docRef = doc(db, 'blogPosts', editingPost.id);
               await updateDoc(docRef, {
                 image: cleanUrls[0],
                 updatedAt: new Date().toISOString()
               });
-            } catch (syncErr) {
-              console.warn("Direct blog image sync notice:", syncErr);
+            } catch (syncErr: any) {
+              if (isQuotaError(syncErr)) markQuotaExhausted();
             }
           }
 
-          showToast(`${cleanUrls.length} gambar berhasil diunggah permanen ke Firebase Storage!`);
+          showToast(`${cleanUrls.length} gambar berhasil diunggah!`);
         }
       }
     } catch (err: any) {
       console.error("Upload blog image error:", err);
-      showToast(err?.message || "Gagal mengunggah gambar ke Firebase Storage.", "error");
+      showToast(err?.message || "Gagal mengunggah gambar.", "error");
     } finally {
       setUploadingImage(false);
       setUploadStatusText('');

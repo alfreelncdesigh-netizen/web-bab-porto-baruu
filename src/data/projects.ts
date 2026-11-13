@@ -23,6 +23,10 @@ export interface Project {
   collaborationPartner?: string;
   collaborationLogo?: string;
   collaborationText?: string;
+  createdAt?: number | string;
+  updatedAt?: number | string;
+  isArchived?: boolean;
+  archiveFolderId?: string | null;
 }
 
 export const categories = ["Semua", "UI/UX", "Branding", "Poster", "Web Design", "PowerPoint", "Postingan Instagram"];

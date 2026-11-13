@@ -4,8 +4,9 @@ import { db } from '../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { MapPin, MessageCircle, ArrowRight, Copy, Check, ExternalLink } from 'lucide-react';
 import { SiteSettings, defaultSettings } from '../data/settings';
-import { getStoredSettings, cleanSettings } from '../lib/contentStorage';
+import { getStoredSettings, cleanSettings, mergeSettingsByTimestamp } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import { useLanguage } from '../contexts/LanguageContext';
 import { 
@@ -80,24 +81,28 @@ export default function About() {
   };
   window.addEventListener('app_settings_updated', handleUpdate);
 
-  const docRef = doc(db, 'settings', 'global');
-  const unsubscribe = onSnapshot(
-    docRef,
-    (docSnap) => {
-      if (docSnap.exists()) {
-        const cloudData = docSnap.data() as Partial<SiteSettings>;
-        if (cloudData && Object.keys(cloudData).length > 0) {
-          const merged = { ...defaultSettings, ...cleanSettings(cloudData) };
-          setSettings(merged);
-          try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+  let unsubscribe = () => {};
+  if (!isQuotaExhausted()) {
+    const docRef = doc(db, 'settings', 'global');
+    unsubscribe = onSnapshot(
+      docRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const cloudData = docSnap.data() as Partial<SiteSettings>;
+          if (cloudData && Object.keys(cloudData).length > 0) {
+            const merged = mergeSettingsByTimestamp(getStoredSettings(), cloudData);
+            setSettings(merged);
+            try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+          }
         }
-      }
-    },
-   (err) => {
-    console.warn("About settings error (using stored settings):", err);
-    setSettings(getStoredSettings());
-   }
-  );
+      },
+     (err) => {
+      if (isQuotaError(err)) markQuotaExhausted();
+      logFirestoreError(err, OperationType.GET, 'settings/global');
+      setSettings(getStoredSettings());
+     }
+    );
+  }
   return () => {
     unsubscribe();
     window.removeEventListener('app_settings_updated', handleUpdate);

@@ -3,13 +3,13 @@ import ArchiveMoveModal from './ArchiveMoveModal';
 import ConfirmModal from './ConfirmModal';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, updateDoc, arrayUnion, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { getStoredExperiences, saveStoredExperiences, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { getStoredExperiences, saveStoredExperiences, mergeExperiences, markDeletedIds, unmarkDeletedIds, syncDeletedIdsFromServer, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { SiteSettings } from '../data/settings';
 import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake, Upload, ChevronLeft, ChevronRight, Star, Link as LinkIcon } from 'lucide-react';
-import { withTimeout, compressAndUpload } from '../lib/storageUploader';
+import { withTimeout, compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
-import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
+import { isQuotaExhausted, markQuotaExhausted, isQuotaError, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function ExperienceAdmin() {
   const [experiences, setExperiences] = useState<any[]>(() => getStoredExperiences());
@@ -31,47 +31,51 @@ export default function ExperienceAdmin() {
   };
 
   useEffect(() => {
+    let isMounted = true;
     const handleUpdate = (e: any) => {
-      if (e.detail && Array.isArray(e.detail)) setExperiences(e.detail);
+      if (e.detail && Array.isArray(e.detail) && isMounted) setExperiences(e.detail);
     };
     window.addEventListener('user_experiences_updated', handleUpdate);
 
-    const unsub = onSnapshot(
-      collection(db, 'experiences'),
-      (snap) => {
-        const localExps = getStoredExperiences();
-        const localMap = new Map<string, any>(localExps.map(e => [String(e.id), e]));
-
-        const data: any[] = [];
-        snap.forEach(d => {
-          const cloudDoc: any = { id: d.id, ...d.data() };
-          if (!cloudDoc.isArchived) {
-            const local = localMap.get(String(d.id));
-            if (local && Array.isArray(local.images) && local.images.length > 0) {
-              const cloudImages = Array.isArray(cloudDoc.images) ? cloudDoc.images : [];
-              // Lindungi dari fetch data lama: pertahankan gambar lokal yang lebih lengkap
-              if (local.images.length > cloudImages.length) {
-                cloudDoc.images = Array.from(new Set([...cloudImages, ...local.images]));
-                cloudDoc.image = cloudDoc.images[0] || cloudDoc.image;
-              }
-            }
-            data.push(cloudDoc);
+    (async () => {
+      await syncDeletedIdsFromServer();
+      try {
+        const res = await fetch('/api/experiences');
+        if (res.ok) {
+          const apiData = await res.json();
+          if (Array.isArray(apiData) && isMounted) {
+            const merged = mergeExperiences(getStoredExperiences(), apiData);
+            setExperiences(merged);
+            await saveStoredExperiences(merged);
           }
-        });
-        data.sort((a, b) => {
-          const dA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : 0;
-          const dB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : 0;
-          return dB - dA;
-        });
-        setExperiences(data);
-        saveStoredExperiences(data);
-      },
-      (error) => {
-        console.warn("Experience Admin error (using stored):", error);
-        setExperiences(getStoredExperiences());
-      }
-    );
+        }
+      } catch {}
+    })();
+
+    let unsub = () => {};
+    if (!isQuotaExhausted()) {
+      unsub = onSnapshot(
+        collection(db, 'experiences'),
+        (snap) => {
+          if (!isMounted) return;
+          const data: any[] = [];
+          snap.forEach(d => {
+            data.push({ id: d.id, ...d.data() });
+          });
+          const merged = mergeExperiences(getStoredExperiences(), data);
+          setExperiences(merged);
+          saveStoredExperiences(merged);
+        },
+        (error) => {
+          if (isQuotaError(error)) markQuotaExhausted();
+          logFirestoreError(error, OperationType.LIST, 'experiences');
+          if (isMounted) setExperiences(getStoredExperiences());
+        }
+      );
+    }
+
     return () => {
+      isMounted = false;
       unsub();
       window.removeEventListener('user_experiences_updated', handleUpdate);
     };
@@ -137,10 +141,12 @@ export default function ExperienceAdmin() {
     setIsDeleting(true);
     const id = itemToDelete.id.toString();
 
+    await markDeletedIds('experiences', [id]);
+
     // 1. Langsung hapus dari state & local storage seketika (optimistic update)
     const updated = experiences.filter(e => e.id.toString() !== id);
     setExperiences(updated);
-    saveStoredExperiences(updated);
+    await saveStoredExperiences(updated);
     showToast(`Pengalaman "${itemToDelete.header || ''}" berhasil dihapus permanen.`);
     
     // Lacak aktivitas penghapusan pengalaman oleh kolaborator
@@ -158,107 +164,123 @@ export default function ExperienceAdmin() {
     setItemToDelete(null);
 
     // 2. Eksekusi penghapusan di cloud
-    try {
-      await withTimeout(
-        deleteDoc(doc(db, 'experiences', id)),
-        6000,
-        "Database cloud selesai diperbarui."
-      );
-    } catch (err: any) {
-      console.warn("[DELETE] Notice database cloud experience:", err?.message || err);
-    } finally {
-      setIsDeleting(false);
+    if (!isQuotaExhausted()) {
+      try {
+        await withTimeout(
+          deleteDoc(doc(db, 'experiences', id)),
+          6000,
+          "Database cloud selesai diperbarui."
+        );
+      } catch (err: any) {
+        if (isQuotaError(err)) markQuotaExhausted();
+        else logFirestoreError(err, OperationType.DELETE, `experiences/${id}`);
+      }
     }
+    setIsDeleting(false);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingItem || !editingItem.header) return;
+    if (!editingItem || !editingItem.header?.trim()) {
+      showToast("Judul / Header pengalaman wajib diisi!", "error");
+      return;
+    }
     setSaving(true);
 
     const docId = editingItem.id.toString();
     const isNew = Boolean(editingItem.isNew);
+    const nowMs = Date.now();
 
-    // Payload yang dikirim ke database HANYA BERISI TEXT STRING & URL GAMBAR BERSIH DARI FIREBASE STORAGE
-    // Memastikan tidak ada data sementara (base64 mentah atau blob lokal) yang tersimpan
-    const cleanImages = (editingItem.images || [])
-      .filter((img: string) => typeof img === 'string' && img.trim() !== '' && !img.startsWith('data:') && !img.startsWith('blob:'))
-      .map((img: string) => img.trim());
+    const rawImages: string[] = Array.isArray(editingItem.images) ? editingItem.images : [];
+    const persistedImages: string[] = [];
+    for (const img of rawImages) {
+      const cleanUrl = await ensurePersistedAssetUrl(img || '', 'experiences');
+      if (cleanUrl && !cleanUrl.startsWith('blob:')) {
+        persistedImages.push(cleanUrl);
+      }
+    }
 
-    const toFirestore: Record<string, any> = {
+    const persistedCollabLogo = editingItem.collaborationLogo
+      ? await ensurePersistedAssetUrl(editingItem.collaborationLogo, 'collaboration')
+      : '';
+
+    const toLocalAndServer: Record<string, any> = {
+      id: docId,
       header: editingItem.header.trim(),
       subtheme: (editingItem.subtheme || '').trim(),
       description: (editingItem.description || '').trim(),
-      images: cleanImages,
-      image: cleanImages[0] || '',
+      images: persistedImages,
+      image: persistedImages[0] || '',
       isCollaboration: Boolean(editingItem.isCollaboration),
       collaborationPartner: (editingItem.collaborationPartner || '').trim(),
-      collaborationLogo: (editingItem.collaborationLogo || '').trim(),
+      collaborationLogo: persistedCollabLogo,
       collaborationText: (editingItem.collaborationText || '').trim(),
+      createdAt: editingItem.createdAt || nowMs,
+      updatedAt: nowMs,
+      isArchived: false,
+      archiveFolderId: null,
+    };
+
+    const toFirestore: Record<string, any> = {
+      ...toLocalAndServer,
       _adminAuth: 'alfreelnc_admin_auth_verified',
       updatedByAdmin: true,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date(nowMs).toISOString()
     };
 
     if (isNew) {
       toFirestore.dateAdded = serverTimestamp();
     }
 
-    const docRef = doc(db, 'experiences', docId);
+    await unmarkDeletedIds('experiences', [docId]);
 
-    // 1. TULIS KE DATABASE FIRESTORE TERLEBIH DAHULU MENGGUNAKAN arrayUnion() UNTUK FIELD images
-    try {
-      if (!isNew && cleanImages.length > 0) {
-        try {
-          // Gunakan arrayUnion() saat memperbarui field images agar tersimpan permanen tanpa menimpa data lama
-          await withTimeout(
-            updateDoc(docRef, {
-              ...toFirestore,
-              images: arrayUnion(...cleanImages)
-            }),
-            5000,
-            "Firestore updateDoc timeout"
-          );
-        } catch (updateErr: any) {
-          // Fallback ke setDoc jika dokumen belum ada di koleksi cloud
+    const mergedUpdated = mergeExperiences([toLocalAndServer], experiences);
+    setExperiences(mergedUpdated);
+    await saveStoredExperiences(mergedUpdated);
+
+    if (!isQuotaExhausted()) {
+      const docRef = doc(db, 'experiences', docId);
+      try {
+        if (!isNew && persistedImages.length > 0) {
+          try {
+            await withTimeout(
+              updateDoc(docRef, {
+                ...toFirestore,
+                images: arrayUnion(...persistedImages)
+              }),
+              5000,
+              "Firestore updateDoc timeout"
+            );
+          } catch (updateErr: any) {
+            await withTimeout(
+              setDoc(docRef, toFirestore, { merge: true }),
+              5000,
+              "Firestore setDoc fallback timeout"
+            );
+          }
+        } else {
           await withTimeout(
             setDoc(docRef, toFirestore, { merge: true }),
             5000,
-            "Firestore setDoc fallback timeout"
+            "Firestore setDoc timeout"
           );
         }
-      } else {
-        await withTimeout(
-          setDoc(docRef, toFirestore, { merge: true }),
-          5000,
-          "Firestore setDoc timeout"
-        );
+      } catch (err: any) {
+        if (isQuotaError(err)) {
+          markQuotaExhausted();
+        } else {
+          logFirestoreError(err, OperationType.WRITE, `experiences/${docId}`);
+        }
       }
-    } catch (err: any) {
-      if (isQuotaError(err)) {
-        markQuotaExhausted();
-      }
-      console.warn("Firestore save experience notice:", err);
     }
 
-    // 2. PERBARUI STATE LOKAL & STORAGE SETELAH PROSES TULIS KE DATABASE BERHASIL
-    // Memastikan tampilan tidak tereset kembali oleh data fetch lama
-    const stateItem = { ...toFirestore, id: docId };
-    const exists = experiences.some(exp => exp.id === docId);
-    const updated = exists
-      ? experiences.map(exp => (exp.id === docId ? stateItem : exp))
-      : [stateItem, ...experiences];
-
-    setExperiences(updated);
-    saveStoredExperiences(updated);
-
     // Jika kolaborasi aktif pada pengalaman ini, langsung terapkan ke pengaturan website
-    if (toFirestore.isCollaboration) {
+    if (toLocalAndServer.isCollaboration) {
       try {
         const siteSettings = getStoredSettings();
-        const partnerLogo = toFirestore.collaborationLogo || siteSettings.collaboration?.partnerLogo || '';
-        const partnerName = toFirestore.collaborationPartner || siteSettings.collaboration?.partnerName || '';
-        const collabText = toFirestore.collaborationText || siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama';
+        const partnerLogo = toLocalAndServer.collaborationLogo || siteSettings.collaboration?.partnerLogo || '';
+        const partnerName = toLocalAndServer.collaborationPartner || siteSettings.collaboration?.partnerName || '';
+        const collabText = toLocalAndServer.collaborationText || siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama';
 
         const updatedSettings: SiteSettings = {
           ...siteSettings,
@@ -272,7 +294,7 @@ export default function ExperienceAdmin() {
           },
           savedAt: Date.now()
         };
-        saveStoredSettings(updatedSettings);
+        await saveStoredSettings(updatedSettings);
       } catch (collabErr) {
         console.warn("Notice: Syncing experience collaboration to settings:", collabErr);
       }
@@ -284,7 +306,7 @@ export default function ExperienceAdmin() {
       if (u.role === 'collaborator') {
         recordCollaboratorActivity(
           isNew ? 'Menambahkan Pengalaman Baru' : 'Memperbarui Pengalaman',
-          `Kolaborator ${isNew ? 'menambahkan pengalaman baru' : 'memperbarui pengalaman'} "${toFirestore.header}".`,
+          `Kolaborator ${isNew ? 'menambahkan pengalaman baru' : 'memperbarui pengalaman'} "${toLocalAndServer.header}".`,
           '/admin#experience'
         );
       }
@@ -323,7 +345,8 @@ export default function ExperienceAdmin() {
       const file = fileList[i];
       setUploadProgressText(`Mengompres & Mengunggah ke Firebase Storage (/experiences/) (${i + 1}/${fileList.length})...`);
       try {
-        const url = await compressAndUpload(file, 'experiences', 1200, 0.8, 25000);
+        const rawUrl = await compressAndUpload(file, 'experiences', 1200, 0.8, 25000);
+        const url = await ensurePersistedAssetUrl(rawUrl, 'experiences');
         if (url && typeof url === 'string' && url.trim() && !url.startsWith('blob:')) {
           newUrls.push(url.trim());
           successCount++;
@@ -334,17 +357,17 @@ export default function ExperienceAdmin() {
     }
 
     if (newUrls.length > 0) {
-      // Jika mengedit dokumen yang sudah ada di database, sinkronkan gambar tambahan menggunakan arrayUnion()
-      if (!editingItem.isNew && editingItem.id) {
+      const persistableCloudUrls = newUrls.filter(u => !u.startsWith('data:'));
+      if (!editingItem.isNew && editingItem.id && !isQuotaExhausted() && persistableCloudUrls.length > 0) {
         try {
           const docRef = doc(db, 'experiences', editingItem.id.toString());
           await updateDoc(docRef, {
-            images: arrayUnion(...newUrls),
-            image: editingItem.image || newUrls[0],
+            images: arrayUnion(...persistableCloudUrls),
+            image: editingItem.image || persistableCloudUrls[0],
             updatedAt: new Date().toISOString()
           });
-        } catch (syncErr) {
-          console.warn("Direct arrayUnion upload sync notice:", syncErr);
+        } catch (syncErr: any) {
+          if (isQuotaError(syncErr)) markQuotaExhausted();
         }
       }
 
@@ -373,16 +396,15 @@ export default function ExperienceAdmin() {
     if (!imageUrlInput.trim() || !editingItem) return;
     const url = imageUrlInput.trim();
 
-    // Jika mengedit dokumen yang sudah ada di database, sinkronkan gambar URL menggunakan arrayUnion()
-    if (!editingItem.isNew && editingItem.id) {
+    if (!editingItem.isNew && editingItem.id && !isQuotaExhausted() && !url.startsWith('data:')) {
       try {
         const docRef = doc(db, 'experiences', editingItem.id.toString());
         await updateDoc(docRef, {
           images: arrayUnion(url),
           updatedAt: new Date().toISOString()
         });
-      } catch (syncErr) {
-        console.warn("Direct arrayUnion URL sync notice:", syncErr);
+      } catch (syncErr: any) {
+        if (isQuotaError(syncErr)) markQuotaExhausted();
       }
     }
 
@@ -864,7 +886,10 @@ export default function ExperienceAdmin() {
             isOpen={!!archiveItemId}
             onClose={() => setArchiveItemId(null)}
             onSuccess={() => {
-              setExperiences(experiences.filter(p => p.id.toString() !== archiveItemId));
+              const updated = experiences.filter(p => p.id.toString() !== archiveItemId);
+              setExperiences(updated);
+              saveStoredExperiences(updated);
+              showToast("Pengalaman berhasil dipindahkan ke arsip!");
             }}
             itemType="experiences"
             itemId={archiveItemId || ''}

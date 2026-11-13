@@ -4,9 +4,9 @@ import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRigh
 import { Project } from '../data/projects';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { getStoredProjects, saveStoredProjects, cleanProjects } from '../lib/contentStorage';
+import { getStoredProjects, saveStoredProjects, cleanProjects, mergeProjects, syncDeletedIdsFromServer } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
-import { logFirestoreError, OperationType, isQuotaExhausted } from '../lib/firestoreErrorHandler';
+import { logFirestoreError, OperationType, isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import ShareProjectModal from './ShareProjectModal';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -344,27 +344,30 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       preloadImages(initialProjects);
     }
 
-    // 2. Tarik data instan dari disk server (/api/projects) tanpa menunggu Firebase (bebas batasan kuota)
-    fetch('/api/projects')
-      .then(res => res.ok ? res.json() : [])
-      .then(apiProjects => {
-        if (Array.isArray(apiProjects) && apiProjects.length > 0) {
-          const cleaned = cleanProjects(apiProjects);
-          if (cleaned.length > 0 && isMounted) {
-            setProjects(cleaned);
-            saveStoredProjects(cleaned);
-            setLoading(false);
-            preloadImages(cleaned);
-          }
+    // 2. Sinkronisasi tombstone & tarik data instan dari disk server (/api/projects)
+    (async () => {
+      await syncDeletedIdsFromServer();
+      try {
+        const res = await fetch('/api/projects');
+        const apiProjects = res.ok ? await res.json() : [];
+        if (Array.isArray(apiProjects) && isMounted) {
+          const merged = mergeProjects(getStoredProjects(), apiProjects);
+          setProjects(merged);
+          saveStoredProjects(merged);
+          setLoading(false);
+          preloadImages(merged);
         }
-      })
-      .catch((e) => console.warn("Fetch /api/projects notice:", e));
+      } catch (e) {
+        console.warn("Fetch /api/projects notice:", e);
+      }
+    })();
 
     const handleUpdate = (e: any) => {
-      if (e.detail) {
-        setProjects(e.detail);
-        if (isMounted) setLoading(false);
-        preloadImages(e.detail);
+      if (e.detail && isMounted) {
+        const merged = mergeProjects(e.detail);
+        setProjects(merged);
+        setLoading(false);
+        preloadImages(merged);
       }
     };
     window.addEventListener('user_projects_updated', handleUpdate);
@@ -378,39 +381,32 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           const projData: Project[] = [];
           snapshot.forEach((doc) => {
             const data = doc.data() as any;
-            if (!data.isArchived) projData.push({ id: doc.id, ...data });
+            projData.push({ id: doc.id, ...data });
           });
-          if (projData.length > 0) {
-            projData.sort((a, b) => {
-              const dateA = a.date || '';
-              const dateB = b.date || '';
-              return dateB.localeCompare(dateA);
-            });
-            const cleaned = cleanProjects(projData);
-            if (cleaned.length > 0) {
-              setProjects(cleaned);
-              saveStoredProjects(cleaned);
-              if (isMounted) setLoading(false);
-              preloadImages(cleaned);
-            }
+          const merged = mergeProjects(getStoredProjects(), projData);
+          if (isMounted) {
+            setProjects(merged);
+            saveStoredProjects(merged);
+            setLoading(false);
+            preloadImages(merged);
           }
         },
         (error) => {
+          if (isQuotaError(error)) markQuotaExhausted();
           logFirestoreError(error, OperationType.LIST, 'projects');
           const stored = getStoredProjects();
-          if (stored.length > 0) {
+          if (isMounted) {
             setProjects(stored);
+            setLoading(false);
           }
-          if (isMounted) setLoading(false);
         }
       );
     } else {
-      // Kuota tercapai: langsung gunakan cache/api projects
       const stored = getStoredProjects();
-      if (stored.length > 0) {
+      if (isMounted) {
         setProjects(stored);
+        setLoading(false);
       }
-      if (isMounted) setLoading(false);
     }
 
     // Safety timeout singkat agar skeleton tidak pernah menggantung lebih dari 400ms
@@ -902,7 +898,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                     Reset Pencarian
                   </button>
                 </div>
-              ) : (
+              ) : loading ? (
                 <div className="col-span-full columns-1 sm:columns-2 lg:columns-2 xl:columns-3 2xl:columns-3 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-12 space-y-6 sm:space-y-8 md:space-y-10 lg:space-y-10 xl:space-y-12">
                   {[1, 2, 3, 4, 5, 6].map((i) => (
                     <div 
@@ -916,6 +912,12 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                       }`}
                     />
                   ))}
+                </div>
+              ) : (
+                <div className="col-span-full py-16 text-center bg-zinc-50 dark:bg-[#111111] rounded-2xl border border-zinc-200/50 dark:border-zinc-800/50">
+                  <p className="text-black dark:text-zinc-400 text-xs md:text-sm font-medium">
+                    Belum ada karya yang ditampilkan.
+                  </p>
                 </div>
               )
             )}

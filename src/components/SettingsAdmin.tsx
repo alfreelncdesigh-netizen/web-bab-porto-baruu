@@ -4,10 +4,11 @@ import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { SiteSettings, defaultSettings, HeroBanner } from '../data/settings';
 import { getStoredSettings, saveStoredSettings, cleanSettings } from '../lib/contentStorage';
-import { uploadImageToStorage, compressAndUpload } from '../lib/storageUploader';
+import { uploadImageToStorage, compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { Loader2, Check, Upload, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { renderPdfFirstPageToImage } from '../lib/pdfHelper';
 import { resolveImageUrl } from '../lib/imageResolver';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function SettingsAdmin() {
  const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
@@ -39,25 +40,30 @@ export default function SettingsAdmin() {
       }
     } catch {}
 
-    // 3. Cek Firestore (hanya timpa jika Firestore memiliki data tersimpan yang lebih baru)
-    try {
-      const docRef = doc(db, 'settings', 'global');
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const cloudData = docSnap.data() as Partial<SiteSettings>;
-        const local = getStoredSettings();
-        const cloudSavedAt = cloudData?.savedAt || 0;
-        const localSavedAt = local?.savedAt || 0;
-        if (cloudSavedAt >= localSavedAt) {
-          const cleaned = cleanSettings(cloudData);
-          const merged = { ...defaultSettings, ...cleaned };
-          setSettings(merged);
-          try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+    // 3. Cek Firestore (hanya timpa jika Firestore memiliki data tersimpan yang lebih baru & kuota tersedia)
+    if (!isQuotaExhausted()) {
+      try {
+        const docRef = doc(db, 'settings', 'global');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const cloudData = docSnap.data() as Partial<SiteSettings>;
+          const local = getStoredSettings();
+          const cloudSavedAt = cloudData?.savedAt || 0;
+          const localSavedAt = local?.savedAt || 0;
+          if (cloudSavedAt >= localSavedAt) {
+            const cleaned = cleanSettings(cloudData);
+            const merged = { ...defaultSettings, ...cleaned };
+            setSettings(merged);
+            try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
+          }
         }
+      } catch (e: any) {
+        if (isQuotaError(e)) markQuotaExhausted();
+        logFirestoreError(e, OperationType.GET, 'settings/global');
+      } finally {
+        setLoading(false);
       }
-    } catch (e) {
-      console.warn("Settings fetch error (using stored):", e);
-    } finally {
+    } else {
       setLoading(false);
     }
   };
@@ -157,7 +163,8 @@ export default function SettingsAdmin() {
       }
 
       const targetFolder = field === 'aboutImage' ? 'about' : 'settings';
-      const finalUrl = await compressAndUpload(fileToUpload, targetFolder, 1400, 0.85);
+      const rawUrl = await compressAndUpload(fileToUpload, targetFolder, 1400, 0.85);
+      const finalUrl = await ensurePersistedAssetUrl(rawUrl, targetFolder);
 
       if (!finalUrl || finalUrl.startsWith('blob:')) {
         throw new Error("Gagal memperoleh tautan publik aset website.");
@@ -179,7 +186,7 @@ export default function SettingsAdmin() {
       // Auto-save instan ke database Firestore & server
       await saveStoredSettings(updated);
 
-      if (field === 'heroImage') {
+      if (field === 'heroImage' && !isQuotaExhausted()) {
         try {
           const heroPayload: Record<string, any> = {
             heroImage: finalUrl,
@@ -189,8 +196,9 @@ export default function SettingsAdmin() {
             updatedByAdmin: true
           };
           await setDoc(doc(db, 'settings', 'hero'), heroPayload, { merge: true });
-        } catch (hErr) {
-          console.warn("Direct hero doc sync notice:", hErr);
+        } catch (hErr: any) {
+          if (isQuotaError(hErr)) markQuotaExhausted();
+          else logFirestoreError(hErr, OperationType.WRITE, 'settings/hero');
         }
       }
 
@@ -315,7 +323,8 @@ export default function SettingsAdmin() {
     setUploading(true);
 
     try {
-      const finalUrl = await compressAndUpload(fileToUpload, 'banners', 1600, 0.85);
+      const rawUrl = await compressAndUpload(fileToUpload, 'banners', 1600, 0.85);
+      const finalUrl = await ensurePersistedAssetUrl(rawUrl, 'banners');
 
       if (!finalUrl || finalUrl.startsWith('blob:')) {
         throw new Error("Gagal memperoleh tautan publik aset banner.");

@@ -55,11 +55,23 @@ export function syncFirestoreSnapshotToSW<T>(collectionName: string, items: T[])
   // Sanitasi payload: buang string base64 raksasa agar tidak membebani batas kuota LocalStorage (5MB)
   const sanitizedItems = items.map((item: any) => {
     if (!item || typeof item !== 'object') return item;
-    if (typeof item.dataUrl === 'string' && item.dataUrl.length > 5000) {
-      const { dataUrl, ...rest } = item;
-      return rest;
+    const copy = { ...item };
+    if (typeof copy.dataUrl === 'string' && copy.dataUrl.length > 5000) {
+      delete copy.dataUrl;
     }
-    return item;
+    if (typeof copy.image === 'string' && copy.image.startsWith('data:') && copy.image.length > 50000) {
+      copy.image = '';
+    }
+    if (typeof copy.collaborationLogo === 'string' && copy.collaborationLogo.startsWith('data:') && copy.collaborationLogo.length > 50000) {
+      copy.collaborationLogo = '';
+    }
+    if (typeof copy.heroImageDataUrl === 'string' && copy.heroImageDataUrl.length > 5000) {
+      delete copy.heroImageDataUrl;
+    }
+    if (Array.isArray(copy.images)) {
+      copy.images = copy.images.filter((u: any) => typeof u === 'string' && (!u.startsWith('data:') || u.length <= 50000));
+    }
+    return copy;
   });
 
   const payload = {

@@ -6,13 +6,13 @@ import { Project, categories } from '../data/projects';
 import { Edit, Trash, EyeOff, Eye, Plus, X, Check, Upload, Loader2, Link as LinkIcon, Archive, AlertCircle, Handshake } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc, arrayUnion } from 'firebase/firestore';
-import { getStoredProjects, saveStoredProjects, cleanProjects, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { getStoredProjects, saveStoredProjects, cleanProjects, mergeProjects, markDeletedIds, unmarkDeletedIds, syncDeletedIdsFromServer, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { SiteSettings } from '../data/settings';
 import { getOptimizedImageUrl } from "../lib/cloudinary";
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
-import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
+import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
-import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
+import { isQuotaExhausted, markQuotaExhausted, isQuotaError, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function PortfolioAdmin() {
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
@@ -31,36 +31,51 @@ export default function PortfolioAdmin() {
   };
 
   useEffect(() => {
+    let isMounted = true;
     const handleUpdate = (e: any) => {
-      if (e.detail) setProjects(e.detail);
+      if (e.detail && isMounted) setProjects(e.detail);
     };
     window.addEventListener('user_projects_updated', handleUpdate);
 
-    const unsubscribe = onSnapshot(
-      collection(db, 'projects'),
-      (snapshot) => {
-        const projs: Project[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (!data.isArchived) {
-            projs.push({ id: docSnap.id, ...data } as Project);
+    (async () => {
+      await syncDeletedIdsFromServer();
+      try {
+        const res = await fetch('/api/projects');
+        if (res.ok) {
+          const apiProjs = await res.json();
+          if (Array.isArray(apiProjs) && isMounted) {
+            const merged = mergeProjects(getStoredProjects(), apiProjs);
+            setProjects(merged);
+            await saveStoredProjects(merged);
           }
-        });
-        projs.sort((a, b) => {
-          const dateA = a.date || '';
-          const dateB = b.date || '';
-          return dateB.localeCompare(dateA);
-        });
-        const cleaned = cleanProjects(projs);
-        setProjects(cleaned);
-        saveStoredProjects(cleaned);
-      },
-      (error) => {
-        console.warn("Firestore Admin Error (using stored projects):", error);
-        setProjects(getStoredProjects());
-      }
-    );
+        }
+      } catch {}
+    })();
+
+    let unsubscribe = () => {};
+    if (!isQuotaExhausted()) {
+      unsubscribe = onSnapshot(
+        collection(db, 'projects'),
+        (snapshot) => {
+          if (!isMounted) return;
+          const projs: Project[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            projs.push({ id: docSnap.id, ...data } as Project);
+          });
+          const merged = mergeProjects(getStoredProjects(), projs);
+          setProjects(merged);
+          saveStoredProjects(merged);
+        },
+        (error) => {
+          logFirestoreError(error, OperationType.LIST, 'projects');
+          if (isMounted) setProjects(getStoredProjects());
+        }
+      );
+    }
+
     return () => {
+      isMounted = false;
       unsubscribe();
       window.removeEventListener('user_projects_updated', handleUpdate);
     };
@@ -69,27 +84,45 @@ export default function PortfolioAdmin() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProject) return;
+    if (!editingProject.title.trim()) {
+      showToast("Judul karya wajib diisi!", "error");
+      return;
+    }
     setSaving(true);
 
     const docId = editingProject.id.toString();
+    const nowMs = Date.now();
 
-    // Pastikan HANYA URL publik permanen dari Firebase Storage yang disimpan ke database
-    // Filter ketat: hilangkan data base64 mentah dan local blob URL
-    const rawImages = editingProject.images || (editingProject.image ? [editingProject.image] : []);
-    const cleanImages = rawImages
-      .map(img => (img || '').trim())
-      .filter(img => img.length > 0 && !img.startsWith('data:') && !img.startsWith('blob:'));
+    const rawImages = editingProject.images && editingProject.images.length > 0
+      ? editingProject.images
+      : (editingProject.image ? [editingProject.image] : []);
 
-    const cleanMainImage = editingProject.image && !editingProject.image.startsWith('data:') && !editingProject.image.startsWith('blob:')
-      ? editingProject.image.trim()
-      : (cleanImages[0] || '');
+    const persistedImages: string[] = [];
+    for (const rawImg of rawImages) {
+      const cleanedUrl = await ensurePersistedAssetUrl(rawImg || '', 'works');
+      if (cleanedUrl && !cleanedUrl.startsWith('blob:')) {
+        persistedImages.push(cleanedUrl);
+      }
+    }
+
+    let cleanMainImage = await ensurePersistedAssetUrl(editingProject.image || '', 'works');
+    if (!cleanMainImage || cleanMainImage.startsWith('blob:')) {
+      cleanMainImage = persistedImages[0] || '';
+    }
+    const finalImages = persistedImages.length > 0
+      ? persistedImages
+      : (cleanMainImage ? [cleanMainImage] : []);
+
+    const persistedCollabLogo = editingProject.collaborationLogo
+      ? await ensurePersistedAssetUrl(editingProject.collaborationLogo, 'collaboration')
+      : '';
 
     const savedProj: Project = {
       id: docId,
       title: editingProject.title.trim(),
       category: editingProject.category.trim() || 'UI/UX',
       image: cleanMainImage,
-      images: cleanImages,
+      images: finalImages,
       description: (editingProject.description || '').trim(),
       date: (editingProject.date || '').trim() || new Date().toISOString().split('T')[0],
       role: (editingProject.role || '').trim(),
@@ -100,17 +133,19 @@ export default function PortfolioAdmin() {
       completionDate: (editingProject.completionDate || '').toString().trim(),
       isCollaboration: Boolean(editingProject.isCollaboration),
       collaborationPartner: (editingProject.collaborationPartner || '').trim(),
-      collaborationLogo: (editingProject.collaborationLogo || '').trim(),
+      collaborationLogo: persistedCollabLogo,
       collaborationText: (editingProject.collaborationText || '').trim(),
+      createdAt: editingProject.createdAt || nowMs,
+      updatedAt: nowMs,
+      isArchived: false,
+      archiveFolderId: null,
     };
 
-    // Update state dan local storage seketika agar langsung tampil di website
-    setProjects(prev => {
-      const exists = prev.some(p => p.id.toString() === docId);
-      const updated = exists ? prev.map(p => p.id.toString() === docId ? savedProj : p) : [savedProj, ...prev];
-      saveStoredProjects(updated);
-      return updated;
-    });
+    await unmarkDeletedIds('projects', [docId]);
+
+    const mergedUpdated = mergeProjects([savedProj], projects);
+    setProjects(mergedUpdated);
+    await saveStoredProjects(mergedUpdated);
 
     // Jika kolaborasi aktif pada karya ini, langsung terapkan ke pengaturan website agar logo langsung tampil di header & website
     if (savedProj.isCollaboration) {
@@ -132,7 +167,7 @@ export default function PortfolioAdmin() {
           },
           savedAt: Date.now()
         };
-        saveStoredSettings(updatedSettings);
+        await saveStoredSettings(updatedSettings);
       } catch (collabErr) {
         console.warn("Notice: Syncing project collaboration to settings:", collabErr);
       }
@@ -177,9 +212,12 @@ export default function PortfolioAdmin() {
             collaborationPartner: savedProj.collaborationPartner || '',
             collaborationLogo: savedProj.collaborationLogo || '',
             collaborationText: savedProj.collaborationText || '',
+            createdAt: savedProj.createdAt || nowMs,
+            isArchived: false,
+            archiveFolderId: null,
             _adminAuth: 'alfreelnc_admin_auth_verified',
             updatedByAdmin: true,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date(nowMs).toISOString()
           }, { merge: true }),
           4000,
           "Database cloud disinkronkan di latar belakang."
@@ -187,8 +225,9 @@ export default function PortfolioAdmin() {
       } catch (err: any) {
         if (isQuotaError(err)) {
           markQuotaExhausted();
+        } else {
+          logFirestoreError(err, OperationType.WRITE, `projects/${docId}`);
         }
-        console.warn("Save Project Cloud background sync notice:", err);
       }
     }
   };
@@ -202,10 +241,12 @@ export default function PortfolioAdmin() {
     setIsDeleting(true);
     const docId = projectToDelete.id.toString();
 
+    await markDeletedIds('projects', [docId]);
+
     // 1. Langsung hapus dari tampilan admin dan publik seketika (optimistic update)
     const updated = projects.filter(p => p.id.toString() !== docId);
     setProjects(updated);
-    saveStoredProjects(updated);
+    await saveStoredProjects(updated);
     showToast(`"${projectToDelete.title || 'Karya'}" berhasil dihapus permanen.`);
     
     // Lacak aktivitas penghapusan oleh kolaborator
@@ -223,42 +264,45 @@ export default function PortfolioAdmin() {
     setProjectToDelete(null);
 
     // 2. Eksekusi penghapusan di database Cloud Firestore
-    try {
-      await withTimeout(
-        deleteDoc(doc(db, 'projects', docId)),
-        6000,
-        "Database cloud selesai diperbarui."
-      );
-    } catch (err: any) {
-      console.warn("[DELETE] Notice database cloud:", err?.message || err);
-    } finally {
-      setIsDeleting(false);
+    if (!isQuotaExhausted()) {
+      try {
+        await withTimeout(
+          deleteDoc(doc(db, 'projects', docId)),
+          6000,
+          "Database cloud selesai diperbarui."
+        );
+      } catch (err: any) {
+        if (isQuotaError(err)) markQuotaExhausted();
+        else logFirestoreError(err, OperationType.DELETE, `projects/${docId}`);
+      }
     }
+    setIsDeleting(false);
   };
 
   const handleToggleDraft = async (project: Project) => {
     const newDraftStatus = !project.draft;
-    try {
-      await withTimeout(
-        updateDoc(doc(db, 'projects', project.id.toString()), {
-          draft: newDraftStatus
-        }),
-        10000,
-        "Waktu update status habis (10 detik)."
-      );
-      setProjects(prev => {
-        const updated = prev.map(p => p.id === project.id ? { ...p, draft: newDraftStatus } : p);
-        saveStoredProjects(updated);
-        return updated;
-      });
-      showToast(newDraftStatus ? "Karya disembunyikan (Draft)." : "Karya ditampilkan (Publik).");
-    } catch (err: any) {
-      setProjects(prev => {
-        const updated = prev.map(p => p.id === project.id ? { ...p, draft: newDraftStatus } : p);
-        saveStoredProjects(updated);
-        return updated;
-      });
-      showToast("Status draft diperbarui di lokal.");
+    const nowMs = Date.now();
+    const updated = projects.map(p => p.id === project.id ? { ...p, draft: newDraftStatus, updatedAt: nowMs } : p);
+    setProjects(updated);
+    await saveStoredProjects(updated);
+    showToast(newDraftStatus ? "Karya disembunyikan (Draft)." : "Karya ditampilkan (Publik).");
+
+    if (!isQuotaExhausted()) {
+      try {
+        await withTimeout(
+          updateDoc(doc(db, 'projects', project.id.toString()), {
+            draft: newDraftStatus,
+            updatedAt: new Date(nowMs).toISOString(),
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true
+          }),
+          5000,
+          "Waktu update status habis."
+        );
+      } catch (err: any) {
+        if (isQuotaError(err)) markQuotaExhausted();
+        else logFirestoreError(err, OperationType.UPDATE, `projects/${project.id}`);
+      }
     }
   };
 
@@ -356,7 +400,8 @@ export default function PortfolioAdmin() {
     try {
       if (fileList.length === 1) {
         setUploadStatusText("Mengompres & Mengunggah Gambar ke Firebase Storage (/works/)...");
-        const cleanUrl = await compressAndUpload(firstFile, 'works');
+        const rawUrl = await compressAndUpload(firstFile, 'works');
+        const cleanUrl = await ensurePersistedAssetUrl(rawUrl, 'works');
         
         setEditingProject(prev => {
           if (!prev) return null;
@@ -370,7 +415,7 @@ export default function PortfolioAdmin() {
         });
 
         // Jika dokumen karya sudah tersimpan di Firestore, langsung sinkronkan URL permanen via arrayUnion()
-        if (editingProject?.id) {
+        if (editingProject?.id && !isQuotaExhausted() && !cleanUrl.startsWith('data:')) {
           try {
             const projectRef = doc(db, 'projects', editingProject.id.toString());
             await updateDoc(projectRef, {
@@ -378,19 +423,20 @@ export default function PortfolioAdmin() {
               images: arrayUnion(cleanUrl),
               updatedAt: new Date().toISOString()
             });
-          } catch (syncErr) {
-            console.warn("Direct arrayUnion project sync notice:", syncErr);
+          } catch (syncErr: any) {
+            if (isQuotaError(syncErr)) markQuotaExhausted();
           }
         }
 
         showToast("Gambar berhasil diunggah!");
       } else {
         setUploadStatusText(`Mengunggah Gambar (0/${fileList.length})...`);
-        const cleanUrls = await uploadMultipleImagesInParallel(
+        const rawUrls = await uploadMultipleImagesInParallel(
           fileList,
           'works',
           (done, total) => setUploadStatusText(`Mengunggah (${done}/${total})...`)
         );
+        const cleanUrls = await Promise.all(rawUrls.map(u => ensurePersistedAssetUrl(u, 'works')));
         if (cleanUrls.length > 0) {
           setEditingProject(prev => {
             if (!prev) return null;
@@ -404,15 +450,16 @@ export default function PortfolioAdmin() {
           });
 
           // Sinkronkan seluruh foto ke dokumen Firestore via arrayUnion()
-          if (editingProject?.id) {
+          const persistableCloudUrls = cleanUrls.filter(u => !u.startsWith('data:'));
+          if (editingProject?.id && !isQuotaExhausted() && persistableCloudUrls.length > 0) {
             try {
               const projectRef = doc(db, 'projects', editingProject.id.toString());
               await updateDoc(projectRef, {
-                images: arrayUnion(...cleanUrls),
+                images: arrayUnion(...persistableCloudUrls),
                 updatedAt: new Date().toISOString()
               });
-            } catch (syncErr) {
-              console.warn("Direct arrayUnion project batch sync notice:", syncErr);
+            } catch (syncErr: any) {
+              if (isQuotaError(syncErr)) markQuotaExhausted();
             }
           }
 

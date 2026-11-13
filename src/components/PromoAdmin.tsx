@@ -15,12 +15,13 @@ import {
   Link as LinkIcon
 } from 'lucide-react';
 import { SiteSettings, defaultSettings, PromoPosterItem } from '../data/settings';
-import { getStoredSettings, saveStoredSettings, cleanForFirestore } from '../lib/contentStorage';
+import { getStoredSettings, saveStoredSettings, cleanForFirestore, mergeSettingsByTimestamp } from '../lib/contentStorage';
 import { NAMA_COOKIE_RIWAYAT, setCookie, deleteCookie, getCookie } from './PromoPosterWidget';
-import { uploadImageToStorage, base64ToBlob, recordMediaPermanently } from '../lib/storageUploader';
+import { uploadImageToStorage, base64ToBlob, recordMediaPermanently, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 const createDefaultSlots = (): PromoPosterItem[] => [
   { id: 'poster-1', title: 'Promo Diskon Desain Grafis', image: '', ctaText: 'Ambil Diskon', link: '#store', active: true },
@@ -78,10 +79,16 @@ export default function PromoAdmin() {
   useEffect(() => {
     refreshCookieStatus();
 
+    if (isQuotaExhausted()) return;
+
     // 1. Dengarkan doc settings/promoPosters secara realtime
     const unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+        const current = getStoredSettings();
+        const cloudSaved = Number(data.savedAt || 0);
+        const localSaved = Number(current.savedAt || 0);
+        if (localSaved > 0 && cloudSaved > 0 && cloudSaved < localSaved) return;
         if (Array.isArray(data.posters) && data.posters.length > 0) {
           setPosters(normalizeSlots(data.posters));
         }
@@ -90,23 +97,26 @@ export default function PromoAdmin() {
         }
       }
     }, (err) => {
-      console.warn("Notice: promoPosters realtime listener fallback:", err);
+      if (isQuotaError(err)) markQuotaExhausted();
+      logFirestoreError(err, OperationType.GET, 'settings/promoPosters');
     });
 
     // 2. Dengarkan doc settings/global secara realtime
     const unsubGlobal = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
       if (snap.exists()) {
         const data = snap.data() as SiteSettings;
-        setSettings(prev => ({ ...prev, ...data }));
-        if (Array.isArray(data.promoPosters) && data.promoPosters.length > 0) {
-          setPosters(normalizeSlots(data.promoPosters));
+        const merged = mergeSettingsByTimestamp(getStoredSettings(), data);
+        setSettings(merged);
+        if (Array.isArray(merged.promoPosters) && merged.promoPosters.length > 0) {
+          setPosters(normalizeSlots(merged.promoPosters));
         }
-        if (data.promoWidgetActive !== undefined) {
-          setIsGlobalActive(data.promoWidgetActive !== false);
+        if (merged.promoWidgetActive !== undefined) {
+          setIsGlobalActive(merged.promoWidgetActive !== false);
         }
       }
     }, (err) => {
-      console.warn("Notice: settings/global realtime listener fallback:", err);
+      if (isQuotaError(err)) markQuotaExhausted();
+      logFirestoreError(err, OperationType.GET, 'settings/global');
     });
 
     return () => {
@@ -181,10 +191,11 @@ export default function PromoAdmin() {
       const cleanFileName = `promo_poster_${Date.now()}_slot${index + 1}.webp`;
       const blob = base64ToBlob(dataUrl);
 
-      // 2. Unggah langsung ke Firebase Storage (folder /promos/)
-      const uploadedUrl = await uploadImageToStorage(blob, cleanFileName, undefined, 'promos');
-      if (!uploadedUrl || uploadedUrl.startsWith('data:') || uploadedUrl.startsWith('blob:')) {
-        throw new Error("Gagal memperoleh URL permanen dari Firebase Storage");
+      // 2. Unggah langsung ke storage/aset website
+      const rawUrl = await uploadImageToStorage(blob, cleanFileName, undefined, 'promos');
+      const uploadedUrl = await ensurePersistedAssetUrl(rawUrl, 'promos');
+      if (!uploadedUrl || uploadedUrl.startsWith('blob:')) {
+        throw new Error("Gagal memperoleh URL permanen aset poster.");
       }
 
       // 3. Simpan dan perbarui UI seketika
@@ -259,26 +270,29 @@ export default function PromoAdmin() {
       await saveStoredSettings(updatedSettings);
 
       // Simpan dokumen terpisah settings/promoPosters yang ringkas (hanya link & info penting)
-      try {
-        const lightweightPosters = posters.map(p => ({
-          id: p.id,
-          title: p.title || '',
-          image: p.image || '',
-          ctaText: p.ctaText || 'Ambil Diskon',
-          link: p.link || '#store',
-          active: p.active !== false
-        }));
+      if (!isQuotaExhausted()) {
+        try {
+          const lightweightPosters = posters.map(p => ({
+            id: p.id,
+            title: p.title || '',
+            image: p.image || '',
+            ctaText: p.ctaText || 'Ambil Diskon',
+            link: p.link || '#store',
+            active: p.active !== false
+          }));
 
-        await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
-          posters: lightweightPosters,
-          active: isGlobalActive,
-          updatedAt: new Date().toISOString(),
-          savedAt: Date.now(),
-          _adminAuth: 'alfreelnc_admin_auth_verified',
-          updatedByAdmin: true
-        }), { merge: true });
-      } catch (cloudErr) {
-        console.warn("Direct promoPosters cloud save notice:", cloudErr);
+          await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
+            posters: lightweightPosters,
+            active: isGlobalActive,
+            updatedAt: new Date().toISOString(),
+            savedAt: Date.now(),
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true
+          }), { merge: true });
+        } catch (cloudErr: any) {
+          if (isQuotaError(cloudErr)) markQuotaExhausted();
+          else logFirestoreError(cloudErr, OperationType.WRITE, 'settings/promoPosters');
+        }
       }
 
       window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));

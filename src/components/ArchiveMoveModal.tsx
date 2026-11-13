@@ -3,11 +3,51 @@ import { motion, AnimatePresence } from 'motion/react';
 import { collection, getDocs, addDoc, doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { X, Folder, Plus, FolderDown } from 'lucide-react';
-import { getStoredProjects, saveStoredProjects } from '../lib/contentStorage';
+import {
+  getStoredProjects,
+  saveStoredProjects,
+  getStoredBlogs,
+  saveStoredBlogs,
+  getStoredExperiences,
+  saveStoredExperiences
+} from '../lib/contentStorage';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 
 interface ArchiveFolder {
   id: string;
   name: string;
+}
+
+const FOLDERS_CACHE_KEY = 'archive_folders_cache';
+const ARCHIVED_ITEMS_CACHE_KEY = 'archived_items_cache';
+
+function readCachedFolders(): ArchiveFolder[] {
+  try {
+    const raw = localStorage.getItem(FOLDERS_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+function writeCachedFolders(folders: ArchiveFolder[]): void {
+  try {
+    localStorage.setItem(FOLDERS_CACHE_KEY, JSON.stringify(folders));
+  } catch {}
+}
+
+function saveArchivedItemToCache(entry: any): void {
+  try {
+    const raw = localStorage.getItem(ARCHIVED_ITEMS_CACHE_KEY);
+    const list: any[] = raw ? JSON.parse(raw) : [];
+    const filtered = Array.isArray(list)
+      ? list.filter((i: any) => !(String(i.id) === String(entry.id) && i.type === entry.type))
+      : [];
+    filtered.unshift(entry);
+    localStorage.setItem(ARCHIVED_ITEMS_CACHE_KEY, JSON.stringify(filtered.slice(0, 200)));
+  } catch {}
 }
 
 export default function ArchiveMoveModal({
@@ -23,7 +63,7 @@ export default function ArchiveMoveModal({
   itemType: 'projects' | 'blogPosts' | 'experiences';
   itemId: string;
 }) {
-  const [folders, setFolders] = useState<ArchiveFolder[]>([]);
+  const [folders, setFolders] = useState<ArchiveFolder[]>(() => readCachedFolders());
   const [newFolderName, setNewFolderName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -31,12 +71,23 @@ export default function ArchiveMoveModal({
   useEffect(() => {
     if (!isOpen) return;
 
+    const cached = readCachedFolders();
+    if (cached.length > 0) setFolders(cached);
+
+    if (isQuotaExhausted()) return;
+
     loadFolders();
     const unsub = onSnapshot(collection(db, 'archiveFolders'), (snap) => {
-      const f: ArchiveFolder[] = [];
-      snap.forEach(d => f.push({ id: d.id, name: d.data().name }));
-      setFolders(f);
+      const cloud: ArchiveFolder[] = [];
+      snap.forEach(d => cloud.push({ id: d.id, name: d.data().name }));
+      const map = new Map<string, ArchiveFolder>();
+      readCachedFolders().forEach(f => map.set(f.id, f));
+      cloud.forEach(f => map.set(f.id, f));
+      const merged = Array.from(map.values());
+      setFolders(merged);
+      writeCachedFolders(merged);
     }, (err) => {
+      if (isQuotaError(err)) markQuotaExhausted();
       console.warn("Archive modal folder sync warning:", err);
     });
 
@@ -44,12 +95,19 @@ export default function ArchiveMoveModal({
   }, [isOpen]);
 
   const loadFolders = async () => {
+    if (isQuotaExhausted()) return;
     try {
       const snap = await getDocs(collection(db, 'archiveFolders'));
-      const f: ArchiveFolder[] = [];
-      snap.forEach(d => f.push({ id: d.id, name: d.data().name }));
-      setFolders(f);
+      const cloud: ArchiveFolder[] = [];
+      snap.forEach(d => cloud.push({ id: d.id, name: d.data().name }));
+      const map = new Map<string, ArchiveFolder>();
+      readCachedFolders().forEach(f => map.set(f.id, f));
+      cloud.forEach(f => map.set(f.id, f));
+      const merged = Array.from(map.values());
+      setFolders(merged);
+      writeCachedFolders(merged);
     } catch (e) {
+      if (isQuotaError(e)) markQuotaExhausted();
       console.warn("Failed to load folders", e);
     }
   };
@@ -60,12 +118,24 @@ export default function ArchiveMoveModal({
     if (!trimmed) return;
     setLoading(true);
     try {
-      const ref = await addDoc(collection(db, 'archiveFolders'), {
-        name: trimmed,
-        createdAt: serverTimestamp()
+      let folderId = `folder_${Date.now()}`;
+      if (!isQuotaExhausted()) {
+        try {
+          const ref = await addDoc(collection(db, 'archiveFolders'), {
+            name: trimmed,
+            createdAt: serverTimestamp()
+          });
+          folderId = ref.id;
+        } catch (err) {
+          if (isQuotaError(err)) markQuotaExhausted();
+        }
+      }
+      const newFolder = { id: folderId, name: trimmed };
+      setFolders(prev => {
+        const next = prev.some(f => f.id === folderId) ? prev : [...prev, newFolder];
+        writeCachedFolders(next);
+        return next;
       });
-      const newFolder = { id: ref.id, name: trimmed };
-      setFolders(prev => prev.some(f => f.id === ref.id) ? prev : [...prev, newFolder]);
       setNewFolderName('');
       setIsCreating(false);
     } catch (e) {
@@ -77,17 +147,54 @@ export default function ArchiveMoveModal({
 
   const handleMoveToArchive = async (folderId: string) => {
     setLoading(true);
+    const nowIso = new Date().toISOString();
+    let itemSnapshot: any = null;
+
     try {
       if (itemType === 'projects') {
         const stored = getStoredProjects();
+        itemSnapshot = stored.find(p => p.id.toString() === itemId) || null;
         const updated = stored.filter(p => p.id.toString() !== itemId);
-        saveStoredProjects(updated);
+        await saveStoredProjects(updated);
+      } else if (itemType === 'blogPosts') {
+        const stored = getStoredBlogs();
+        itemSnapshot = stored.find(b => b.id.toString() === itemId) || null;
+        const updated = stored.filter(b => b.id.toString() !== itemId);
+        await saveStoredBlogs(updated);
+      } else if (itemType === 'experiences') {
+        const stored = getStoredExperiences();
+        itemSnapshot = stored.find(ex => ex.id.toString() === itemId) || null;
+        const updated = stored.filter(ex => ex.id.toString() !== itemId);
+        await saveStoredExperiences(updated);
       }
 
-      await setDoc(doc(db, itemType, itemId), {
-        isArchived: true,
-        archiveFolderId: folderId
-      }, { merge: true });
+      if (itemSnapshot) {
+        saveArchivedItemToCache({
+          ...itemSnapshot,
+          id: itemId,
+          type: itemType,
+          isArchived: true,
+          archiveFolderId: folderId,
+          updatedAt: nowIso
+        });
+      }
+
+      if (!isQuotaExhausted()) {
+        try {
+          await setDoc(doc(db, itemType, itemId), {
+            ...(itemSnapshot || {}),
+            isArchived: true,
+            archiveFolderId: folderId,
+            updatedAt: nowIso,
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true
+          }, { merge: true });
+        } catch (err) {
+          if (isQuotaError(err)) markQuotaExhausted();
+          console.warn(err);
+        }
+      }
+
       onSuccess(folderId);
       onClose();
     } catch (e) {

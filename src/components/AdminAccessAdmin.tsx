@@ -34,6 +34,16 @@ export default function AdminAccessAdmin() {
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
 
   useEffect(() => {
+    try {
+      const cached = localStorage.getItem('admin_users_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          setUsers(parsed);
+        }
+      }
+    } catch {}
+
     // Pastikan dokumen bawaan master 'albian' tersimpan di Firestore (jika kuota tersedia)
     const seedMaster = async () => {
       if (isQuotaExhausted()) return;
@@ -52,6 +62,8 @@ export default function AdminAccessAdmin() {
     };
     seedMaster();
 
+    if (isQuotaExhausted()) return;
+
     const unsubscribe = onSnapshot(
       collection(db, 'adminUsers'),
       (snapshot) => {
@@ -68,10 +80,17 @@ export default function AdminAccessAdmin() {
             addedAt: data.addedAt || new Date().toISOString()
           } as AdminUser);
         });
-        setUsers(list.sort((a, b) => b.addedAt.localeCompare(a.addedAt)));
+        const sorted = list.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+        setUsers(sorted);
+        try {
+          localStorage.setItem('admin_users_cache', JSON.stringify(sorted));
+        } catch {}
       },
       (error) => {
-        console.error("Error fetching admin users:", error);
+        if (isQuotaError(error)) {
+          markQuotaExhausted();
+        }
+        console.warn("Admin users listener notice:", error);
       }
     );
     return () => unsubscribe();
@@ -107,22 +126,49 @@ export default function AdminAccessAdmin() {
     try {
       const isEmail = cleanId.includes('@');
       const passwordToSet = newPassword.trim() || '31102008';
-      
-      await setDoc(doc(db, 'adminUsers', cleanId), {
+      const newUser: AdminUser = {
+        id: cleanId,
         username: isEmail ? cleanId.split('@')[0] : cleanId,
         email: isEmail ? cleanId : `${cleanId}@admin.local`,
         password: passwordToSet,
         status: 'allowed',
         role: 'admin',
         addedAt: new Date().toISOString()
-      });
-      
+      };
+
+      const updated = [newUser, ...users];
+      setUsers(updated);
+      try {
+        localStorage.setItem('admin_users_cache', JSON.stringify(updated));
+      } catch {}
+
+      if (!isQuotaExhausted()) {
+        try {
+          await setDoc(doc(db, 'adminUsers', cleanId), {
+            username: newUser.username,
+            email: newUser.email,
+            password: passwordToSet,
+            status: 'allowed',
+            role: 'admin',
+            addedAt: newUser.addedAt
+          });
+        } catch (err) {
+          if (isQuotaError(err)) {
+            markQuotaExhausted();
+          } else {
+            throw err;
+          }
+        }
+      }
+
       showToast(`Akses admin untuk "${cleanId}" berhasil ditambahkan.`);
       setNewIdentifier('');
       setNewPassword('');
     } catch (err: any) {
-      console.error(err);
-      showToast('Gagal menambahkan pengguna ke Firestore.', 'error');
+      console.warn("Add admin user notice:", err);
+      showToast('Tersimpan lokal (sinkronisasi cloud tertunda karena kuota).');
+      setNewIdentifier('');
+      setNewPassword('');
     } finally {
       setIsAdding(false);
     }
@@ -135,15 +181,25 @@ export default function AdminAccessAdmin() {
       return;
     }
 
+    const newStatus = user.status === 'allowed' ? 'blocked' : 'allowed';
+    const updated = users.map(u => u.id === user.id ? { ...u, status: newStatus } : u) as AdminUser[];
+    setUsers(updated);
     try {
-      const newStatus = user.status === 'allowed' ? 'blocked' : 'allowed';
-      await updateDoc(doc(db, 'adminUsers', user.id), {
-        status: newStatus
-      });
-      showToast(`Akses ${newStatus === 'allowed' ? 'diizinkan' : 'diblokir'} untuk ${user.username || user.email}`);
-    } catch (err) {
-      console.error(err);
-      showToast('Gagal mengubah status akses.', 'error');
+      localStorage.setItem('admin_users_cache', JSON.stringify(updated));
+    } catch {}
+    showToast(`Akses ${newStatus === 'allowed' ? 'diizinkan' : 'diblokir'} untuk ${user.username || user.email}`);
+
+    if (!isQuotaExhausted()) {
+      try {
+        await updateDoc(doc(db, 'adminUsers', user.id), {
+          status: newStatus
+        });
+      } catch (err) {
+        if (isQuotaError(err)) {
+          markQuotaExhausted();
+        }
+        console.warn("Toggle admin status notice:", err);
+      }
     }
   };
 
@@ -162,17 +218,25 @@ export default function AdminAccessAdmin() {
     const id = userToDelete.id;
 
     // Optimistic update
-    setUsers(prev => prev.filter(u => u.id !== id));
+    const updated = users.filter(u => u.id !== id);
+    setUsers(updated);
+    try {
+      localStorage.setItem('admin_users_cache', JSON.stringify(updated));
+    } catch {}
     showToast(`Admin "${userToDelete.username || userToDelete.email}" dihapus dari akses.`);
     setUserToDelete(null);
 
-    try {
-      await deleteDoc(doc(db, 'adminUsers', id));
-    } catch (err) {
-      console.error("Delete admin user error:", err);
-    } finally {
-      setIsDeleting(false);
+    if (!isQuotaExhausted()) {
+      try {
+        await deleteDoc(doc(db, 'adminUsers', id));
+      } catch (err) {
+        if (isQuotaError(err)) {
+          markQuotaExhausted();
+        }
+        console.warn("Delete admin user notice:", err);
+      }
     }
+    setIsDeleting(false);
   };
 
   return (

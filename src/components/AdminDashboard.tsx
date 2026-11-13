@@ -79,14 +79,17 @@ export default function AdminDashboard() {
           const isMaster = MASTER_ADMINS.includes(email);
           let isAllowed = isMaster;
 
-          if (!isAllowed) {
+          if (!isAllowed && !isQuotaExhausted()) {
             try {
               const userDoc = await getDoc(doc(db, 'adminUsers', email));
               if (userDoc.exists() && userDoc.data().status === 'allowed') {
                 isAllowed = true;
               }
             } catch (err) {
-              console.error("Error checking admin access", err);
+              if (isQuotaError(err)) {
+                markQuotaExhausted();
+              }
+              console.warn("Error checking admin access", err);
             }
           }
 
@@ -173,7 +176,7 @@ export default function AdminDashboard() {
          collabCfg.collaboratorPassword.trim() === cleanPass) ||
         (cleanUser === 'kolaborator' && cleanPass === 'kolaborasi123');
 
-      if (!matchedAccount && !isDirectCollabMatch) {
+      if (!matchedAccount && !isDirectCollabMatch && !isQuotaExhausted()) {
         try {
           const globalDocSnap = await getDoc(doc(db, 'settings', 'global'));
           if (globalDocSnap.exists()) {
@@ -192,6 +195,9 @@ export default function AdminDashboard() {
             }
           }
         } catch (fetchErr) {
+          if (isQuotaError(fetchErr)) {
+            markQuotaExhausted();
+          }
           console.warn("Notice: Remote settings check error:", fetchErr);
         }
       }
@@ -235,17 +241,20 @@ export default function AdminDashboard() {
       let foundData: any = null;
 
       // Cek langsung berdasarkan Document ID di adminUsers
-      try {
-        const directDoc = await getDoc(doc(db, 'adminUsers', cleanUser));
-        if (directDoc.exists()) {
-          foundData = directDoc.data();
+      if (!isQuotaExhausted()) {
+        try {
+          const directDoc = await getDoc(doc(db, 'adminUsers', cleanUser));
+          if (directDoc.exists()) {
+            foundData = directDoc.data();
+          }
+        } catch (err) {
+          if (isQuotaError(err)) markQuotaExhausted();
+          console.warn("Direct doc check err:", err);
         }
-      } catch (err) {
-        console.warn("Direct doc check err:", err);
       }
 
       // Jika belum ditemukan, cek langsung koleksi collaboratorAccounts
-      if (!foundData) {
+      if (!foundData && !isQuotaExhausted()) {
         try {
           const collabDocSnap = await getDoc(doc(db, 'collaboratorAccounts', cleanUser));
           if (collabDocSnap.exists()) {
@@ -257,12 +266,13 @@ export default function AdminDashboard() {
             };
           }
         } catch (cErr) {
+          if (isQuotaError(cErr)) markQuotaExhausted();
           console.warn("Collaborator doc check notice:", cErr);
         }
       }
 
       // Jika belum ditemukan, cari via query field 'username' atau 'email'
-      if (!foundData) {
+      if (!foundData && !isQuotaExhausted()) {
         try {
           const qUser = query(collection(db, 'adminUsers'), where('username', '==', cleanUser));
           const snapUser = await getDocs(qUser);
@@ -276,6 +286,7 @@ export default function AdminDashboard() {
             }
           }
         } catch (qErr) {
+          if (isQuotaError(qErr)) markQuotaExhausted();
           console.warn("Firestore query err:", qErr);
         }
       }
@@ -307,13 +318,17 @@ export default function AdminDashboard() {
           setIsLoggingIn(false);
 
           // Update last login
-          try {
-            await setDoc(doc(db, 'adminUsers', cleanUser), {
-              lastLogin: new Date().toISOString(),
-              _adminAuth: 'alfreelnc_admin_auth_verified',
-              updatedByAdmin: true
-            }, { merge: true });
-          } catch {}
+          if (!isQuotaExhausted()) {
+            try {
+              await setDoc(doc(db, 'adminUsers', cleanUser), {
+                lastLogin: new Date().toISOString(),
+                _adminAuth: 'alfreelnc_admin_auth_verified',
+                updatedByAdmin: true
+              }, { merge: true });
+            } catch (err) {
+              if (isQuotaError(err)) markQuotaExhausted();
+            }
+          }
 
           // Jika role collaborator, catat aktivitas login
           if (role === 'collaborator') {

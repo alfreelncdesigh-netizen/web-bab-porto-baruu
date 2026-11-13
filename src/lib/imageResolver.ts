@@ -1,6 +1,7 @@
 import { getOptimizedImageUrl } from './cloudinary';
 import { db } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from './firestoreErrorHandler';
 
 /**
  * 1. LOADING_SVG: Ditampilkan hanya selama proses pemuatan / pemulihan async gambar (maksimal 2 detik).
@@ -260,9 +261,10 @@ export function handleImageError(
     });
 
     const restorePromise = (async (): Promise<string | null> => {
+      if (isQuotaExhausted()) return null;
       try {
         let snap = await getDoc(doc(db, 'uploadedMedia', safeDocId));
-        if (!snap.exists() && mediaDocId !== safeDocId) {
+        if (!snap.exists() && mediaDocId !== safeDocId && !isQuotaExhausted()) {
           snap = await getDoc(doc(db, 'uploadedMedia', mediaDocId));
         }
         if (snap.exists()) {
@@ -272,6 +274,9 @@ export function handleImageError(
           }
         }
       } catch (err) {
+        if (isQuotaError(err)) {
+          markQuotaExhausted();
+        }
         console.warn('Firestore restore image notice:', err);
       }
       return null;

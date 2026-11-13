@@ -8,15 +8,19 @@ import {
 import { QuickFilterItem } from '../types/quickFilter';
 import { 
   getStoredQuickFilterItems, 
+  saveStoredQuickFilterItems,
   saveQuickFilterItemToFirestore, 
   deleteQuickFilterItemFromFirestore,
-  cleanQuickFilterItems 
+  cleanQuickFilterItems,
+  mergeQuickFilterItems
 } from '../lib/quickFilterStorage';
+import { syncDeletedIdsFromServer } from '../lib/contentStorage';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { CustomLoadingPlaceholder } from './SectionInsight';
-import { compressAndUpload, uploadMultipleImagesInParallel } from '../lib/storageUploader';
+import { compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function QuickFilterAdmin() {
   const [items, setItems] = useState<QuickFilterItem[]>(() => getStoredQuickFilterItems());
@@ -49,53 +53,77 @@ export default function QuickFilterAdmin() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Subscribe to Firestore for real-time admin sync
+  // Subscribe to Firestore & server API for real-time admin sync
   useEffect(() => {
+    let isMounted = true;
     const handleUpdate = (e: any) => {
-      if (e.detail && Array.isArray(e.detail)) setItems(e.detail);
+      if (e.detail && Array.isArray(e.detail) && isMounted) setItems(e.detail);
     };
     window.addEventListener('quick_filter_updated', handleUpdate);
 
-    try {
-      const unsubscribe = onSnapshot(
-        collection(db, 'quickFilterQA'),
-        (snapshot) => {
-          const loaded: QuickFilterItem[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data();
-            loaded.push({
-              id: docSnap.id,
-              question: data.question || '',
-              answer: data.answer || '',
-              category: data.category || 'Tren Desain',
-              images: Array.isArray(data.images) ? data.images : (typeof data.image === 'string' && data.image ? [data.image] : []),
-              tags: data.tags || [],
-              order: data.order ?? 0,
-              published: data.published !== false,
-              createdAt: data.createdAt,
-              updatedAt: data.updatedAt
-            });
-          });
-
-          if (loaded.length > 0) {
-            setItems(cleanQuickFilterItems(loaded));
+    (async () => {
+      await syncDeletedIdsFromServer();
+      try {
+        const res = await fetch('/api/quick-filter');
+        if (res.ok) {
+          const apiData = await res.json();
+          if (Array.isArray(apiData) && isMounted) {
+            const merged = mergeQuickFilterItems(getStoredQuickFilterItems(), apiData);
+            setItems(merged);
+            saveStoredQuickFilterItems(merged);
+            setIsLoading(false);
           }
-          setIsLoading(false);
-        },
-        (error) => {
-          console.warn('Firestore QuickFilter admin listener notice:', error);
-          setIsLoading(false);
         }
-      );
+      } catch {}
+    })();
 
-      return () => {
-        unsubscribe();
-        window.removeEventListener('quick_filter_updated', handleUpdate);
-      };
-    } catch {
+    let unsubscribe = () => {};
+    if (!isQuotaExhausted()) {
+      try {
+        unsubscribe = onSnapshot(
+          collection(db, 'quickFilterQA'),
+          (snapshot) => {
+            if (!isMounted) return;
+            const loaded: QuickFilterItem[] = [];
+            snapshot.forEach((docSnap) => {
+              const data = docSnap.data();
+              loaded.push({
+                id: docSnap.id,
+                question: data.question || '',
+                answer: data.answer || '',
+                category: data.category || 'Tren Desain',
+                images: Array.isArray(data.images) ? data.images : (typeof data.image === 'string' && data.image ? [data.image] : []),
+                tags: data.tags || [],
+                order: data.order ?? 0,
+                published: data.published !== false,
+                createdAt: data.createdAt,
+                updatedAt: data.updatedAt
+              });
+            });
+
+            const merged = mergeQuickFilterItems(getStoredQuickFilterItems(), loaded);
+            setItems(merged);
+            saveStoredQuickFilterItems(merged);
+            setIsLoading(false);
+          },
+          (error) => {
+            if (isQuotaError(error)) markQuotaExhausted();
+            logFirestoreError(error, OperationType.LIST, 'quickFilterQA');
+            if (isMounted) setIsLoading(false);
+          }
+        );
+      } catch {
+        setIsLoading(false);
+      }
+    } else {
       setIsLoading(false);
-      return () => window.removeEventListener('quick_filter_updated', handleUpdate);
     }
+
+    return () => {
+      isMounted = false;
+      unsubscribe();
+      window.removeEventListener('quick_filter_updated', handleUpdate);
+    };
   }, []);
 
   // Compute categories
@@ -151,17 +179,19 @@ export default function QuickFilterAdmin() {
 
     try {
       if (fileList.length === 1) {
-        const uploadedUrl = await compressAndUpload(fileList[0], 'insight');
+        const rawUrl = await compressAndUpload(fileList[0], 'insight');
+        const uploadedUrl = await ensurePersistedAssetUrl(rawUrl, 'insight');
         if (uploadedUrl) {
           setFormImages(prev => [...prev, uploadedUrl]);
           showToast('Gambar berhasil diunggah!');
         }
       } else {
-        const uploadedUrls = await uploadMultipleImagesInParallel(
+        const rawUrls = await uploadMultipleImagesInParallel(
           fileList,
           'insight',
           (done, total) => setUploadStatusText(`Mengunggah (${done}/${total})...`)
         );
+        const uploadedUrls = await Promise.all(rawUrls.map(u => ensurePersistedAssetUrl(u, 'insight')));
         if (uploadedUrls.length > 0) {
           setFormImages(prev => [...prev, ...uploadedUrls]);
           showToast(`${uploadedUrls.length} gambar berhasil diunggah!`);
@@ -204,12 +234,17 @@ export default function QuickFilterAdmin() {
 
     setIsSaving(true);
     try {
+      const persistedFormImages = await Promise.all(
+        formImages
+          .filter(url => url && typeof url === 'string' && url.trim().length > 0)
+          .map(url => ensurePersistedAssetUrl(url, 'insight'))
+      );
       const payload: QuickFilterItem = {
         id: editingItem?.id || `qfa_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         question: formQuestion.trim(),
         answer: formAnswer.trim(),
         category: finalCategory,
-        images: formImages.filter(url => url && typeof url === 'string' && url.trim().length > 0),
+        images: persistedFormImages.filter(u => u && !u.startsWith('blob:')),
         tags: formTags.split(',').map(t => t.trim()).filter(Boolean),
         order: Number(formOrder) || 1,
         published: formPublished,

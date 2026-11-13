@@ -5,8 +5,9 @@ import { doc, getDoc } from 'firebase/firestore';
 import { Loader2, Check, Upload, Image as ImageIcon } from 'lucide-react';
 import { defaultSettings } from '../data/settings';
 import { getStoredSettings, saveStoredSettings, cleanSettings } from '../lib/contentStorage';
-import { compressAndUpload } from '../lib/storageUploader';
+import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl } from '../lib/imageResolver';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function AboutAdmin() {
  const [settings, setSettings] = useState(() => getStoredSettings());
@@ -20,6 +21,10 @@ export default function AboutAdmin() {
    try {
     const local = getStoredSettings();
     setSettings(local);
+    if (isQuotaExhausted()) {
+     setLoading(false);
+     return;
+    }
     const docSnap = await getDoc(doc(db, 'settings', 'global'));
     if (docSnap.exists()) {
      const cloudData = docSnap.data() as any;
@@ -31,8 +36,9 @@ export default function AboutAdmin() {
        try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
      }
     }
-   } catch (err) {
-    console.warn("Error fetching settings (using stored):", err);
+   } catch (err: any) {
+    if (isQuotaError(err)) markQuotaExhausted();
+    logFirestoreError(err, OperationType.GET, 'settings/global');
    } finally {
     setLoading(false);
    }
@@ -83,7 +89,8 @@ export default function AboutAdmin() {
    setSettings(prev => ({ ...prev, aboutImage: previewUrl }));
 
    // Upload cepat langsung ke aset website
-   const finalUrl = await compressAndUpload(file, 'about', 1400, 0.85);
+   const rawUrl = await compressAndUpload(file, 'about', 1400, 0.85);
+   const finalUrl = await ensurePersistedAssetUrl(rawUrl, 'about');
    if (!finalUrl || finalUrl.startsWith('blob:')) {
      throw new Error("Gagal memperoleh tautan publik aset gambar profil.");
    }

@@ -8,9 +8,10 @@ import {
 } from 'lucide-react';
 import imageCompression from 'browser-image-compression';
 import { defaultSettings, defaultCvSections } from '../data/settings';
-import { getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { getStoredSettings, saveStoredSettings, mergeSettingsByTimestamp } from '../lib/contentStorage';
 import { compressImageToWebP } from '../lib/imageCompressor';
-import { uploadImageToStorage } from '../lib/storageUploader';
+import { uploadImageToStorage, ensurePersistedAssetUrl } from '../lib/storageUploader';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import ConfirmModal from './ConfirmModal';
 import { FastInput, FastTextarea } from './FastInput';
 
@@ -39,35 +40,59 @@ export default function CvAdmin() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const stored = getStoredSettings();
-        const docSnap = await getDoc(doc(db, 'settings', 'global'));
-        let cvDataFromCloud: any = null;
+        let baseSettings = getStoredSettings();
+
         try {
-          const cvSnap = await getDoc(doc(db, 'settings', 'cv'));
-          if (cvSnap.exists()) {
-            cvDataFromCloud = cvSnap.data();
+          const res = await fetch('/api/settings');
+          if (res.ok) {
+            const serverData = await res.json();
+            if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
+              baseSettings = mergeSettingsByTimestamp(baseSettings, serverData);
+            }
           }
-        } catch (e) {}
+        } catch {}
 
-        const data = docSnap.exists() ? docSnap.data() : {};
-        const cloudCvSections = (cvDataFromCloud?.cvSections && cvDataFromCloud.cvSections.length > 0)
-          ? cvDataFromCloud.cvSections
-          : (data.cvSections && data.cvSections.length > 0 ? data.cvSections : null);
+        let data: any = {};
+        let cvDataFromCloud: any = null;
 
-        const rawSections = cloudCvSections && cloudCvSections.length > 0
-          ? cloudCvSections
-          : (stored.cvSections && stored.cvSections.length > 0 ? stored.cvSections : defaultCvSections);
-        
+        if (!isQuotaExhausted()) {
+          try {
+            const [docSnap, cvSnap] = await Promise.all([
+              getDoc(doc(db, 'settings', 'global')),
+              getDoc(doc(db, 'settings', 'cv')).catch(() => null)
+            ]);
+            if (docSnap.exists()) {
+              data = docSnap.data();
+            }
+            if (cvSnap && cvSnap.exists()) {
+              cvDataFromCloud = cvSnap.data();
+            }
+          } catch (e) {
+            if (isQuotaError(e)) markQuotaExhausted();
+            logFirestoreError(e, OperationType.GET, 'settings/cv');
+          }
+        }
+
+        const cloudCombined: any = {
+          ...data,
+          ...(cvDataFromCloud || {}),
+          savedAt: Math.max(Number(cvDataFromCloud?.savedAt || 0), Number(data?.savedAt || 0))
+        };
+
+        const merged = mergeSettingsByTimestamp(baseSettings, cloudCombined);
+        const rawSections = (merged.cvSections && merged.cvSections.length > 0)
+          ? merged.cvSections
+          : (baseSettings.cvSections && baseSettings.cvSections.length > 0 ? baseSettings.cvSections : defaultCvSections);
+
         const normalizedSections = rawSections.map((s: any, idx: number) => {
-          let imgs = Array.isArray(s.images) 
-            ? s.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0) 
-            : (s.image ? [s.image.trim()] : []);
+          let imgs = Array.isArray(s.images)
+            ? s.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0 && !img.startsWith('blob:'))
+            : (s.image && !s.image.startsWith('blob:') ? [s.image.trim()] : []);
 
-          // Proteksi reload: jika cloud tidak memiliki gambar tetapi local backup memilikinya, pertahankan gambar
-          if (imgs.length === 0 && stored.cvSections?.[idx]) {
-            const localSec = stored.cvSections[idx];
+          if (imgs.length === 0 && baseSettings.cvSections?.[idx]) {
+            const localSec = baseSettings.cvSections[idx];
             if (Array.isArray(localSec.images) && localSec.images.length > 0) {
-              imgs = localSec.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0);
+              imgs = localSec.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0 && !img.startsWith('blob:'));
             }
           }
 
@@ -78,16 +103,17 @@ export default function CvAdmin() {
           };
         });
 
-        const merged = { 
-          ...defaultSettings, 
-          ...data, 
-          cvRole: cvDataFromCloud?.cvRole || data.cvRole || stored.cvRole || 'Desainer Grafis',
-          cvPdfFile: cvDataFromCloud?.cvPdfFile || data.cvPdfFile || stored.cvPdfFile || '',
-          cvSections: normalizedSections 
+        const finalSettings = {
+          ...defaultSettings,
+          ...merged,
+          cvRole: merged.cvRole || baseSettings.cvRole || 'Desainer Grafis',
+          cvPdfFile: merged.cvPdfFile || baseSettings.cvPdfFile || '',
+          cvSections: normalizedSections
         };
-        setSettings(merged);
-        saveStoredSettings(merged);
+
+        setSettings(finalSettings);
       } catch (err) {
+        if (isQuotaError(err)) markQuotaExhausted();
         console.warn("Error fetching settings (using stored):", err);
       } finally {
         setLoading(false);
@@ -114,14 +140,17 @@ export default function CvAdmin() {
     setUploading(true);
     try {
       const cleanUrl = await uploadImageToStorage(file, file.name, undefined, 'cv');
-      if (cleanUrl && !cleanUrl.startsWith('data:') && !cleanUrl.startsWith('blob:')) {
-        setSettings((prev: any) => ({ ...prev, cvPdfFile: cleanUrl }));
-        showToast(isPng ? "File CV (PNG) berhasil diunggah permanen ke Firebase Storage!" : "File CV (PDF) berhasil diunggah permanen ke Firebase Storage!");
+      const persistedUrl = await ensurePersistedAssetUrl(cleanUrl, 'cv');
+      if (persistedUrl && !persistedUrl.startsWith('blob:')) {
+        const nextSettings = { ...settings, cvPdfFile: persistedUrl, savedAt: Date.now() };
+        setSettings(nextSettings);
+        await saveStoredSettings(nextSettings);
+        showToast(isPng ? "File CV (PNG) berhasil diunggah & disimpan ke aset website!" : "File CV (PDF) berhasil diunggah & disimpan ke aset website!");
         return;
       }
-      throw new Error("Gagal mengunggah file CV ke Firebase Storage");
+      throw new Error("Gagal menyimpan file CV ke aset website");
     } catch (err: any) {
-      showToast(err.message || "Gagal mengunggah file CV ke Firebase Storage.", "error");
+      showToast(err.message || "Gagal mengunggah file CV.", "error");
     } finally {
       e.target.value = '';
       setUploading(false);
@@ -169,22 +198,23 @@ export default function CvAdmin() {
                     const { blob, file: webpFile } = await compressImageToWebP(img, 800, 0.78);
                     const filename = `cv_sec${secIdx}_${imgIdx}_${Date.now()}.webp`;
                     const uploadedUrl = await uploadImageToStorage(blob || webpFile, filename, undefined, 'cv');
+                    const persistedUrl = await ensurePersistedAssetUrl(uploadedUrl, 'cv');
                     converted++;
                     setSaveProgressText(`Memproses & Menyimpan Gambar (${converted}/${totalBase64})...`);
-                    return (uploadedUrl && !uploadedUrl.startsWith('data:') && !uploadedUrl.startsWith('blob:')) ? uploadedUrl : '';
+                    return (persistedUrl && !persistedUrl.startsWith('blob:')) ? persistedUrl : '';
                   } catch (err) {
                     converted++;
                     setSaveProgressText(`Memproses & Menyimpan Gambar (${converted}/${totalBase64})...`);
                     return '';
                   }
                 }
-                return (typeof img === 'string' && !img.startsWith('data:') && !img.startsWith('blob:')) ? img : '';
+                return (typeof img === 'string' && !img.startsWith('blob:')) ? await ensurePersistedAssetUrl(img, 'cv') : '';
               })
             );
 
             return {
               ...sec,
-              images: convertedImages.filter((u: any) => typeof u === 'string' && u.trim().length > 0)
+              images: convertedImages.filter((u: any) => typeof u === 'string' && u.trim().length > 0 && !u.startsWith('blob:'))
             };
           })
         );
@@ -192,9 +222,12 @@ export default function CvAdmin() {
 
       setSaveProgressText('Menyimpan ke Database...');
 
+      const persistedPdf = settings.cvPdfFile ? await ensurePersistedAssetUrl(settings.cvPdfFile, 'cv') : '';
       const settingsToSave = {
         ...settings,
-        cvSections: updatedSections
+        cvPdfFile: persistedPdf || settings.cvPdfFile || '',
+        cvSections: updatedSections,
+        savedAt: Date.now()
       };
 
       setSettings(settingsToSave);
@@ -283,19 +316,20 @@ export default function CvAdmin() {
         // Kompresi otomatis di browser dengan Canvas toBlob WebP
         const { blob, file: webpFile } = await compressImageToWebP(file, 800, 0.78);
 
-        // Upload ke Firebase Storage (folder /cv/) untuk mendapatkan URL publik permanen
+        // Upload ke aset website / Firebase Storage (folder /cv/) untuk mendapatkan URL publik permanen
         const filename = `cv_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}.webp`;
         const uploadedUrl = await uploadImageToStorage(blob || webpFile, filename, undefined, 'cv');
+        const persistedUrl = await ensurePersistedAssetUrl(uploadedUrl, 'cv');
 
         completedCount++;
-        setUploadStatusText(`Mengunggah Foto ke Firebase Storage (${completedCount}/${fileList.length})...`);
-        setSaveProgressText(`Menyimpan Foto ke Firebase Storage (${completedCount}/${fileList.length})...`);
+        setUploadStatusText(`Menyimpan Foto ke Aset Website (${completedCount}/${fileList.length})...`);
+        setSaveProgressText(`Menyimpan Foto ke Aset Website (${completedCount}/${fileList.length})...`);
 
-        return uploadedUrl;
+        return persistedUrl;
       });
 
       const uploadedUrls = await Promise.all(uploadPromises);
-      const validUrls = uploadedUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0 && !u.startsWith('data:') && !u.startsWith('blob:'));
+      const validUrls = uploadedUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0 && !u.startsWith('blob:'));
 
       if (validUrls.length > 0) {
         setUploadStatusText("Menyimpan ke database...");
@@ -322,13 +356,14 @@ export default function CvAdmin() {
 
           const updatedSettings = {
             ...prevSettings,
-            cvSections: newSections
+            cvSections: newSections,
+            savedAt: Date.now()
           };
 
-          // Simpan ke Cloud Firestore (Database) dan LocalStorage seketika
+          // Simpan ke server disk, LocalStorage, & Cloud Firestore seketika
           saveStoredSettings(updatedSettings).then((success) => {
             if (success) {
-              showToast(`${validUrls.length} foto berhasil diunggah & disimpan ke database!`, "success");
+              showToast(`${validUrls.length} foto berhasil diunggah & disimpan!`, "success");
             } else {
               showToast(`${validUrls.length} foto berhasil ditambahkan (Penyimpanan Lokal Aktif)`, "success");
             }

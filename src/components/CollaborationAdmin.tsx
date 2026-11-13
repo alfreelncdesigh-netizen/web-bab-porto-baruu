@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { SiteSettings, CollaborationConfig, CollaboratorAccount, defaultSettings } from '../data/settings';
 import { getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
-import { compressAndUpload } from '../lib/storageUploader';
+import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { db } from '../lib/firebase';
 import { doc, setDoc, getDoc, getDocs, deleteDoc, collection, onSnapshot, query, orderBy, limit, where } from 'firebase/firestore';
@@ -19,6 +19,7 @@ import {
   clearAllCollaboratorLogs 
 } from '../lib/collaboratorLogger';
 import BrandLogo from './BrandLogo';
+import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 
 export default function CollaborationAdmin() {
   const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
@@ -85,6 +86,7 @@ export default function CollaborationAdmin() {
   // untuk memastikan data username & password tidak pernah hilang atau tertimpa
   useEffect(() => {
     const loadRemoteAccounts = async () => {
+      if (isQuotaExhausted()) return;
       try {
         let remoteAccounts: CollaboratorAccount[] = [];
 
@@ -175,38 +177,41 @@ export default function CollaborationAdmin() {
 
   // Sinkronisasi realtime log aktivitas kolaborator dari Cloud Firestore & Server
   useEffect(() => {
-    // 1. Sinkronisasi realtime langsung dari Cloud Firestore
-    const q = query(collection(db, 'collaboratorLogs'), orderBy('timestamp', 'desc'), limit(150));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const firestoreLogs: CollaboratorActivityLog[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          firestoreLogs.push({
-            id: docSnap.id,
-            username: data.username || 'kolaborator',
-            partnerName: data.partnerName || 'Mitra',
-            role: 'collaborator',
-            action: data.action || 'Aktivitas',
-            details: data.details || '',
-            timestamp: data.timestamp || Date.now(),
-            isoDate: data.isoDate || new Date().toISOString(),
-            date: data.date || '',
-            time: data.time || '',
-            device: data.device || 'Perangkat Web',
-            path: data.path || ''
+    let unsubscribe = () => {};
+    if (!isQuotaExhausted()) {
+      const q = query(collection(db, 'collaboratorLogs'), orderBy('timestamp', 'desc'), limit(150));
+      unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const firestoreLogs: CollaboratorActivityLog[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            firestoreLogs.push({
+              id: docSnap.id,
+              username: data.username || 'kolaborator',
+              partnerName: data.partnerName || 'Mitra',
+              role: 'collaborator',
+              action: data.action || 'Aktivitas',
+              details: data.details || '',
+              timestamp: data.timestamp || Date.now(),
+              isoDate: data.isoDate || new Date().toISOString(),
+              date: data.date || '',
+              time: data.time || '',
+              device: data.device || 'Perangkat Web',
+              path: data.path || ''
+            });
           });
-        });
-        if (firestoreLogs.length > 0) {
-          setLogs(firestoreLogs);
-          localStorage.setItem('collaborator_activity_logs', JSON.stringify(firestoreLogs));
+          if (firestoreLogs.length > 0) {
+            setLogs(firestoreLogs);
+            localStorage.setItem('collaborator_activity_logs', JSON.stringify(firestoreLogs));
+          }
+        },
+        (error) => {
+          if (isQuotaError(error)) markQuotaExhausted();
+          logFirestoreError(error, OperationType.LIST, 'collaboratorLogs');
         }
-      },
-      (error) => {
-        console.warn("Notice: Firestore collaborator logs realtime listener:", error);
-      }
-    );
+      );
+    }
 
     // 2. Fetch server disk registry backup (/api/collaborator-logs)
     const fetchServerLogs = async () => {
@@ -289,7 +294,8 @@ export default function CollaborationAdmin() {
 
     setUploadingLogo(true);
     try {
-      const logoUrl = await compressAndUpload(file, 'collaboration', 800, 0.85, 15000);
+      const rawUrl = await compressAndUpload(file, 'collaboration', 800, 0.85, 15000);
+      const logoUrl = await ensurePersistedAssetUrl(rawUrl, 'collaboration');
       setCollab(prev => ({
         ...prev,
         partnerLogo: logoUrl
@@ -326,52 +332,55 @@ export default function CollaborationAdmin() {
       savedAt: Date.now()
     };
 
-    // 1. Simpan ke local storage browser
-    saveStoredSettings(updatedSettings);
+    // 1. Simpan ke local storage & server disk
+    await saveStoredSettings(updatedSettings);
     setSettings(updatedSettings);
 
-    // 2. Simpan ke Cloud Firestore dokumen 'settings/global'
-    try {
-      await setDoc(doc(db, 'settings', 'global'), {
-        ...updatedSettings,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
-      }, { merge: true });
-    } catch (e) {
-      console.warn("Notice saving settings to global:", e);
-    }
+    if (!isQuotaExhausted()) {
+      // 2. Simpan ke Cloud Firestore dokumen 'settings/global'
+      try {
+        await setDoc(doc(db, 'settings', 'global'), {
+          ...updatedSettings,
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true
+        }, { merge: true });
+      } catch (e: any) {
+        if (isQuotaError(e)) markQuotaExhausted();
+      }
 
-    // 3. Simpan setiap akun ke koleksi 'adminUsers' & 'collaboratorAccounts' di Firestore
-    for (const acc of targetAccounts) {
-      const cleanAccUser = acc.username.trim().toLowerCase();
-      if (cleanAccUser && acc.password) {
-        try {
-          await setDoc(doc(db, 'adminUsers', cleanAccUser), {
-            username: cleanAccUser,
-            password: acc.password.trim(),
-            partnerName: acc.partnerName || collab.partnerName || '',
-            partnerLogo: acc.partnerLogo || collab.partnerLogo || '',
-            role: 'collaborator',
-            status: acc.active ? 'allowed' : 'blocked',
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
+      // 3. Simpan setiap akun ke koleksi 'adminUsers' & 'collaboratorAccounts' di Firestore
+      for (const acc of targetAccounts) {
+        if (isQuotaExhausted()) break;
+        const cleanAccUser = acc.username.trim().toLowerCase();
+        if (cleanAccUser && acc.password) {
+          try {
+            await setDoc(doc(db, 'adminUsers', cleanAccUser), {
+              username: cleanAccUser,
+              password: acc.password.trim(),
+              partnerName: acc.partnerName || collab.partnerName || '',
+              partnerLogo: acc.partnerLogo || collab.partnerLogo || '',
+              role: 'collaborator',
+              status: acc.active ? 'allowed' : 'blocked',
+              _adminAuth: 'alfreelnc_admin_auth_verified',
+              updatedByAdmin: true,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
 
-          await setDoc(doc(db, 'collaboratorAccounts', cleanAccUser), {
-            id: acc.id,
-            username: cleanAccUser,
-            password: acc.password.trim(),
-            partnerName: acc.partnerName || collab.partnerName || '',
-            partnerLogo: acc.partnerLogo || collab.partnerLogo || '',
-            role: 'collaborator',
-            active: acc.active !== false,
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-        } catch (err) {
-          console.warn("Notice syncing account to Firestore:", err);
+            await setDoc(doc(db, 'collaboratorAccounts', cleanAccUser), {
+              id: acc.id,
+              username: cleanAccUser,
+              password: acc.password.trim(),
+              partnerName: acc.partnerName || collab.partnerName || '',
+              partnerLogo: acc.partnerLogo || collab.partnerLogo || '',
+              role: 'collaborator',
+              active: acc.active !== false,
+              _adminAuth: 'alfreelnc_admin_auth_verified',
+              updatedByAdmin: true,
+              updatedAt: new Date().toISOString()
+            }, { merge: true });
+          } catch (err: any) {
+            if (isQuotaError(err)) markQuotaExhausted();
+          }
         }
       }
     }
@@ -474,7 +483,7 @@ export default function CollaborationAdmin() {
     }));
 
     // Hapus atau nonaktifkan dari Firestore
-    if (target?.username) {
+    if (target?.username && !isQuotaExhausted()) {
       const cleanUser = target.username.toLowerCase().trim();
       try {
         await deleteDoc(doc(db, 'collaboratorAccounts', cleanUser));
@@ -483,7 +492,9 @@ export default function CollaborationAdmin() {
           _adminAuth: 'alfreelnc_admin_auth_verified',
           updatedByAdmin: true
         }, { merge: true });
-      } catch {}
+      } catch (err: any) {
+        if (isQuotaError(err)) markQuotaExhausted();
+      }
     }
 
     await syncCollaboratorAccountsToStorageAndCloud(updated);

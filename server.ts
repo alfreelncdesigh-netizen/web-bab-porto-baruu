@@ -444,6 +444,112 @@ const blogsFilePath = path.resolve(__dirname, 'blogs-storage.json');
 const experiencesFilePath = path.resolve(__dirname, 'experiences-storage.json');
 const messagesFilePath = path.resolve(__dirname, 'messages-storage.json');
 const quickFilterFilePath = path.resolve(__dirname, 'quick-filter-storage.json');
+const ordersFilePath = path.resolve(__dirname, 'orders-storage.json');
+const deletedRecordsFilePath = path.resolve(__dirname, 'deleted-records.json');
+const blogCommentsFilePath = path.resolve(__dirname, 'blog-comments-storage.json');
+
+function getExtFromMime(mime: string): string {
+  const m = mime.toLowerCase();
+  if (m.includes('png')) return '.png';
+  if (m.includes('jpeg') || m.includes('jpg')) return '.jpg';
+  if (m.includes('webp')) return '.webp';
+  if (m.includes('svg')) return '.svg';
+  if (m.includes('gif')) return '.gif';
+  if (m.includes('avif')) return '.avif';
+  if (m.includes('pdf')) return '.pdf';
+  return '.webp';
+}
+
+function offloadSingleDataUrl(dataUrl: string, prefix = 'asset'): string {
+  try {
+    const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9+.-]+|application\/pdf);base64,([A-Za-z0-9+/=\r\n]+)$/);
+    if (!match) return dataUrl;
+    const mimeType = match[1];
+    const cleanBase64 = match[2].replace(/[\r\n\s]/g, '');
+    if (!cleanBase64 || cleanBase64.length < 64) return dataUrl;
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    if (buffer.length === 0) return dataUrl;
+
+    const hash = crypto.createHash('sha1').update(buffer).digest('hex').slice(0, 12);
+    const ext = getExtFromMime(mimeType);
+    const safePrefix = (prefix || 'asset').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32) || 'asset';
+    const filename = `${safePrefix}_${hash}${ext}`;
+    const filePath = path.join(uploadsDir, filename);
+
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, buffer);
+    }
+
+    const publicUrl = `/uploads/${filename}`;
+    registerUploadedMedia({
+      url: publicUrl,
+      filename,
+      size: buffer.length,
+      mimeType,
+      uploadedAt: new Date().toISOString(),
+      dataUrl: dataUrl.length <= 700000 ? dataUrl : undefined
+    });
+    return publicUrl;
+  } catch (err) {
+    console.warn('Notice: offloadSingleDataUrl skipped:', err);
+    return dataUrl;
+  }
+}
+
+function offloadDataUrlsToDisk(value: any, prefix = 'asset'): { sanitized: any; changed: boolean } {
+  if (typeof value === 'string') {
+    if (value.startsWith('data:image/') || value.startsWith('data:application/pdf')) {
+      const converted = offloadSingleDataUrl(value, prefix);
+      return { sanitized: converted, changed: converted !== value };
+    }
+    return { sanitized: value, changed: false };
+  }
+  if (Array.isArray(value)) {
+    let anyChanged = false;
+    const nextArr = value.map((item) => {
+      const res = offloadDataUrlsToDisk(item, prefix);
+      if (res.changed) anyChanged = true;
+      return res.sanitized;
+    });
+    return { sanitized: anyChanged ? nextArr : value, changed: anyChanged };
+  }
+  if (value && typeof value === 'object') {
+    let anyChanged = false;
+    const nextObj: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) {
+      const res = offloadDataUrlsToDisk(v, prefix);
+      if (res.changed) anyChanged = true;
+      nextObj[k] = res.sanitized;
+    }
+    return { sanitized: anyChanged ? nextObj : value, changed: anyChanged };
+  }
+  return { sanitized: value, changed: false };
+}
+
+function migrateStorageFilesOnStartup(): void {
+  const targets: Array<{ filePath: string; prefix: string }> = [
+    { filePath: projectsFilePath, prefix: 'project' },
+    { filePath: blogsFilePath, prefix: 'blog' },
+    { filePath: experiencesFilePath, prefix: 'exp' },
+    { filePath: quickFilterFilePath, prefix: 'insight' },
+    { filePath: settingsFilePath, prefix: 'setting' },
+  ];
+  for (const { filePath, prefix } of targets) {
+    try {
+      if (!fs.existsSync(filePath)) continue;
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      if (!raw || !raw.includes('data:')) continue;
+      const parsed = JSON.parse(raw);
+      const { sanitized, changed } = offloadDataUrlsToDisk(parsed, prefix);
+      if (changed) {
+        fs.writeFileSync(filePath, JSON.stringify(sanitized, null, 2), 'utf-8');
+        console.log(`[Startup Migration] Offloaded inline base64 media in ${path.basename(filePath)} to /uploads/`);
+      }
+    } catch (err) {
+      console.warn(`Notice: startup base64 offload skipped for ${path.basename(filePath)}:`, err);
+    }
+  }
+}
 
 const requireAdminAuth = (req: Request, res: Response, next: NextFunction): void => {
   const token = req.headers['x-admin-token'] || req.headers['authorization'];
@@ -475,8 +581,9 @@ app.post('/api/settings', requireAdminAuth, (req: Request, res: Response): void 
   try {
     const payload = req.body;
     if (payload && typeof payload === 'object') {
-      fs.writeFileSync(settingsFilePath, JSON.stringify(payload, null, 2), 'utf-8');
-      res.status(200).json({ success: true });
+      const { sanitized } = offloadDataUrlsToDisk(payload, 'setting');
+      fs.writeFileSync(settingsFilePath, JSON.stringify(sanitized, null, 2), 'utf-8');
+      res.status(200).json({ success: true, data: sanitized });
       return;
     }
     res.status(400).json({ error: 'Data pengaturan tidak valid' });
@@ -507,20 +614,13 @@ app.post('/api/hero-image', (req: Request, res: Response): void => {
     const { heroImage, imageBase64 } = req.body || {};
     let finalUrl = heroImage || '';
 
+    if (finalUrl && typeof finalUrl === 'string' && finalUrl.startsWith('data:')) {
+      finalUrl = offloadSingleDataUrl(finalUrl, 'hero_main');
+    }
+
     // Jika imageBase64 disertakan, tulis langsung ke public/uploads/hero_main_xxx.webp
     if (imageBase64 && typeof imageBase64 === 'string' && imageBase64.includes('base64,')) {
-      try {
-        const base64Data = imageBase64.replace(/^data:[^;]+;base64,/, '');
-        const buffer = Buffer.from(base64Data, 'base64');
-        if (buffer.length > 0) {
-          const heroFileName = `hero_main_${Date.now()}.webp`;
-          const filePath = path.join(uploadsDir, heroFileName);
-          fs.writeFileSync(filePath, buffer);
-          finalUrl = `/uploads/${heroFileName}`;
-        }
-      } catch (writeErr) {
-        console.warn("Failed writing hero buffer:", writeErr);
-      }
+      finalUrl = offloadSingleDataUrl(imageBase64, 'hero_main');
     }
 
     if (finalUrl && fs.existsSync(settingsFilePath)) {
@@ -553,8 +653,9 @@ app.post('/api/projects', requireAdminAuth, (req: Request, res: Response): void 
   try {
     const payload = req.body;
     if (Array.isArray(payload)) {
-      fs.writeFileSync(projectsFilePath, JSON.stringify(payload, null, 2), 'utf-8');
-      res.status(200).json({ success: true });
+      const { sanitized } = offloadDataUrlsToDisk(payload, 'project');
+      fs.writeFileSync(projectsFilePath, JSON.stringify(sanitized, null, 2), 'utf-8');
+      res.status(200).json({ success: true, data: sanitized });
       return;
     }
     res.status(400).json({ error: 'Format data proyek tidak valid' });
@@ -578,8 +679,9 @@ app.post('/api/blogs', requireAdminAuth, (req: Request, res: Response): void => 
   try {
     const payload = req.body;
     if (Array.isArray(payload)) {
-      fs.writeFileSync(blogsFilePath, JSON.stringify(payload, null, 2), 'utf-8');
-      res.status(200).json({ success: true });
+      const { sanitized } = offloadDataUrlsToDisk(payload, 'blog');
+      fs.writeFileSync(blogsFilePath, JSON.stringify(sanitized, null, 2), 'utf-8');
+      res.status(200).json({ success: true, data: sanitized });
       return;
     }
     res.status(400).json({ error: 'Format data blog tidak valid' });
@@ -603,8 +705,9 @@ app.post('/api/quick-filter', requireAdminAuth, (req: Request, res: Response): v
   try {
     const payload = req.body;
     if (Array.isArray(payload)) {
-      fs.writeFileSync(quickFilterFilePath, JSON.stringify(payload, null, 2), 'utf-8');
-      res.status(200).json({ success: true });
+      const { sanitized } = offloadDataUrlsToDisk(payload, 'insight');
+      fs.writeFileSync(quickFilterFilePath, JSON.stringify(sanitized, null, 2), 'utf-8');
+      res.status(200).json({ success: true, data: sanitized });
       return;
     }
     res.status(400).json({ error: 'Format data quick filter tidak valid' });
@@ -628,13 +731,170 @@ app.post('/api/experiences', requireAdminAuth, (req: Request, res: Response): vo
   try {
     const payload = req.body;
     if (Array.isArray(payload)) {
-      fs.writeFileSync(experiencesFilePath, JSON.stringify(payload, null, 2), 'utf-8');
-      res.status(200).json({ success: true });
+      const { sanitized } = offloadDataUrlsToDisk(payload, 'exp');
+      fs.writeFileSync(experiencesFilePath, JSON.stringify(sanitized, null, 2), 'utf-8');
+      res.status(200).json({ success: true, data: sanitized });
       return;
     }
     res.status(400).json({ error: 'Format data pengalaman tidak valid' });
   } catch {
     res.status(500).json({ error: 'Gagal menyimpan pengalaman' });
+  }
+});
+
+// Tombstone registry for deleted / archived IDs per collection
+function readDeletedRecords(): Record<string, string[]> {
+  try {
+    if (fs.existsSync(deletedRecordsFilePath)) {
+      const parsed = JSON.parse(fs.readFileSync(deletedRecordsFilePath, 'utf-8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return {};
+}
+
+app.get('/api/deleted-ids', (_req: Request, res: Response): void => {
+  res.status(200).json(readDeletedRecords());
+});
+
+app.post('/api/deleted-ids', requireAdminAuth, (req: Request, res: Response): void => {
+  try {
+    const { action = 'mark', type, ids } = req.body || {};
+    if (!type || typeof type !== 'string' || !Array.isArray(ids)) {
+      res.status(400).json({ error: 'Parameter type dan ids wajib diisi' });
+      return;
+    }
+    const store = readDeletedRecords();
+    const existing = new Set<string>((Array.isArray(store[type]) ? store[type] : []).map(String));
+    for (const id of ids) {
+      const strId = String(id || '').trim();
+      if (!strId) continue;
+      if (action === 'unmark') existing.delete(strId);
+      else existing.add(strId);
+    }
+    store[type] = Array.from(existing);
+    fs.writeFileSync(deletedRecordsFilePath, JSON.stringify(store, null, 2), 'utf-8');
+    res.status(200).json({ success: true, data: store });
+  } catch {
+    res.status(500).json({ error: 'Gagal memperbarui daftar ID terhapus' });
+  }
+});
+
+// Orders persistent disk storage
+function readOrdersList(): any[] {
+  try {
+    if (fs.existsSync(ordersFilePath)) {
+      const parsed = JSON.parse(fs.readFileSync(ordersFilePath, 'utf-8'));
+      return Array.isArray(parsed) ? parsed : [];
+    }
+  } catch {}
+  return [];
+}
+
+app.get('/api/orders', (_req: Request, res: Response): void => {
+  res.status(200).json(readOrdersList());
+});
+
+app.post('/api/orders', (req: Request, res: Response): void => {
+  try {
+    const payload = req.body;
+    if (payload && typeof payload === 'object') {
+      const list = readOrdersList();
+      const orderId = String(payload.id || `ord_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`);
+      const newOrder = {
+        ...payload,
+        id: orderId,
+        status: payload.status || 'pending',
+        createdAt: payload.createdAt || new Date().toISOString()
+      };
+      const filtered = list.filter((o: any) => String(o.id) !== orderId);
+      filtered.unshift(newOrder);
+      fs.writeFileSync(ordersFilePath, JSON.stringify(filtered, null, 2), 'utf-8');
+      res.status(200).json({ success: true, order: newOrder });
+      return;
+    }
+    res.status(400).json({ error: 'Format order tidak valid' });
+  } catch {
+    res.status(500).json({ error: 'Gagal menyimpan order' });
+  }
+});
+
+app.patch('/api/orders/:id', requireAdminAuth, (req: Request, res: Response): void => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body || {};
+    const list = readOrdersList();
+    let updatedOrder: any = null;
+    const nextList = list.map((o: any) => {
+      if (String(o.id) === String(id)) {
+        updatedOrder = { ...o, ...(status ? { status } : {}), updatedAt: new Date().toISOString() };
+        return updatedOrder;
+      }
+      return o;
+    });
+    if (!updatedOrder && req.body && typeof req.body === 'object') {
+      updatedOrder = { id, ...req.body, updatedAt: new Date().toISOString() };
+      nextList.unshift(updatedOrder);
+    }
+    fs.writeFileSync(ordersFilePath, JSON.stringify(nextList, null, 2), 'utf-8');
+    res.status(200).json({ success: true, order: updatedOrder });
+  } catch {
+    res.status(500).json({ error: 'Gagal memperbarui status order' });
+  }
+});
+
+app.delete('/api/orders/:id', requireAdminAuth, (req: Request, res: Response): void => {
+  try {
+    const { id } = req.params;
+    const list = readOrdersList().filter((o: any) => String(o.id) !== String(id));
+    fs.writeFileSync(ordersFilePath, JSON.stringify(list, null, 2), 'utf-8');
+    res.status(200).json({ success: true });
+  } catch {
+    res.status(500).json({ error: 'Gagal menghapus order' });
+  }
+});
+
+// Blog comments persistent disk fallback
+function readBlogCommentsMap(): Record<string, any[]> {
+  try {
+    if (fs.existsSync(blogCommentsFilePath)) {
+      const parsed = JSON.parse(fs.readFileSync(blogCommentsFilePath, 'utf-8'));
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return {};
+}
+
+app.get('/api/blog-comments/:blogId', (req: Request, res: Response): void => {
+  const { blogId } = req.params;
+  const store = readBlogCommentsMap();
+  res.status(200).json(Array.isArray(store[blogId]) ? store[blogId] : []);
+});
+
+app.post('/api/blog-comments/:blogId', (req: Request, res: Response): void => {
+  try {
+    const { blogId } = req.params;
+    const payload = req.body;
+    if (payload && typeof payload === 'object') {
+      const store = readBlogCommentsMap();
+      const existing = Array.isArray(store[blogId]) ? store[blogId] : [];
+      const newComment = {
+        id: payload.id || `cmt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        blogId: String(blogId),
+        name: String(payload.name || 'Pengunjung').trim(),
+        message: String(payload.message || '').trim(),
+        createdAt: payload.createdAt || new Date().toISOString()
+      };
+      store[blogId] = [newComment, ...existing.filter((c: any) => String(c.id) !== String(newComment.id))];
+      fs.writeFileSync(blogCommentsFilePath, JSON.stringify(store, null, 2), 'utf-8');
+      res.status(200).json({ success: true, comment: newComment });
+      return;
+    }
+    res.status(400).json({ error: 'Format komentar tidak valid' });
+  } catch {
+    res.status(500).json({ error: 'Gagal menyimpan komentar blog' });
   }
 });
 
@@ -780,6 +1040,10 @@ const FORBIDDEN_EXTENSIONS = new Set([
 ]);
 
 function registerUploadedMedia(record: { url: string; filename: string; size: number; mimeType?: string; uploadedAt: string; dataUrl?: string }): void {
+  const safeRecord = {
+    ...record,
+    dataUrl: record.dataUrl && record.dataUrl.length <= 700000 ? record.dataUrl : undefined
+  };
   try {
     let list: any[] = [];
     if (fs.existsSync(mediaRegistryPath)) {
@@ -788,36 +1052,36 @@ function registerUploadedMedia(record: { url: string; filename: string; size: nu
         if (!Array.isArray(list)) list = [];
       } catch {}
     }
-    list.unshift({
-      id: `media_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      ...record
-    });
-    if (list.length > 2000) list = list.slice(0, 2000);
-    fs.writeFileSync(mediaRegistryPath, JSON.stringify(list, null, 2), 'utf-8');
+    const existingIdx = list.findIndex((item: any) => item?.filename === safeRecord.filename || item?.url === safeRecord.url);
+    if (existingIdx === -1) {
+      list.unshift({
+        id: `media_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        ...safeRecord
+      });
+      if (list.length > 2000) list = list.slice(0, 2000);
+      fs.writeFileSync(mediaRegistryPath, JSON.stringify(list, null, 2), 'utf-8');
+    }
   } catch (e) {
     console.warn('Notice: Failed writing media registry:', e);
   }
 
   // Non-blocking background sync to Cloud Firestore uploadedMedia
-  if (record.dataUrl && typeof record.dataUrl === 'string') {
-    const safeDocId = `media_${record.filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
-    const safeFilename = record.filename.replace(/[^a-zA-Z0-9_-]/g, '_');
+  if (safeRecord.dataUrl && typeof safeRecord.dataUrl === 'string') {
+    const safeDocId = `media_${safeRecord.filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const safeFilename = safeRecord.filename.replace(/[^a-zA-Z0-9_-]/g, '_');
     const firestoreUrl = getFirestoreRestDocUrl('uploadedMedia', safeDocId);
 
     const fieldsObj: Record<string, any> = {
       id: { stringValue: safeDocId },
-      filename: { stringValue: record.filename },
-      url: { stringValue: record.url },
-      size: { integerValue: String(record.size || 0) },
-      mimeType: { stringValue: record.mimeType || 'image/webp' },
-      uploadedAt: { stringValue: record.uploadedAt || new Date().toISOString() },
+      filename: { stringValue: safeRecord.filename },
+      url: { stringValue: safeRecord.url },
+      size: { integerValue: String(safeRecord.size || 0) },
+      mimeType: { stringValue: safeRecord.mimeType || 'image/webp' },
+      uploadedAt: { stringValue: safeRecord.uploadedAt || new Date().toISOString() },
       _adminAuth: { stringValue: 'alfreelnc_admin_auth_verified' },
-      updatedByAdmin: { booleanValue: true }
+      updatedByAdmin: { booleanValue: true },
+      dataUrl: { stringValue: safeRecord.dataUrl }
     };
-
-    if (record.dataUrl.length <= 800000) {
-      fieldsObj.dataUrl = { stringValue: record.dataUrl };
-    }
 
     const body = { fields: fieldsObj };
 
@@ -839,6 +1103,8 @@ function registerUploadedMedia(record: { url: string; filename: string; size: nu
     });
   }
 }
+
+migrateStorageFilesOnStartup();
 
 app.get('/api/media-registry', (_req: Request, res: Response): void => {
   try {
