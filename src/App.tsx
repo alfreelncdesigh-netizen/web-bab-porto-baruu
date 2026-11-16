@@ -248,9 +248,43 @@ export default function App() {
   const [view, setView] = useState<'home' | 'about' | 'portfolio' | 'store' | 'contact' | 'blog' | 'insight' | 'admin' | 'cv' | 'stats' | 'experience'>('home');
   const [isAppLoading, setIsAppLoading] = useState(true);
   const [isSecondHalfLoaded, setIsSecondHalfLoaded] = useState(false);
+  const [isAdminAuth, setIsAdminAuth] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return Boolean(sessionStorage.getItem('admin_auth_user'));
+    } catch {
+      return false;
+    }
+  });
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    const handleAdminAuthChanged = (e: any) => {
+      if (e?.detail && typeof e.detail.isAuth === 'boolean') {
+        setIsAdminAuth(e.detail.isAuth);
+      } else {
+        try {
+          setIsAdminAuth(Boolean(sessionStorage.getItem('admin_auth_user')));
+        } catch {
+          setIsAdminAuth(false);
+        }
+      }
+    };
+    window.addEventListener('admin_auth_changed', handleAdminAuthChanged);
+    return () => window.removeEventListener('admin_auth_changed', handleAdminAuthChanged);
+  }, []);
+
+  const isLockedInAdmin = view === 'admin' && isAdminAuth;
+  const isLockedInAdminRef = useRef(isLockedInAdmin);
+  useEffect(() => {
+    isLockedInAdminRef.current = isLockedInAdmin;
+  }, [isLockedInAdmin]);
+
   const handleSetView = (newView: any) => {
+    // Saat sedang berada di dalam Mode Admin (terautentikasi), tetap kunci di halaman admin sampai klik "Keluar dari Admin"
+    if (isLockedInAdminRef.current && newView !== 'admin') {
+      return;
+    }
     // Sisa konten otomatis dimuat penuh saat beralih menu
     setIsSecondHalfLoaded(true);
     const event = new CustomEvent('requestChangeView', { 
@@ -835,7 +869,9 @@ export default function App() {
       >
         <Header currentView={view} setView={handleSetView} />
         <BackToTop />
-        <PromoPosterWidget currentView={view} onNavigateToStore={() => handleSetView('store')} />
+        {!isLockedInAdmin && (
+          <PromoPosterWidget currentView={view} onNavigateToStore={() => handleSetView('store')} />
+        )}
         <CookieBanner />
         
         <main className={view !== 'home' ? 'pt-20 sm:pt-24 md:pt-28' : ''}>
@@ -1015,7 +1051,7 @@ export default function App() {
           </AnimatePresence>
         </main>
         
-        <Footer />
+        {!isLockedInAdmin && <Footer />}
         <OfflineIndicator />
       </div>
       </LanguageProvider>

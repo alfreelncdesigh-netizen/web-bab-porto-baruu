@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Menu, X, Sun, Moon, Search, Sparkles, ChevronRight, HelpCircle, ArrowRight, Globe, Check } from 'lucide-react';
+import { Menu, X, Sun, Moon, Search, Sparkles, ChevronRight, HelpCircle, ArrowRight, Globe, Check, Lock } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { motion, AnimatePresence } from 'motion/react';
@@ -24,6 +24,14 @@ export default function Header({ setView, currentView }: HeaderProps) {
  const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
  const [isSearchSlideOpen, setIsSearchSlideOpen] = useState(false);
  const [insightItems, setInsightItems] = useState<QuickFilterItem[]>(() => getStoredQuickFilterItems());
+ const [isAdminAuth, setIsAdminAuth] = useState<boolean>(() => {
+   if (typeof window === 'undefined') return false;
+   try {
+     return Boolean(sessionStorage.getItem('admin_auth_user'));
+   } catch {
+     return false;
+   }
+ });
  const { language, setLanguage, t, languages, currentLangInfo, translateDynamic } = useLanguage();
 
  useEffect(() => {
@@ -33,13 +41,39 @@ export default function Header({ setView, currentView }: HeaderProps) {
    const handleInsightsUpdate = (e: any) => {
      if (e.detail && Array.isArray(e.detail)) setInsightItems(e.detail);
    };
+   const handleAdminAuthChanged = (e: any) => {
+     if (e?.detail && typeof e.detail.isAuth === 'boolean') {
+       setIsAdminAuth(e.detail.isAuth);
+     } else {
+       try {
+         setIsAdminAuth(Boolean(sessionStorage.getItem('admin_auth_user')));
+       } catch {
+         setIsAdminAuth(false);
+       }
+     }
+   };
    window.addEventListener('app_settings_updated', handleSettingsUpdate);
    window.addEventListener('quick_filter_updated', handleInsightsUpdate);
+   window.addEventListener('admin_auth_changed', handleAdminAuthChanged);
    return () => {
      window.removeEventListener('app_settings_updated', handleSettingsUpdate);
      window.removeEventListener('quick_filter_updated', handleInsightsUpdate);
+     window.removeEventListener('admin_auth_changed', handleAdminAuthChanged);
    };
  }, []);
+
+ const isAdminLockedMode = currentView === 'admin' && isAdminAuth;
+
+ useEffect(() => {
+   try {
+     setIsAdminAuth(Boolean(sessionStorage.getItem('admin_auth_user')));
+   } catch {}
+   if (currentView === 'admin' && isAdminAuth) {
+     setIsMobileMenuOpen(false);
+     setIsLanguageDropdownOpen(false);
+     setIsSearchSlideOpen(false);
+   }
+ }, [currentView, isAdminAuth]);
 
  const [activeSection, setActiveSection] = useState('home');
  const { theme, toggleTheme } = useTheme();
@@ -207,7 +241,32 @@ export default function Header({ setView, currentView }: HeaderProps) {
   }, 160);
  };
 
- return (
+  if (isAdminLockedMode) {
+   return (
+    <header className="fixed top-0 left-0 right-0 z-50 pt-2.5 sm:pt-3.5 md:pt-4 px-3 sm:px-5 md:px-8 pointer-events-none flex justify-center max-w-[1540px] xl:max-w-[1720px] 2xl:max-w-[1840px] mx-auto">
+     <motion.div
+      initial={{ y: -100, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 200, damping: 20 }}
+      className={`pointer-events-auto flex items-center justify-start w-full rounded-full px-5 py-2.5 sm:px-6 sm:py-3 md:px-7 md:py-3.5 transition-all duration-300 ${
+       isScrolled
+        ? 'bg-white/92 dark:bg-[#111111]/92 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 shadow-md'
+        : 'bg-white/80 dark:bg-[#0A0A0A]/80 backdrop-blur-md border border-zinc-200/30 dark:border-zinc-800/30 shadow-sm'
+      }`}
+     >
+      <div
+       className="flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/80 dark:border-zinc-800 text-black dark:text-white shadow-2xs select-none"
+       title="Mode Admin Aktif — Klik Keluar dari Admin untuk kembali ke website"
+       aria-label="Mode Admin Aktif"
+      >
+       <Lock className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
+      </div>
+     </motion.div>
+    </header>
+   );
+  }
+
+  return (
   <>
    {/* Transparent Backdrop to detect taps on empty screen / anywhere else */}
    <AnimatePresence>

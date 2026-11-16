@@ -109,6 +109,10 @@ export default function AdminDashboard() {
     checkExistingSession();
   }, []);
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('admin_auth_changed', { detail: { isAuth } }));
+  }, [isAuth]);
+
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanUser = usernameInput.trim().toLowerCase();
@@ -447,6 +451,11 @@ export default function AdminDashboard() {
     setIsAuth(false);
     setUsernameInput('');
     setWebPassword('');
+    window.dispatchEvent(new CustomEvent('admin_auth_changed', { detail: { isAuth: false } }));
+    if (typeof window !== 'undefined' && window.location.hash === '#admin') {
+      window.history.replaceState({}, '', window.location.pathname + window.location.search);
+    }
+    window.dispatchEvent(new CustomEvent('forceChangeView', { detail: { view: 'home' } }));
   };
 
   if (isChecking) {
