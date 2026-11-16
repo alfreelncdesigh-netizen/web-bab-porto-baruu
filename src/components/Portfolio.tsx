@@ -158,16 +158,12 @@ interface PortfolioLazyImageProps {
   skeletonClassName?: string;
   aspectClass?: string;
   onError?: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
-  onLoad?: () => void;
+  onLoad?: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
 }
 
-function getCssAspectRatio(width?: number, height?: number, aspectRatio?: string): string | undefined {
+function getCssAspectRatio(width?: number, height?: number): string | undefined {
   if (width && height && width > 0 && height > 0) {
     return `${width} / ${height}`;
-  }
-  if (aspectRatio && /^\d+\s*:\s*\d+$/.test(aspectRatio.trim())) {
-    const [w, h] = aspectRatio.split(':').map(s => Number(s.trim()));
-    if (w > 0 && h > 0) return `${w} / ${h}`;
   }
   return undefined;
 }
@@ -178,17 +174,24 @@ function PortfolioLazyImage({
   priority = false,
   width,
   height,
-  aspectRatio,
-  className = "w-full h-auto object-contain transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100 block",
-  containerClassName = "relative w-full overflow-hidden flex items-center justify-center bg-zinc-100 dark:bg-zinc-900",
+  className = "w-full h-auto transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100 block",
+  containerClassName = "relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900",
   skeletonClassName = "rounded-xl sm:rounded-2xl",
-  aspectClass = "min-h-[220px] sm:min-h-[280px]",
+  aspectClass = "min-h-[200px] sm:min-h-[260px]",
   onError,
   onLoad
 }: PortfolioLazyImageProps) {
   const [isInView, setIsInView] = useState<boolean>(priority);
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const cssAspectRatio = getCssAspectRatio(width, height, aspectRatio);
+
+  useEffect(() => {
+    setNaturalSize(null);
+  }, [src]);
+
+  const effectiveWidth = naturalSize?.width || (width && width > 0 ? width : undefined);
+  const effectiveHeight = naturalSize?.height || (height && height > 0 ? height : undefined);
+  const cssAspectRatio = getCssAspectRatio(effectiveWidth, effectiveHeight);
   const aspectStyle: React.CSSProperties | undefined = cssAspectRatio ? { aspectRatio: cssAspectRatio } : undefined;
 
   useEffect(() => {
@@ -225,20 +228,31 @@ function PortfolioLazyImage({
   }, [priority, isInView]);
 
   return (
-    <div ref={containerRef} className={`relative w-full overflow-hidden ${containerClassName}`} style={aspectStyle}>
+    <div
+      ref={containerRef}
+      className={`relative w-full overflow-hidden ${!cssAspectRatio ? aspectClass : ''} ${containerClassName}`}
+      style={aspectStyle}
+    >
       {isInView ? (
         <ImageWithSkeleton
           src={src || FALLBACK_IMAGE}
           alt={alt}
           priority={priority}
           loading={priority ? 'eager' : 'lazy'}
-          width={width}
-          height={height}
-          style={aspectStyle}
+          width={effectiveWidth}
+          height={effectiveHeight}
+          containerClassName="relative w-full overflow-hidden"
           className={className}
           skeletonClassName={skeletonClassName}
           onError={onError}
-          onLoad={onLoad}
+          onLoad={(e) => {
+            const nw = e.currentTarget.naturalWidth;
+            const nh = e.currentTarget.naturalHeight;
+            if (nw > 0 && nh > 0) {
+              setNaturalSize((prev) => (prev?.width === nw && prev?.height === nh ? prev : { width: nw, height: nh }));
+            }
+            onLoad?.(e);
+          }}
         />
       ) : (
         <div 
@@ -819,11 +833,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               priority={index < 2}
                               width={project.imageWidth}
                               height={project.imageHeight}
-                              aspectRatio={project.aspectRatio}
-                              className="w-full h-auto object-contain transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block mx-auto" 
+                              className="w-full h-auto transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block" 
                               skeletonClassName="rounded-xl sm:rounded-2xl"
                               aspectClass={layoutMode === 'grid-2' ? "min-h-[140px] sm:min-h-[260px]" : "min-h-[200px] sm:min-h-[260px]"}
-                              containerClassName="relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center rounded-xl sm:rounded-2xl"
+                              containerClassName="relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 rounded-xl sm:rounded-2xl"
                             />
                           ) : (
                             <PortfolioLazyImage 
@@ -832,10 +845,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               priority={index < 2}
                               width={800}
                               height={600}
-                              className="w-full h-auto object-contain transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block mx-auto" 
+                              className="w-full h-auto transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block" 
                               skeletonClassName="rounded-xl sm:rounded-2xl"
                               aspectClass={layoutMode === 'grid-2' ? "min-h-[140px] sm:min-h-[260px]" : "min-h-[200px] sm:min-h-[260px]"}
-                              containerClassName="relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center rounded-xl sm:rounded-2xl"
+                              containerClassName="relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900 rounded-xl sm:rounded-2xl"
                             />
                           )}
                           
@@ -1024,7 +1037,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                       /* Bingkai Gambar: Polos Berwarna Putih, Full Kanan & Kiri Serta Atas Layar di Mobile, Mengikuti Rasio Asli Gambar di Desktop */
                       <div className="w-full h-full flex items-start md:items-center justify-center relative overflow-hidden bg-white p-0">
                         <div 
-                          className="relative flex items-center justify-center bg-white rounded-none md:rounded-3xl p-0 md:p-2 border-0 md:border md:border-zinc-200/70 shadow-none md:shadow-xs w-full md:w-auto max-w-full max-h-full transition-all duration-150 overflow-hidden"
+                          className="relative flex items-center justify-center bg-white rounded-none md:rounded-3xl p-0 border-0 md:border md:border-zinc-200/70 shadow-none md:shadow-xs w-full md:w-auto max-w-full max-h-full transition-all duration-150 overflow-hidden"
                           style={{
                             aspectRatio: imageAspectRatio
                               ? `${imageAspectRatio}`
@@ -1128,7 +1141,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           key={idx}
                           type="button"
                           onClick={() => setActiveImageIndex(idx)}
-                          className={`relative w-11 h-11 sm:w-12 sm:h-12 shrink-0 rounded-lg overflow-hidden border-2 transition-all duration-150 cursor-pointer ${
+                          className={`relative h-11 sm:h-12 w-auto shrink-0 rounded-lg overflow-hidden border-2 bg-zinc-100 transition-all duration-150 cursor-pointer flex items-center justify-center ${
                             activeImageIndex === idx 
                               ? 'border-black ring-2 ring-black/20 scale-105 opacity-100' 
                               : 'border-zinc-200 opacity-60 hover:opacity-100'
@@ -1137,11 +1150,9 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                           <img
                             src={resolveImageUrl(img)}
                             alt={`Preview ${idx + 1}`}
-                            width={48}
-                            height={48}
                             loading="lazy"
                             decoding="async"
-                            className="w-full h-full object-cover"
+                            className="h-full w-auto max-w-[96px] object-contain block"
                             onError={handleImageError}
                           />
                         </button>
@@ -1406,10 +1417,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               priority={false}
                               width={item.imageWidth}
                               height={item.imageHeight}
-                              className="w-full h-auto block object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]" 
+                              className="w-full h-auto block transition-transform duration-300 ease-out group-hover:scale-[1.03]" 
                               containerClassName="relative w-full overflow-hidden"
                               skeletonClassName="rounded-t-lg sm:rounded-t-xl"
-                              aspectClass="aspect-[4/3] min-h-[120px]"
+                              aspectClass="min-h-[100px]"
                             />
                           ) : (
                             <div className="w-full aspect-[4/3] bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center text-zinc-400 text-xs">

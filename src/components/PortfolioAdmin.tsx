@@ -159,7 +159,7 @@ export default function PortfolioAdmin() {
       description: (editingProject.description || '').trim(),
       date: (editingProject.date || '').trim() || new Date().toISOString().split('T')[0],
       role: (editingProject.role || '').trim(),
-      aspectRatio: editingProject.aspectRatio || '1:1',
+      aspectRatio: editingProject.aspectRatio || '',
       draft: Boolean(editingProject.draft),
       totalHoursSpent: (editingProject.totalHoursSpent || '').toString().trim(),
       toolsUsed: (editingProject.toolsUsed || '').toString().trim(),
@@ -375,7 +375,7 @@ export default function PortfolioAdmin() {
       description: '',
       date: '',
       role: '',
-      aspectRatio: '1:1',
+      aspectRatio: '',
       draft: false,
       totalHoursSpent: '',
       toolsUsed: '',
@@ -653,7 +653,13 @@ export default function PortfolioAdmin() {
                   </button>
                 )}
               </div>
-              <div className="relative flex-1 min-h-[200px] bg-zinc-100 dark:bg-zinc-900 border-2 border-dashed border-zinc-300 dark:border-zinc-800/50 hover:border-black dark:hover:border-sky-400 transition-colors rounded-2xl overflow-hidden flex flex-col items-center justify-center group cursor-pointer">
+              <div
+                className={`relative ${
+                  editingProject.image && !uploading
+                    ? 'w-fit max-w-full mx-auto'
+                    : 'w-full flex-1 min-h-[200px]'
+                } bg-zinc-100 dark:bg-zinc-900 border-2 border-dashed border-zinc-300 dark:border-zinc-800/50 hover:border-black dark:hover:border-sky-400 transition-colors rounded-2xl overflow-hidden flex flex-col items-center justify-center group cursor-pointer`}
+              >
                 <input
                   type="file"
                   multiple
@@ -677,7 +683,18 @@ export default function PortfolioAdmin() {
                       alt="Preview"
                       width={editingProject.imageWidth || undefined}
                       height={editingProject.imageHeight || undefined}
-                      className="w-full h-full object-cover absolute inset-0 p-2"
+                      onLoad={(e) => {
+                        const nw = e.currentTarget.naturalWidth;
+                        const nh = e.currentTarget.naturalHeight;
+                        if (nw > 0 && nh > 0) {
+                          setEditingProject((prev) =>
+                            prev && (prev.imageWidth !== nw || prev.imageHeight !== nh)
+                              ? { ...prev, imageWidth: nw, imageHeight: nh }
+                              : prev
+                          );
+                        }
+                      }}
+                      className="w-auto max-w-full h-auto max-h-[420px] block"
                       onError={handleImageError}
                     />
                     <div className="absolute inset-0 bg-black/60 dark:bg-zinc-950/70 backdrop-blur-sm opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center z-0">
@@ -907,15 +924,15 @@ export default function PortfolioAdmin() {
               >
                 <div className="flex items-start gap-3">
                   {/* Thumbnail */}
-                  <div className="w-16 h-16 sm:w-20 sm:h-20 bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-hidden shrink-0 border border-zinc-200/60 dark:border-zinc-700/60">
+                  <div className="max-w-[88px] sm:max-w-[96px] bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-hidden shrink-0 border border-zinc-200/60 dark:border-zinc-700/60 inline-flex items-center justify-center">
                     <img
                       src={resolveImageUrl(project.image)}
                       alt={project.title}
-                      width={80}
-                      height={80}
+                      width={project.imageWidth || undefined}
+                      height={project.imageHeight || undefined}
                       loading="lazy"
                       decoding="async"
-                      className="w-full h-full object-cover"
+                      className="w-auto max-w-[88px] sm:max-w-[96px] h-auto max-h-24 block"
                       onError={handleImageError}
                     />
                   </div>
@@ -1019,15 +1036,15 @@ export default function PortfolioAdmin() {
                     className="border-b border-zinc-100 dark:border-zinc-800 last:border-0 hover:bg-zinc-50 dark:hover:bg-[#111111]/50 transition-colors group"
                   >
                     <td className="p-4 md:p-5">
-                      <div className="w-16 h-12 bg-zinc-200 dark:bg-zinc-800 rounded-xl overflow-hidden flex items-center justify-center border border-zinc-200 dark:border-zinc-700">
+                      <div className="inline-flex items-center justify-center max-w-[88px] bg-zinc-200 dark:bg-zinc-800 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700">
                         <img
                           src={resolveImageUrl(project.image)}
                           alt={project.title}
-                          width={64}
-                          height={48}
+                          width={project.imageWidth || undefined}
+                          height={project.imageHeight || undefined}
                           loading="lazy"
                           decoding="async"
-                          className="w-full h-full object-cover"
+                          className="w-auto max-w-[88px] h-auto max-h-24 block"
                           onError={handleImageError}
                         />
                       </div>

@@ -13,7 +13,7 @@ interface ImageWithSkeletonProps {
   height?: number;
   style?: React.CSSProperties;
   onError?: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
-  onLoad?: () => void;
+  onLoad?: (e: React.SyntheticEvent<HTMLImageElement, Event>) => void;
   children?: React.ReactNode;
 }
 
@@ -101,9 +101,9 @@ export default function ImageWithSkeleton({
           loading={priority ? 'eager' : loading}
           fetchPriority={priority ? 'high' : 'auto'}
           decoding="async"
-          onLoad={() => {
+          onLoad={(e) => {
             setIsLoaded(true);
-            onLoad?.();
+            onLoad?.(e);
           }}
           onError={(e) => {
             setHasError(true);
