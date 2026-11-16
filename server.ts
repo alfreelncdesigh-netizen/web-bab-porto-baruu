@@ -441,6 +441,7 @@ app.use(express.static(publicDir, {
 // ============================================================================
 const settingsFilePath = path.resolve(__dirname, 'settings-storage.json');
 const projectsFilePath = path.resolve(__dirname, 'projects-storage.json');
+const projectsManifestFilePath = path.resolve(__dirname, 'projects-manifest.json');
 const blogsFilePath = path.resolve(__dirname, 'blogs-storage.json');
 const experiencesFilePath = path.resolve(__dirname, 'experiences-storage.json');
 const messagesFilePath = path.resolve(__dirname, 'messages-storage.json');
@@ -448,6 +449,271 @@ const quickFilterFilePath = path.resolve(__dirname, 'quick-filter-storage.json')
 const ordersFilePath = path.resolve(__dirname, 'orders-storage.json');
 const deletedRecordsFilePath = path.resolve(__dirname, 'deleted-records.json');
 const blogCommentsFilePath = path.resolve(__dirname, 'blog-comments-storage.json');
+
+interface ProjectManifestItem {
+  id: string;
+  title: string;
+  category: string;
+  image: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  aspectRatio?: string;
+  draft: boolean;
+  orderIndex: number;
+}
+
+interface ProjectsManifest {
+  totalCount: number;
+  publicCount: number;
+  draftCount: number;
+  updatedAt: string;
+  items: ProjectManifestItem[];
+}
+
+function readDimensionsFromBuffer(buf: Buffer): { width: number; height: number } | null {
+  if (!buf || buf.length < 24) return null;
+
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf.length >= 24
+  ) {
+    const width = buf.readUInt32BE(16);
+    const height = buf.readUInt32BE(20);
+    if (width > 0 && height > 0) return { width, height };
+  }
+
+  // GIF87a / GIF89a
+  if (buf.toString('ascii', 0, 3) === 'GIF' && buf.length >= 10) {
+    const width = buf.readUInt16LE(6);
+    const height = buf.readUInt16LE(8);
+    if (width > 0 && height > 0) return { width, height };
+  }
+
+  // WEBP: RIFF....WEBP
+  if (
+    buf.toString('ascii', 0, 4) === 'RIFF' &&
+    buf.toString('ascii', 8, 12) === 'WEBP' &&
+    buf.length >= 30
+  ) {
+    const chunkHeader = buf.toString('ascii', 12, 16);
+    if (chunkHeader === 'VP8X' && buf.length >= 30) {
+      const width = 1 + (buf[24] | (buf[25] << 8) | (buf[26] << 16));
+      const height = 1 + (buf[27] | (buf[28] << 8) | (buf[29] << 16));
+      if (width > 0 && height > 0) return { width, height };
+    } else if (chunkHeader === 'VP8 ' && buf.length >= 30) {
+      if (buf[23] === 0x9d && buf[24] === 0x01 && buf[25] === 0x2a) {
+        const width = buf.readUInt16LE(26) & 0x3fff;
+        const height = buf.readUInt16LE(28) & 0x3fff;
+        if (width > 0 && height > 0) return { width, height };
+      }
+    } else if (chunkHeader === 'VP8L' && buf.length >= 25 && buf[20] === 0x2f) {
+      const b = buf.readUInt32LE(21);
+      const width = (b & 0x3fff) + 1;
+      const height = ((b >> 14) & 0x3fff) + 1;
+      if (width > 0 && height > 0) return { width, height };
+    }
+  }
+
+  // JPEG: FF D8
+  if (buf[0] === 0xff && buf[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 9 < buf.length) {
+      if (buf[offset] !== 0xff) {
+        offset++;
+        continue;
+      }
+      const marker = buf[offset + 1];
+      if (marker === 0x00 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd9)) {
+        offset += 2;
+        continue;
+      }
+      const blockLength = buf.readUInt16BE(offset + 2);
+      if (
+        marker >= 0xc0 &&
+        marker <= 0xcf &&
+        marker !== 0xc4 &&
+        marker !== 0xc8 &&
+        marker !== 0xcc
+      ) {
+        const height = buf.readUInt16BE(offset + 5);
+        const width = buf.readUInt16BE(offset + 7);
+        if (width > 0 && height > 0) return { width, height };
+        break;
+      }
+      if (blockLength < 2) break;
+      offset += 2 + blockLength;
+    }
+  }
+
+  return null;
+}
+
+function readLocalImageDimensions(imageUrl?: string | null): { width: number; height: number } | null {
+  if (!imageUrl || typeof imageUrl !== 'string') return null;
+  const cleanUrl = imageUrl.split('?')[0].trim();
+  if (!cleanUrl.startsWith('/uploads/') && !cleanUrl.startsWith('/images/')) return null;
+
+  try {
+    const relativePath = cleanUrl.replace(/^\/+/, '');
+    const fullPath = path.resolve(publicDir, relativePath);
+    if (fullPath.startsWith(publicDir) && fs.existsSync(fullPath)) {
+      const fd = fs.openSync(fullPath, 'r');
+      const stat = fs.fstatSync(fd);
+      const readLen = Math.min(stat.size, 65536);
+      if (readLen >= 24) {
+        const buf = Buffer.alloc(readLen);
+        fs.readSync(fd, buf, 0, readLen, 0);
+        fs.closeSync(fd);
+        const dims = readDimensionsFromBuffer(buf);
+        if (dims) return dims;
+      } else {
+        fs.closeSync(fd);
+      }
+    }
+
+    // Fallback ke uploads-registry.json jika file /uploads belum ditulis ke disk lokal
+    if (cleanUrl.startsWith('/uploads/') && fs.existsSync(mediaRegistryPath)) {
+      const filename = path.basename(cleanUrl);
+      const list = JSON.parse(fs.readFileSync(mediaRegistryPath, 'utf-8'));
+      if (Array.isArray(list)) {
+        const match = list.find((m: any) => m.filename === filename || m.url === cleanUrl);
+        if (match?.dataUrl && typeof match.dataUrl === 'string') {
+          const commaIdx = match.dataUrl.indexOf('base64,');
+          if (commaIdx !== -1) {
+            const b64Head = match.dataUrl.slice(commaIdx + 7, commaIdx + 7 + 88000);
+            const buf = Buffer.from(b64Head, 'base64');
+            return readDimensionsFromBuffer(buf);
+          }
+        }
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+function parseProjectTimestampMs(p: any): number {
+  if (!p || typeof p !== 'object') return 0;
+  for (const val of [p.updatedAt, p.createdAt]) {
+    if (typeof val === 'number' && !isNaN(val) && val > 0) return val;
+    if (typeof val === 'string' && val.trim()) {
+      const n = Number(val);
+      if (!isNaN(n) && n > 1000000000) return n;
+      const d = Date.parse(val);
+      if (!isNaN(d) && d > 0) return d;
+    }
+  }
+  if (typeof p.date === 'string' && p.date.trim()) {
+    const d = Date.parse(p.date);
+    if (!isNaN(d) && d > 0) return d;
+  }
+  const idNum = Number(p.id);
+  if (!isNaN(idNum) && idNum > 1000000000000) return idNum;
+  return 0;
+}
+
+function enrichAndFilterActiveProjects(rawList: any[]): {
+  activeProjects: any[];
+  enrichedFullList: any[];
+  manifest: ProjectsManifest;
+  dimsUpdated: boolean;
+} {
+  let deletedIds = new Set<string>();
+  try {
+    if (fs.existsSync(deletedRecordsFilePath)) {
+      const parsedDel = JSON.parse(fs.readFileSync(deletedRecordsFilePath, 'utf-8'));
+      if (parsedDel && Array.isArray(parsedDel.projects)) {
+        deletedIds = new Set(parsedDel.projects.map(String));
+      }
+    }
+  } catch {}
+
+  let dimsUpdated = false;
+  const dedupedMap = new Map<string, any>();
+
+  for (const item of Array.isArray(rawList) ? rawList : []) {
+    if (!item || typeof item !== 'object' || item.id === undefined || item.id === null) continue;
+    const strId = String(item.id);
+    let enriched = item;
+
+    if (
+      (!Number(item.imageWidth) || !Number(item.imageHeight)) &&
+      typeof item.image === 'string'
+    ) {
+      const detected = readLocalImageDimensions(item.image);
+      if (detected) {
+        enriched = { ...item, imageWidth: detected.width, imageHeight: detected.height };
+        dimsUpdated = true;
+      }
+    }
+
+    const existing = dedupedMap.get(strId);
+    if (!existing || parseProjectTimestampMs(enriched) >= parseProjectTimestampMs(existing)) {
+      dedupedMap.set(strId, enriched);
+    }
+  }
+
+  const enrichedFullList = Array.from(dedupedMap.values());
+  const activeProjects = enrichedFullList
+    .filter((p) => p.isArchived !== true && !deletedIds.has(String(p.id)))
+    .sort((a, b) => parseProjectTimestampMs(b) - parseProjectTimestampMs(a));
+
+  const items: ProjectManifestItem[] = activeProjects.map((p, index) => ({
+    id: String(p.id),
+    title: String(p.title || ''),
+    category: String(p.category || ''),
+    image: String(p.image || ''),
+    ...(Number(p.imageWidth) > 0 && Number(p.imageHeight) > 0
+      ? { imageWidth: Number(p.imageWidth), imageHeight: Number(p.imageHeight) }
+      : {}),
+    ...(typeof p.aspectRatio === 'string' && p.aspectRatio.trim()
+      ? { aspectRatio: p.aspectRatio.trim() }
+      : {}),
+    draft: Boolean(p.draft),
+    orderIndex: index,
+  }));
+
+  const manifest: ProjectsManifest = {
+    totalCount: items.length,
+    publicCount: items.filter((i) => !i.draft).length,
+    draftCount: items.filter((i) => i.draft).length,
+    updatedAt: new Date().toISOString(),
+    items,
+  };
+
+  return { activeProjects, enrichedFullList, manifest, dimsUpdated };
+}
+
+function buildAndSaveProjectsManifest(rawList?: any[]): {
+  activeProjects: any[];
+  enrichedFullList: any[];
+  manifest: ProjectsManifest;
+  dimsUpdated: boolean;
+} {
+  let sourceList = rawList;
+  if (!Array.isArray(sourceList)) {
+    sourceList = [];
+    try {
+      if (fs.existsSync(projectsFilePath)) {
+        const parsed = JSON.parse(fs.readFileSync(projectsFilePath, 'utf-8'));
+        if (Array.isArray(parsed)) sourceList = parsed;
+      }
+    } catch {}
+  }
+
+  const result = enrichAndFilterActiveProjects(sourceList);
+  try {
+    fs.writeFileSync(projectsManifestFilePath, JSON.stringify(result.manifest, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Notice: failed writing projects-manifest.json:', err);
+  }
+  return result;
+}
+
 
 function getExtFromMime(mime: string): string {
   const m = mime.toLowerCase();
@@ -550,6 +816,19 @@ function migrateStorageFilesOnStartup(): void {
       console.warn(`Notice: startup base64 offload skipped for ${path.basename(filePath)}:`, err);
     }
   }
+
+  // Hitung semua karya aktif, lengkapi dimensi asli gambar, dan simpan manifest ke projects-manifest.json
+  try {
+    const result = buildAndSaveProjectsManifest();
+    if (result.dimsUpdated && fs.existsSync(projectsFilePath)) {
+      fs.writeFileSync(projectsFilePath, JSON.stringify(result.enrichedFullList, null, 2), 'utf-8');
+    }
+    console.log(
+      `[Projects Manifest] Sinkronisasi selesai: ${result.manifest.totalCount} total karya (${result.manifest.publicCount} publik, ${result.manifest.draftCount} draft).`
+    );
+  } catch (err) {
+    console.warn('Notice: projects manifest startup build skipped:', err);
+  }
 }
 
 const requireAdminAuth = (req: Request, res: Response, next: NextFunction): void => {
@@ -639,11 +918,37 @@ app.post('/api/hero-image', (req: Request, res: Response): void => {
   }
 });
 
+app.get('/api/projects/meta', (_req: Request, res: Response): void => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  try {
+    if (fs.existsSync(projectsManifestFilePath)) {
+      const manifestRaw = fs.readFileSync(projectsManifestFilePath, 'utf-8');
+      res.status(200).json(JSON.parse(manifestRaw));
+      return;
+    }
+    const { manifest } = buildAndSaveProjectsManifest();
+    res.status(200).json(manifest);
+    return;
+  } catch {}
+  res.status(200).json({
+    totalCount: 0,
+    publicCount: 0,
+    draftCount: 0,
+    updatedAt: new Date().toISOString(),
+    items: [],
+  });
+});
+
 app.get('/api/projects', (_req: Request, res: Response): void => {
+  res.setHeader('Cache-Control', 'no-cache');
   try {
     if (fs.existsSync(projectsFilePath)) {
-      const data = fs.readFileSync(projectsFilePath, 'utf-8');
-      res.status(200).json(JSON.parse(data));
+      const data = JSON.parse(fs.readFileSync(projectsFilePath, 'utf-8'));
+      const { enrichedFullList, dimsUpdated } = buildAndSaveProjectsManifest(data);
+      if (dimsUpdated) {
+        fs.writeFileSync(projectsFilePath, JSON.stringify(enrichedFullList, null, 2), 'utf-8');
+      }
+      res.status(200).json(enrichedFullList);
       return;
     }
   } catch {}
@@ -655,8 +960,9 @@ app.post('/api/projects', requireAdminAuth, (req: Request, res: Response): void 
     const payload = req.body;
     if (Array.isArray(payload)) {
       const { sanitized } = offloadDataUrlsToDisk(payload, 'project');
-      fs.writeFileSync(projectsFilePath, JSON.stringify(sanitized, null, 2), 'utf-8');
-      res.status(200).json({ success: true, data: sanitized });
+      const { enrichedFullList, manifest } = buildAndSaveProjectsManifest(sanitized);
+      fs.writeFileSync(projectsFilePath, JSON.stringify(enrichedFullList, null, 2), 'utf-8');
+      res.status(200).json({ success: true, data: enrichedFullList, meta: manifest });
       return;
     }
     res.status(400).json({ error: 'Format data proyek tidak valid' });
@@ -777,6 +1083,11 @@ app.post('/api/deleted-ids', requireAdminAuth, (req: Request, res: Response): vo
     }
     store[type] = Array.from(existing);
     fs.writeFileSync(deletedRecordsFilePath, JSON.stringify(store, null, 2), 'utf-8');
+
+    if (type === 'projects') {
+      buildAndSaveProjectsManifest();
+    }
+
     res.status(200).json({ success: true, data: store });
   } catch {
     res.status(500).json({ error: 'Gagal memperbarui daftar ID terhapus' });

@@ -19,9 +19,9 @@ declare global { interface Window { hasRecordedView?: boolean; } }
 import { ThemeProvider } from './contexts/ThemeContext';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { ArrowLeft } from 'lucide-react';
-import { db } from './lib/firebase';
+import { db, testConnection } from './lib/firebase';
 import { doc, getDoc, setDoc, updateDoc, increment, collection, getDocs } from 'firebase/firestore';
-import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from './lib/firestoreErrorHandler';
+import { isQuotaExhausted, markQuotaExhausted, isQuotaError, isConnectivityError, markBackendUnreachable } from './lib/firestoreErrorHandler';
 import { 
   getStoredSettings, setLocalSettings, mergeSettingsByTimestamp,
   getStoredProjects, saveStoredProjects, mergeProjects,
@@ -32,6 +32,7 @@ import {
 import { getStoredQuickFilterItems, saveStoredQuickFilterItems, mergeQuickFilterItems } from './lib/quickFilterStorage';
 import { defaultSettings } from './data/settings';
 import { resolveImageUrl } from './lib/imageResolver';
+import { preloadPortfolioImagesFast, markImageLoaded } from './lib/imageLoadCache';
 import { syncFirestoreSnapshotToSW, getCachedFirestoreSnapshot } from './lib/firestoreSnapshotCache';
 import { OfflineIndicator } from './components/OfflineIndicator';
 
@@ -485,6 +486,8 @@ export default function App() {
       } catch (e: any) {
         if (isQuotaError(e)) {
           markQuotaExhausted();
+        } else if (isConnectivityError(e)) {
+          markBackendUnreachable();
         }
         console.warn("Notice: Stats view recording handled safely (offline / quota resilient mode):", e?.message || e);
       }
@@ -504,10 +507,14 @@ export default function App() {
             const img = new Image();
             img.src = resolved;
             if (img.complete && img.naturalWidth > 0) {
+              markImageLoaded(resolved, img.naturalWidth, img.naturalHeight);
               resolve();
               return;
             }
-            img.onload = () => resolve();
+            img.onload = () => {
+              markImageLoaded(resolved, img.naturalWidth, img.naturalHeight);
+              resolve();
+            };
             img.onerror = () => resolve();
             setTimeout(resolve, 2500); // 2.5s safety timeout per image
           });
@@ -524,7 +531,11 @@ export default function App() {
         }
 
         const currentProjects = getStoredProjects();
-        // Hanya preload maksimal 2 proyek teratas yang langsung terlihat di layar
+        // Preload semua gambar karya publik secara paralel dengan concurrency 6 dari atas ke bawah
+        preloadPortfolioImagesFast(
+          currentProjects.filter(p => !p.draft).map(p => p.image),
+          6
+        );
         currentProjects.slice(0, 2).forEach(p => {
           if (p.image) imagePromises.push(preloadImage(p.image));
         });
@@ -550,15 +561,22 @@ export default function App() {
         const cloudSync = async () => {
           try {
             await syncDeletedIdsFromServer().catch(() => {});
-            const quotaHit = isQuotaExhausted();
+            const handleFsCatch = (e: unknown) => {
+              if (isQuotaError(e)) markQuotaExhausted();
+              else if (isConnectivityError(e)) markBackendUnreachable();
+              return null;
+            };
+            const canUseFirestorePromise = isQuotaExhausted()
+              ? Promise.resolve(false)
+              : testConnection().catch(() => false);
 
             // Settings: Sinkronisasi server disk & Firestore dengan proteksi timestamp
             const settingsPromise = Promise.all([
               fetch('/api/settings').then(res => res.ok ? res.json() : null).catch(() => null),
               fetch('/api/hero-image').then(r => r.ok ? r.json() : null).catch(() => null),
-              !quotaHit ? getDoc(doc(db, 'settings', 'global')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null),
-              !quotaHit ? getDoc(doc(db, 'settings', 'cv')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null),
-              !quotaHit ? getDoc(doc(db, 'settings', 'hero')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null)
+              canUseFirestorePromise.then(ok => ok ? getDoc(doc(db, 'settings', 'global')).catch(handleFsCatch) : null),
+              canUseFirestorePromise.then(ok => ok ? getDoc(doc(db, 'settings', 'cv')).catch(handleFsCatch) : null),
+              canUseFirestorePromise.then(ok => ok ? getDoc(doc(db, 'settings', 'hero')).catch(handleFsCatch) : null)
             ]).then(async ([serverData, serverHeroData, snapGlobal, snapCv, snapHero]) => {
               let merged = getStoredSettings();
 
@@ -626,11 +644,22 @@ export default function App() {
               console.warn("Cloud settings sync fallback:", e);
             });
 
-            // Projects: Gabungkan lokal + disk server (/api/projects) + Cloud Firestore dengan merge non-destruktif
+            // Projects: Gabungkan lokal + disk server (/api/projects + /api/projects/meta) + Cloud Firestore
             const projectsPromise = Promise.all([
+              fetch('/api/projects/meta').then(res => res.ok ? res.json() : null).catch(() => null),
               fetch('/api/projects').then(res => res.ok ? res.json() : null).catch(() => null),
-              !quotaHit ? getDocs(collection(db, 'projects')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null)
-            ]).then(async ([serverProjs, snap]) => {
+              canUseFirestorePromise.then(ok => ok ? getDocs(collection(db, 'projects')).catch(handleFsCatch) : null)
+            ]).then(async ([serverMeta, serverProjs, snap]) => {
+              if (serverMeta && typeof serverMeta === 'object' && Array.isArray(serverMeta.items)) {
+                try {
+                  localStorage.setItem('projects_manifest_cache', JSON.stringify(serverMeta));
+                } catch {}
+                preloadPortfolioImagesFast(
+                  serverMeta.items.filter((i: any) => !i.draft).map((i: any) => i.image),
+                  6
+                );
+              }
+
               const localProjs = getStoredProjects();
               const localMap = new Map(localProjs.map(p => [String(p.id), p]));
               const cloudProjs: any[] = [];
@@ -659,6 +688,10 @@ export default function App() {
               if (merged.length > 0 || (Array.isArray(serverProjs) && serverProjs.length === 0 && localProjs.length === 0)) {
                 saveStoredProjects(merged);
                 syncFirestoreSnapshotToSW('projects', merged);
+                preloadPortfolioImagesFast(
+                  merged.filter(p => !p.draft).map(p => p.image),
+                  6
+                );
                 await Promise.all(merged.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
               }
             }).catch(e => {
@@ -669,7 +702,7 @@ export default function App() {
             // Blogs: Gabungkan lokal + disk server (/api/blogs) + Cloud Firestore
             const blogsPromise = Promise.all([
               fetch('/api/blogs').then(res => res.ok ? res.json() : null).catch(() => null),
-              !quotaHit ? getDocs(collection(db, 'blogPosts')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null)
+              canUseFirestorePromise.then(ok => ok ? getDocs(collection(db, 'blogPosts')).catch(handleFsCatch) : null)
             ]).then(async ([serverBlogs, snap]) => {
               const localBlogs = getStoredBlogs();
               const localMap = new Map(localBlogs.map(b => [String(b.id), b]));
@@ -712,7 +745,7 @@ export default function App() {
             // Experiences: Gabungkan lokal + disk server (/api/experiences) + Cloud Firestore
             const expPromise = Promise.all([
               fetch('/api/experiences').then(res => res.ok ? res.json() : null).catch(() => null),
-              !quotaHit ? getDocs(collection(db, 'experiences')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null)
+              canUseFirestorePromise.then(ok => ok ? getDocs(collection(db, 'experiences')).catch(handleFsCatch) : null)
             ]).then(([serverExps, snap]) => {
               const localExps = getStoredExperiences();
               const localMap = new Map(localExps.map(ex => [String(ex.id), ex]));
@@ -751,7 +784,7 @@ export default function App() {
             // QuickFilterQA: Gabungkan lokal + disk server (/api/quick-filter) + Cloud Firestore
             const quickFilterPromise = Promise.all([
               fetch('/api/quick-filter').then(res => res.ok ? res.json() : null).catch(() => null),
-              !quotaHit ? getDocs(collection(db, 'quickFilterQA')).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); return null; }) : Promise.resolve(null)
+              canUseFirestorePromise.then(ok => ok ? getDocs(collection(db, 'quickFilterQA')).catch(handleFsCatch) : null)
             ]).then(([serverQF, snap]) => {
               const localQF = getStoredQuickFilterItems();
               const cloudQF: any[] = [];

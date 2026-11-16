@@ -190,7 +190,7 @@ export default function PortfolioAdmin() {
             description: savedProj.description,
             date: savedProj.date || new Date().toISOString().split('T')[0],
             role: savedProj.role || '',
-            aspectRatio: savedProj.aspectRatio || '1:1',
+            aspectRatio: savedProj.aspectRatio || '',
             draft: savedProj.draft || false,
             totalHoursSpent: savedProj.totalHoursSpent || '',
             toolsUsed: savedProj.toolsUsed || '',
@@ -487,7 +487,12 @@ export default function PortfolioAdmin() {
 
       {!editingProject && (
         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 mb-4 md:mb-6">
-          <h3 className="text-base md:text-lg font-semibold text-black dark:text-white">Daftar Karya (Cloud)</h3>
+          <div className="flex items-center gap-2.5">
+            <h3 className="text-base md:text-lg font-semibold text-black dark:text-white">Daftar Karya (Cloud)</h3>
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200/70 dark:border-zinc-700/70">
+              {projects.length} Karya
+            </span>
+          </div>
           <div className="flex items-center gap-3">
             <button
               onClick={createNew}

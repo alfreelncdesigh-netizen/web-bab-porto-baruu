@@ -4,12 +4,13 @@ import {
   initializeFirestore, 
   memoryLocalCache,
   doc,
-  getDoc,
   getDocFromServer,
+  disableNetwork,
+  enableNetwork,
   setLogLevel
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import { getAuth, initializeAuth, browserLocalPersistence, inMemoryPersistence, browserPopupRedirectResolver, signInWithPopup, signInWithCredential, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
+import { getAuth, initializeAuth, browserLocalPersistence, browserPopupRedirectResolver, signInWithCredential, GoogleAuthProvider, onAuthStateChanged, User } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Matikan log warning non-fatal agar konsol bersih
@@ -25,10 +26,10 @@ const dbId = (firebaseConfig as any).firestoreDatabaseId;
 
 let dbInstance;
 try {
-  // Gunakan memoryLocalCache agar mutasi tidak menumpuk di storage lokal
+  // Gunakan memoryLocalCache + experimentalForceLongPolling agar koneksi stabil di iframe/proxy
   const firestoreSettings = { 
     localCache: memoryLocalCache(),
-    experimentalAutoDetectLongPolling: true
+    experimentalForceLongPolling: true
   };
 
   dbInstance = dbId 
@@ -43,37 +44,131 @@ try {
 }
 export const db = dbInstance;
 
+function isLocalFirestoreBlocked(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  try {
+    const unreachableUntil = Number(sessionStorage.getItem('firestore_backend_unreachable_until') || 0);
+    if (unreachableUntil > Date.now()) return true;
+
+    const val = localStorage.getItem('firestore_quota_exhausted') || sessionStorage.getItem('firestore_quota_exhausted');
+    if (!val) return false;
+
+    const savedDay = localStorage.getItem('firestore_quota_exhausted_day') || sessionStorage.getItem('firestore_quota_exhausted_day');
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    if (savedDay && savedDay !== todayUtc) return false;
+
+    const time = Number(localStorage.getItem('firestore_quota_exhausted_time') || sessionStorage.getItem('firestore_quota_exhausted_time') || 0);
+    return Date.now() - time <= 30 * 60 * 1000;
+  } catch {
+    return false;
+  }
+}
+
+function setQuotaExhaustedFlags(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const now = String(Date.now());
+    localStorage.setItem('firestore_quota_exhausted', 'true');
+    localStorage.setItem('firestore_quota_exhausted_time', now);
+    localStorage.setItem('firestore_quota_exhausted_day', todayUtc);
+    sessionStorage.setItem('firestore_quota_exhausted', 'true');
+    sessionStorage.setItem('firestore_quota_exhausted_time', now);
+    sessionStorage.setItem('firestore_quota_exhausted_day', todayUtc);
+    window.dispatchEvent(new CustomEvent('firestore_quota_exceeded'));
+  } catch {}
+}
+
+function setUnreachableCooldownFlags(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem('firestore_backend_unreachable_until', String(Date.now() + 2 * 60 * 1000));
+    window.dispatchEvent(new CustomEvent('firestore_network_offline'));
+  } catch {}
+}
+
+if (typeof window !== 'undefined') {
+  if (isLocalFirestoreBlocked()) {
+    disableNetwork(db).catch(() => {});
+  }
+
+  window.addEventListener('firestore_quota_exceeded', () => {
+    disableNetwork(db).catch(() => {});
+  });
+
+  window.addEventListener('firestore_network_offline', () => {
+    disableNetwork(db).catch(() => {});
+  });
+
+  window.addEventListener('offline', () => {
+    disableNetwork(db).catch(() => {});
+  });
+
+  window.addEventListener('online', () => {
+    if (!isLocalFirestoreBlocked()) {
+      enableNetwork(db).catch(() => {});
+    }
+  });
+}
+
+let inFlightConnectionTest: Promise<boolean> | null = null;
+
 /**
  * Validasi dan uji koneksi Firestore ke server cloud sesuai pedoman Firebase Skill
  */
 export async function testConnection(): Promise<boolean> {
-  try {
-    if (typeof window !== 'undefined') {
-      await Promise.race([
-        getDocFromServer(doc(db, 'test', 'connection')),
-        new Promise<any>((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
-      ]);
-      return true;
-    }
-  } catch (error) {
-    if (error instanceof Error && (
-      error.message.includes('the client is offline') ||
-      error.message.includes('Quota') ||
-      error.message.includes('resource-exhausted') ||
-      error.message.includes('429')
-    )) {
-      console.warn('Firebase status: running in resilient offline/local cache mode.');
-    }
+  if (typeof window === 'undefined') return false;
+
+  if (isLocalFirestoreBlocked()) {
+    await disableNetwork(db).catch(() => {});
     return false;
   }
-  return false;
+
+  if (inFlightConnectionTest) {
+    return inFlightConnectionTest;
+  }
+
+  inFlightConnectionTest = (async () => {
+    try {
+      await Promise.race([
+        getDocFromServer(doc(db, 'test', 'connection')),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 3500))
+      ]);
+      return true;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error || '');
+      const isQuota =
+        msg.includes('Quota') ||
+        msg.includes('resource-exhausted') ||
+        msg.includes('RESOURCE_EXHAUSTED') ||
+        msg.includes('429');
+
+      if (isQuota) {
+        setQuotaExhaustedFlags();
+      } else {
+        setUnreachableCooldownFlags();
+      }
+
+      // Hentikan loop retry 10 detik SDK Firestore agar aplikasi langsung berjalan mulus via server disk & cache lokal
+      await disableNetwork(db).catch(() => {});
+      console.warn('Firebase status: running in resilient local & server storage mode.');
+      return false;
+    } finally {
+      setTimeout(() => {
+        inFlightConnectionTest = null;
+      }, 2000);
+    }
+  })();
+
+  return inFlightConnectionTest;
 }
 
 // Uji koneksi saat startup tanpa memblokir thread
 if (typeof window !== 'undefined') {
   setTimeout(() => {
     testConnection().catch(() => {});
-  }, 1000);
+  }, 150);
 }
 
 let authInstance;

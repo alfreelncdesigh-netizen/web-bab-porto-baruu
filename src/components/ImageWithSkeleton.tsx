@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { resolveImageUrl, handleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { isImageAlreadyLoaded, markImageLoaded } from '../lib/imageLoadCache';
 
 interface ImageWithSkeletonProps {
   src?: string | null;
@@ -34,21 +35,24 @@ export default function ImageWithSkeleton({
 }: ImageWithSkeletonProps) {
   const resolvedSrc = resolveImageUrl(src);
   const isInline = typeof resolvedSrc === 'string' && (resolvedSrc.startsWith('data:') || resolvedSrc.startsWith('blob:'));
-  const [isLoaded, setIsLoaded] = useState<boolean>(() => isInline || priority);
-  const [hasError, setHasError] = useState(false);
+  const [isLoaded, setIsLoaded] = useState<boolean>(() => isInline || priority || isImageAlreadyLoaded(resolvedSrc));
+  const [, setHasError] = useState(false);
   const imgRef = useRef<HTMLImageElement>(null);
 
-  // Reset & detect image completion
+  // Reset & detect image completion immediately if cached
   useEffect(() => {
-    if (isInline) {
+    if (isInline || isImageAlreadyLoaded(resolvedSrc)) {
       setIsLoaded(true);
+      setHasError(false);
       return;
     }
 
     setHasError(false);
+    setIsLoaded(false);
 
     // 1. Check if the DOM image is already complete (cached in memory)
     if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      markImageLoaded(resolvedSrc, imgRef.current.naturalWidth, imgRef.current.naturalHeight);
       setIsLoaded(true);
       return;
     }
@@ -57,7 +61,7 @@ export default function ImageWithSkeleton({
     let active = true;
     const safetyTimer = setTimeout(() => {
       if (active) setIsLoaded(true);
-    }, 1500);
+    }, 1800);
 
     return () => {
       active = false;
@@ -71,7 +75,7 @@ export default function ImageWithSkeleton({
     <div className={`relative ${containerClassName}`} style={style}>
       {/* Gradient Shimmer Silhouette Skeleton Placeholder */}
       <div 
-        className={`absolute inset-0 z-0 pointer-events-none bg-zinc-200 dark:bg-zinc-800 animate-shimmer transition-opacity duration-300 ease-out ${
+        className={`absolute inset-0 z-0 pointer-events-none bg-zinc-200 dark:bg-zinc-800 animate-shimmer transition-opacity duration-200 ease-out ${
           isLoaded ? 'opacity-0' : 'opacity-100'
         } ${skeletonClassName}`}
         aria-hidden="true"
@@ -102,6 +106,9 @@ export default function ImageWithSkeleton({
           fetchPriority={priority ? 'high' : 'auto'}
           decoding="async"
           onLoad={(e) => {
+            const nw = e.currentTarget.naturalWidth;
+            const nh = e.currentTarget.naturalHeight;
+            markImageLoaded(resolvedSrc, nw > 0 ? nw : undefined, nh > 0 ? nh : undefined);
             setIsLoaded(true);
             onLoad?.(e);
           }}
@@ -111,7 +118,7 @@ export default function ImageWithSkeleton({
             handleImageError(e);
             onError?.(e);
           }}
-          className={`${className} transition-opacity duration-300 ease-out relative z-[1] ${
+          className={`${className} transition-opacity duration-200 ease-out relative z-[1] ${
             isLoaded ? 'opacity-100' : 'opacity-0'
           }`}
         />

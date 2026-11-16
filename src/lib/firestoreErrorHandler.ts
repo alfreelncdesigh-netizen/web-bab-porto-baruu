@@ -26,14 +26,30 @@ export interface FirestoreErrorInfo {
   };
 }
 
+const QUOTA_COOLDOWN_MS = 30 * 60 * 1000; // 30 menit atau hingga berganti hari UTC
+const UNREACHABLE_COOLDOWN_MS = 2 * 60 * 1000; // 2 menit jeda koneksi ulang jika jaringan tidak merespons
+
 export function markQuotaExhausted(): void {
   if (typeof window !== 'undefined') {
     try {
+      const todayUtc = new Date().toISOString().slice(0, 10);
       localStorage.setItem('firestore_quota_exhausted', 'true');
       localStorage.setItem('firestore_quota_exhausted_time', String(Date.now()));
+      localStorage.setItem('firestore_quota_exhausted_day', todayUtc);
       sessionStorage.setItem('firestore_quota_exhausted', 'true');
       sessionStorage.setItem('firestore_quota_exhausted_time', String(Date.now()));
+      sessionStorage.setItem('firestore_quota_exhausted_day', todayUtc);
       window.dispatchEvent(new CustomEvent('firestore_quota_exceeded'));
+    } catch {}
+  }
+}
+
+export function markBackendUnreachable(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      const until = String(Date.now() + UNREACHABLE_COOLDOWN_MS);
+      sessionStorage.setItem('firestore_backend_unreachable_until', until);
+      window.dispatchEvent(new CustomEvent('firestore_network_offline'));
     } catch {}
   }
 }
@@ -43,8 +59,11 @@ export function clearQuotaStatus(): void {
     try {
       localStorage.removeItem('firestore_quota_exhausted');
       localStorage.removeItem('firestore_quota_exhausted_time');
+      localStorage.removeItem('firestore_quota_exhausted_day');
       sessionStorage.removeItem('firestore_quota_exhausted');
       sessionStorage.removeItem('firestore_quota_exhausted_time');
+      sessionStorage.removeItem('firestore_quota_exhausted_day');
+      sessionStorage.removeItem('firestore_backend_unreachable_until');
     } catch {}
   }
 }
@@ -52,11 +71,24 @@ export function clearQuotaStatus(): void {
 export function isQuotaExhausted(): boolean {
   if (typeof window === 'undefined') return false;
   try {
+    // Jika backend sedang dalam masa tunggu koneksi gagal singkat, jangan paksakan koneksi baru
+    const unreachableUntil = Number(sessionStorage.getItem('firestore_backend_unreachable_until') || 0);
+    if (unreachableUntil > Date.now()) {
+      return true;
+    }
+
     const val = localStorage.getItem('firestore_quota_exhausted') || sessionStorage.getItem('firestore_quota_exhausted');
     if (!val) return false;
+
+    const savedDay = localStorage.getItem('firestore_quota_exhausted_day') || sessionStorage.getItem('firestore_quota_exhausted_day');
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    if (savedDay && savedDay !== todayUtc) {
+      clearQuotaStatus();
+      return false;
+    }
+
     const time = Number(localStorage.getItem('firestore_quota_exhausted_time') || sessionStorage.getItem('firestore_quota_exhausted_time') || 0);
-    // Quota retry window: 3 minutes (allows auto-recovery when quota resets)
-    if (Date.now() - time > 3 * 60 * 1000) {
+    if (Date.now() - time > QUOTA_COOLDOWN_MS) {
       clearQuotaStatus();
       return false;
     }
@@ -83,9 +115,25 @@ export function isQuotaError(error: unknown): boolean {
   );
 }
 
+export function isConnectivityError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error || '');
+  const code = (error as any)?.code;
+  return (
+    code === 'unavailable' ||
+    code === 'deadline-exceeded' ||
+    msg.includes('Could not reach Cloud Firestore backend') ||
+    msg.includes("Backend didn't respond") ||
+    msg.includes('the client is offline') ||
+    msg.includes('unavailable') ||
+    msg.includes('timeout')
+  );
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
   if (isQuotaError(error)) {
     markQuotaExhausted();
+  } else if (isConnectivityError(error)) {
+    markBackendUnreachable();
   }
 
   const errInfo: FirestoreErrorInfo = {
@@ -111,7 +159,13 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 export function logFirestoreError(error: unknown, operationType: OperationType, path: string | null): void {
   if (isQuotaError(error)) {
     markQuotaExhausted();
-    console.warn('Notice: Firestore Daily Write Quota exceeded. Operating seamlessly in resilient local & server storage mode.');
+    console.warn('Notice: Firestore Daily Quota exceeded. Operating seamlessly in local & server storage mode.');
+    return;
+  }
+
+  if (isConnectivityError(error)) {
+    markBackendUnreachable();
+    console.warn('Notice: Cloud Firestore unreachable/offline. Operating seamlessly in local & server storage mode.');
     return;
   }
 

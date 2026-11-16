@@ -6,6 +6,13 @@ import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { getStoredProjects, saveStoredProjects, cleanProjects, mergeProjects, syncDeletedIdsFromServer } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
+import {
+  isImageAlreadyLoaded,
+  getCachedImageDimensions,
+  markImageLoaded,
+  preloadPortfolioImagesFast,
+  subscribeImageLoaded,
+} from '../lib/imageLoadCache';
 import { logFirestoreError, OperationType, isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import ShareProjectModal from './ShareProjectModal';
@@ -111,12 +118,78 @@ function getProjectMetrics(project: Project) {
   };
 }
 
-/**
- * Pooled Singleton IntersectionObserver untuk PortfolioLazyImage:
- * Menggunakan satu instance observer bersama (shared observer) dengan WeakMap callback,
- * bukan membuat instance observer baru per kartu.
- * Margin diatur agresif (100px) sehingga gambar hanya diminta sesaat sebelum mencapai layar.
- */
+const PROJECTS_MANIFEST_CACHE_KEY = 'projects_manifest_cache';
+
+interface ProjectManifestItem {
+  id: string;
+  title?: string;
+  category?: string;
+  image?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  aspectRatio?: string;
+  draft?: boolean;
+  orderIndex?: number;
+}
+
+interface ProjectsManifest {
+  totalCount: number;
+  publicCount: number;
+  draftCount: number;
+  updatedAt?: string;
+  items: ProjectManifestItem[];
+}
+
+function getCachedProjectsManifest(): ProjectsManifest | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(PROJECTS_MANIFEST_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.items)) {
+      return parsed as ProjectsManifest;
+    }
+  } catch {}
+  return null;
+}
+
+function saveCachedProjectsManifest(manifest: ProjectsManifest): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(PROJECTS_MANIFEST_CACHE_KEY, JSON.stringify(manifest));
+  } catch {}
+}
+
+function buildManifestFromProjects(itemsList: Project[]): ProjectsManifest {
+  const publicItems = itemsList.filter((p) => !p.draft);
+  return {
+    totalCount: itemsList.length,
+    publicCount: publicItems.length,
+    draftCount: itemsList.length - publicItems.length,
+    updatedAt: new Date().toISOString(),
+    items: itemsList.map((p, idx) => ({
+      id: String(p.id),
+      title: p.title,
+      category: p.category,
+      image: p.image,
+      ...(p.imageWidth && p.imageHeight ? { imageWidth: p.imageWidth, imageHeight: p.imageHeight } : {}),
+      ...(p.aspectRatio ? { aspectRatio: p.aspectRatio } : {}),
+      draft: Boolean(p.draft),
+      orderIndex: idx,
+    })),
+  };
+}
+
+function parseAspectRatioString(ar?: string): { width: number; height: number } | undefined {
+  if (!ar || typeof ar !== 'string') return undefined;
+  const match = ar.trim().match(/^(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)$/);
+  if (!match) return undefined;
+  const w = Number(match[1]);
+  const h = Number(match[2]);
+  if (w > 0 && h > 0) return { width: w, height: h };
+  return undefined;
+}
+
 type PortfolioObserverCallback = (isIntersecting: boolean) => void;
 const sharedPortfolioObserverCallbacks = new WeakMap<Element, PortfolioObserverCallback>();
 let sharedPortfolioObserverInstance: IntersectionObserver | null = null;
@@ -138,7 +211,7 @@ function getSharedPortfolioObserver(): IntersectionObserver | null {
         }
       },
       {
-        rootMargin: '800px 0px 800px 0px', // Prefetch gambar lebih awal 800px sebelum viewport agar saat di-scroll gambar langsung siap
+        rootMargin: '1200px 0px 1200px 0px',
         threshold: 0.01,
       }
     );
@@ -150,6 +223,7 @@ interface PortfolioLazyImageProps {
   src?: string | null;
   alt: string;
   priority?: boolean;
+  index?: number;
   width?: number;
   height?: number;
   aspectRatio?: string;
@@ -172,8 +246,10 @@ function PortfolioLazyImage({
   src,
   alt,
   priority = false,
+  index = 0,
   width,
   height,
+  aspectRatio,
   className = "w-full h-auto transition-transform duration-700 ease-out group-hover:scale-105 brightness-95 group-hover:brightness-100 block",
   containerClassName = "relative w-full overflow-hidden bg-zinc-100 dark:bg-zinc-900",
   skeletonClassName = "rounded-xl sm:rounded-2xl",
@@ -181,22 +257,47 @@ function PortfolioLazyImage({
   onError,
   onLoad
 }: PortfolioLazyImageProps) {
-  const [isInView, setIsInView] = useState<boolean>(priority);
-  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
+  const [isReady, setIsReady] = useState<boolean>(() => isImageAlreadyLoaded(src));
+  const [isInView, setIsInView] = useState<boolean>(() => priority || index < 6 || isImageAlreadyLoaded(src));
+  const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(
+    () => getCachedImageDimensions(src) || null
+  );
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setNaturalSize(null);
+    const alreadyLoaded = isImageAlreadyLoaded(src);
+    const cachedDims = getCachedImageDimensions(src);
+    if (cachedDims) setNaturalSize(cachedDims);
+    if (alreadyLoaded) {
+      setIsReady(true);
+      setIsInView(true);
+      return;
+    }
+    setIsReady(false);
+    const unsub = subscribeImageLoaded(src, (dims) => {
+      if (dims && dims.width > 0 && dims.height > 0) {
+        setNaturalSize(dims);
+      }
+      setIsReady(true);
+      setIsInView(true);
+    });
+    return unsub;
   }, [src]);
 
-  const effectiveWidth = naturalSize?.width || (width && width > 0 ? width : undefined);
-  const effectiveHeight = naturalSize?.height || (height && height > 0 ? height : undefined);
+  const parsedFallbackRatio = parseAspectRatioString(aspectRatio);
+  const effectiveWidth =
+    naturalSize?.width ||
+    (width && width > 0 ? width : parsedFallbackRatio?.width);
+  const effectiveHeight =
+    naturalSize?.height ||
+    (height && height > 0 ? height : parsedFallbackRatio?.height);
   const cssAspectRatio = getCssAspectRatio(effectiveWidth, effectiveHeight);
-  const aspectStyle: React.CSSProperties | undefined = cssAspectRatio ? { aspectRatio: cssAspectRatio } : undefined;
+  const aspectStyle: React.CSSProperties | undefined = cssAspectRatio
+    ? { aspectRatio: cssAspectRatio }
+    : undefined;
 
   useEffect(() => {
-    // Jika priority (kartu pertama) atau sudah terlihat di layar, observer tidak diperlukan
-    if (priority || isInView) return;
+    if (priority || isInView || isReady) return;
 
     const currentEl = containerRef.current;
     if (!currentEl) return;
@@ -215,17 +316,16 @@ function PortfolioLazyImage({
 
     observer.observe(currentEl);
 
-    // Timeout pengaman (1.200ms) agar kisi thumbnail tidak pernah terjebak di animasi shimmer jika observer terhambat
-    const safetyTimer = setTimeout(() => {
+    const fastTimer = setTimeout(() => {
       setIsInView(true);
-    }, 1200);
+    }, 250);
 
     return () => {
-      clearTimeout(safetyTimer);
+      clearTimeout(fastTimer);
       sharedPortfolioObserverCallbacks.delete(currentEl);
       observer.unobserve(currentEl);
     };
-  }, [priority, isInView]);
+  }, [priority, isInView, isReady]);
 
   return (
     <div
@@ -233,7 +333,7 @@ function PortfolioLazyImage({
       className={`relative w-full overflow-hidden ${!cssAspectRatio ? aspectClass : ''} ${containerClassName}`}
       style={aspectStyle}
     >
-      {isInView ? (
+      {isInView || isReady ? (
         <ImageWithSkeleton
           src={src || FALLBACK_IMAGE}
           alt={alt}
@@ -244,21 +344,24 @@ function PortfolioLazyImage({
           containerClassName="relative w-full overflow-hidden"
           className={className}
           skeletonClassName={skeletonClassName}
+          style={aspectStyle}
           onError={onError}
           onLoad={(e) => {
             const nw = e.currentTarget.naturalWidth;
             const nh = e.currentTarget.naturalHeight;
             if (nw > 0 && nh > 0) {
+              markImageLoaded(src, nw, nh);
               setNaturalSize((prev) => (prev?.width === nw && prev?.height === nh ? prev : { width: nw, height: nh }));
             }
+            setIsReady(true);
             onLoad?.(e);
           }}
         />
       ) : (
-        <div 
-          className={`w-full ${cssAspectRatio ? '' : aspectClass} bg-gradient-to-br from-zinc-200 to-zinc-300 dark:from-zinc-800 dark:to-zinc-900 animate-shimmer ${skeletonClassName}`}
+        <div
+          className={`w-full ${cssAspectRatio ? 'h-full' : aspectClass} bg-gradient-to-br from-zinc-200 to-zinc-300 dark:from-zinc-800 dark:to-zinc-900 animate-shimmer ${skeletonClassName}`}
           style={aspectStyle}
-          aria-hidden="true" 
+          aria-hidden="true"
         />
       )}
     </div>
@@ -272,6 +375,7 @@ export interface PortfolioProps {
 
 export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining }: PortfolioProps = {}) {
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
+  const [manifest, setManifest] = useState<ProjectsManifest | null>(() => getCachedProjectsManifest());
   const [activeCategory, setActiveCategory] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const { t, translateDynamic } = useLanguage();
@@ -290,7 +394,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   const [showSharePopup, setShowSharePopup] = useState(false);
   const [sharingProject, setSharingProject] = useState<Project | null>(null);
   const [shareToast, setShareToast] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => getStoredProjects().length === 0);
 
   // Mode Layout Kisi Portofolio: 'grid-3' (tampilan 3 karya) atau 'grid-2' (dua gambar kanan & kiri rasio asli)
   const [layoutMode, setLayoutMode] = useState<'grid-3' | 'grid-2'>(() => {
@@ -354,45 +458,57 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   useEffect(() => {
     let isMounted = true;
 
-    // Hanya lakukan pra-muat (preload) maksimal untuk 2 gambar teratas yang langsung terlihat di viewport
-    // Seluruh gambar lainnya akan dimuat secara agresif hanya saat mendekati layar oleh IntersectionObserver
-    const preloadImages = (items: Project[]) => {
-      const topItems = items.slice(0, 2);
-      const promises = topItems.map((p) => {
-        if (!p.image) return Promise.resolve();
-        const url = resolveImageUrl(p.image);
-        return new Promise<void>((resolve) => {
-          const img = new Image();
-          img.src = url;
-          if (img.complete && img.naturalWidth > 0) return resolve();
-          img.onload = () => resolve();
-          img.onerror = () => resolve();
-          setTimeout(resolve, 1500);
-        });
-      });
-      return Promise.all(promises);
+    // Pemuatan paralel berkecepatan tinggi untuk semua karya publik (prioritas teratas ke bawah)
+    const fastLoadProjectImages = (items: Array<{ image?: string; draft?: boolean }>) => {
+      const publicUrls = items
+        .filter((p) => !p.draft && typeof p.image === 'string' && p.image.trim().length > 0)
+        .map((p) => p.image!);
+      if (publicUrls.length > 0) {
+        preloadPortfolioImagesFast(publicUrls, 6);
+      }
     };
 
-    // 1. Muat data awal dari cache penyimpanan lokal segera tanpa memblokir UI
+    // 1. Deteksi data lokal & manifest cache saat web langsung dibuka
     const initialProjects = getStoredProjects();
     if (initialProjects.length > 0) {
       setProjects(initialProjects);
-      if (isMounted) setLoading(false);
-      preloadImages(initialProjects);
+      setLoading(false);
+      const localManifest = buildManifestFromProjects(initialProjects);
+      setManifest((prev) => prev || localManifest);
+      fastLoadProjectImages(initialProjects);
+    } else if (manifest?.items && manifest.items.length > 0) {
+      fastLoadProjectImages(manifest.items);
     }
 
-    // 2. Sinkronisasi tombstone & tarik data instan dari disk server (/api/projects)
+    // 2. Tarik hitungan karya & rasio/ukuran asli dari backend manifest (/api/projects/meta)
+    //    serta daftar proyek lengkap (/api/projects) secara paralel
     (async () => {
       await syncDeletedIdsFromServer();
       try {
-        const res = await fetch('/api/projects');
-        const apiProjects = res.ok ? await res.json() : [];
+        const [metaRes, projectsRes] = await Promise.all([
+          fetch('/api/projects/meta').catch(() => null),
+          fetch('/api/projects').catch(() => null),
+        ]);
+
+        if (metaRes && metaRes.ok && isMounted) {
+          const serverMeta = await metaRes.json();
+          if (serverMeta && typeof serverMeta === 'object' && Array.isArray(serverMeta.items)) {
+            setManifest(serverMeta);
+            saveCachedProjectsManifest(serverMeta);
+            fastLoadProjectImages(serverMeta.items);
+          }
+        }
+
+        const apiProjects = projectsRes && projectsRes.ok ? await projectsRes.json() : [];
         if (Array.isArray(apiProjects) && isMounted) {
           const merged = mergeProjects(getStoredProjects(), apiProjects);
           setProjects(merged);
           saveStoredProjects(merged);
+          const nextManifest = buildManifestFromProjects(merged);
+          setManifest(nextManifest);
+          saveCachedProjectsManifest(nextManifest);
           setLoading(false);
-          preloadImages(merged);
+          fastLoadProjectImages(merged);
         }
       } catch (e) {
         console.warn("Fetch /api/projects notice:", e);
@@ -403,8 +519,11 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       if (e.detail && isMounted) {
         const merged = mergeProjects(e.detail);
         setProjects(merged);
+        const nextManifest = buildManifestFromProjects(merged);
+        setManifest(nextManifest);
+        saveCachedProjectsManifest(nextManifest);
         setLoading(false);
-        preloadImages(merged);
+        fastLoadProjectImages(merged);
       }
     };
     window.addEventListener('user_projects_updated', handleUpdate);
@@ -424,8 +543,11 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           if (isMounted) {
             setProjects(merged);
             saveStoredProjects(merged);
+            const nextManifest = buildManifestFromProjects(merged);
+            setManifest(nextManifest);
+            saveCachedProjectsManifest(nextManifest);
             setLoading(false);
-            preloadImages(merged);
+            fastLoadProjectImages(merged);
           }
         },
         (error) => {
@@ -446,10 +568,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       }
     }
 
-    // Safety timeout singkat agar skeleton tidak pernah menggantung lebih dari 400ms
+    // Safety timeout agar skeleton tidak pernah menggantung jika offline total
     const timer = setTimeout(() => {
       if (isMounted) setLoading(false);
-    }, 400);
+    }, 600);
 
     return () => {
       isMounted = false;
@@ -730,7 +852,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           {/* Bar Kontrol Pilihan Kisi Layout Karya (di bawah kategori, sebelah kanan) */}
           <div className="flex items-center justify-between pt-2.5 pb-2">
             <span className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-medium select-none">
-              {filteredProjects.length} {translateDynamic('karya ditemukan')}
+              {(loading && filteredProjects.length === 0 && manifest?.publicCount
+                ? manifest.publicCount
+                : filteredProjects.length)}{' '}
+              {translateDynamic('karya ditemukan')}
             </span>
 
             {/* Pilihan Kisi di Sebelah Kanan */}
@@ -777,22 +902,49 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           </div>
         </div>
 
-        {loading ? (
+        {loading && filteredProjects.length === 0 ? (
           <div className={
             layoutMode === 'grid-2'
               ? 'columns-2 md:columns-2 gap-3 sm:gap-4 md:gap-6 lg:gap-8 [column-fill:_balance]'
-              : 'columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 lg:gap-8'
+              : 'columns-1 sm:columns-2 lg:columns-3 gap-6 md:gap-7 lg:gap-8 [column-fill:_balance]'
           }>
-            {[1, 2, 3, 4, 5, 6].map((n) => (
-              <div 
-                key={n} 
-                className={`w-full rounded-xl sm:rounded-2xl overflow-hidden animate-shimmer ${
-                  layoutMode === 'grid-2' ? 'break-inside-avoid mb-3 sm:mb-4 md:mb-6' : 'mb-6'
-                } ${
-                  n % 2 === 0 ? 'aspect-[16/10] min-h-[140px] sm:min-h-[220px]' : 'aspect-[4/5] min-h-[180px] sm:min-h-[300px]'
-                }`}
-              />
-            ))}
+            {(() => {
+              const publicManifestItems = (manifest?.items || []).filter((item) => !item.draft);
+              const skeletonEntries: Array<{ id: string; width?: number; height?: number; aspectRatio?: string }> =
+                publicManifestItems.length > 0
+                  ? publicManifestItems.map((item, idx) => ({
+                      id: item.id || `m-${idx}`,
+                      width: item.imageWidth,
+                      height: item.imageHeight,
+                      aspectRatio: item.aspectRatio,
+                    }))
+                  : Array.from({ length: manifest?.publicCount && manifest.publicCount > 0 ? manifest.publicCount : 6 }, (_, idx) => ({
+                      id: `fallback-${idx}`,
+                    }));
+
+              return skeletonEntries.map((entry, idx) => {
+                const parsed = parseAspectRatioString(entry.aspectRatio);
+                const w = entry.width && entry.width > 0 ? entry.width : parsed?.width;
+                const h = entry.height && entry.height > 0 ? entry.height : parsed?.height;
+                const ratioStyle: React.CSSProperties =
+                  w && h && w > 0 && h > 0
+                    ? { aspectRatio: `${w} / ${h}` }
+                    : {};
+                const fallbackRatioClass =
+                  w && h ? '' : idx % 2 === 0 ? 'aspect-[16/10] min-h-[140px] sm:min-h-[220px]' : 'aspect-[4/5] min-h-[180px] sm:min-h-[300px]';
+
+                return (
+                  <div
+                    key={entry.id}
+                    style={ratioStyle}
+                    className={`w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 animate-shimmer ${
+                      layoutMode === 'grid-2' ? 'mb-3 sm:mb-4 md:mb-6' : 'mb-6 md:mb-7 lg:mb-8'
+                    } ${fallbackRatioClass}`}
+                    aria-hidden="true"
+                  />
+                );
+              });
+            })()}
           </div>
         ) : (
           <motion.div 
@@ -831,8 +983,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               src={project.image} 
                               alt={project.title} 
                               priority={index < 2}
+                              index={index}
                               width={project.imageWidth}
                               height={project.imageHeight}
+                              aspectRatio={project.aspectRatio}
                               className="w-full h-auto transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block" 
                               skeletonClassName="rounded-xl sm:rounded-2xl"
                               aspectClass={layoutMode === 'grid-2' ? "min-h-[140px] sm:min-h-[260px]" : "min-h-[200px] sm:min-h-[260px]"}
@@ -843,6 +997,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                               src={FALLBACK_IMAGE} 
                               alt={project.title} 
                               priority={index < 2}
+                              index={index}
                               width={800}
                               height={600}
                               className="w-full h-auto transition-transform duration-700 ease-out group-hover:scale-[1.02] brightness-95 group-hover:brightness-100 block" 
@@ -940,19 +1095,44 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                   </button>
                 </div>
               ) : loading ? (
-                <div className="col-span-full columns-1 sm:columns-2 lg:columns-2 xl:columns-3 2xl:columns-3 gap-6 sm:gap-8 md:gap-10 lg:gap-10 xl:gap-12 space-y-6 sm:space-y-8 md:space-y-10 lg:space-y-10 xl:space-y-12">
-                  {[1, 2, 3, 4, 5, 6].map((i) => (
-                    <div 
-                      key={i} 
-                      className={`w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 animate-shimmer ${
-                        i % 3 === 0 
-                          ? 'aspect-[3/4] min-h-[440px]' 
-                          : i % 3 === 1 
-                          ? 'aspect-[4/5] min-h-[380px]' 
-                          : 'aspect-[1/1] min-h-[340px]'
-                      }`}
-                    />
-                  ))}
+                <div className="col-span-full w-full">
+                  {(() => {
+                    const publicManifestItems = (manifest?.items || []).filter((item) => !item.draft);
+                    const skeletonEntries: Array<{ id: string; width?: number; height?: number; aspectRatio?: string }> =
+                      publicManifestItems.length > 0
+                        ? publicManifestItems.map((item, idx) => ({
+                            id: item.id || `m2-${idx}`,
+                            width: item.imageWidth,
+                            height: item.imageHeight,
+                            aspectRatio: item.aspectRatio,
+                          }))
+                        : Array.from({ length: manifest?.publicCount && manifest.publicCount > 0 ? manifest.publicCount : 6 }, (_, idx) => ({
+                            id: `fallback2-${idx}`,
+                          }));
+
+                    return skeletonEntries.map((entry, idx) => {
+                      const parsed = parseAspectRatioString(entry.aspectRatio);
+                      const w = entry.width && entry.width > 0 ? entry.width : parsed?.width;
+                      const h = entry.height && entry.height > 0 ? entry.height : parsed?.height;
+                      const ratioStyle: React.CSSProperties =
+                        w && h && w > 0 && h > 0
+                          ? { aspectRatio: `${w} / ${h}` }
+                          : {};
+                      const fallbackRatioClass =
+                        w && h ? '' : idx % 2 === 0 ? 'aspect-[16/10] min-h-[140px] sm:min-h-[220px]' : 'aspect-[4/5] min-h-[180px] sm:min-h-[300px]';
+
+                      return (
+                        <div
+                          key={entry.id}
+                          style={ratioStyle}
+                          className={`w-full break-inside-avoid rounded-xl sm:rounded-2xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 animate-shimmer ${
+                            layoutMode === 'grid-2' ? 'mb-3 sm:mb-4 md:mb-6' : 'mb-6 md:mb-7 lg:mb-8'
+                          } ${fallbackRatioClass}`}
+                          aria-hidden="true"
+                        />
+                      );
+                    });
+                  })()}
                 </div>
               ) : (
                 <div className="col-span-full py-16 text-center bg-zinc-50 dark:bg-[#111111] rounded-2xl border border-zinc-200/50 dark:border-zinc-800/50">
