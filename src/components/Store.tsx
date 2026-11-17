@@ -787,7 +787,7 @@ Terima kasih.`;
                                 <div className="flex flex-col items-center justify-center relative z-0">
                                   <div className="relative mb-2">
                                     <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-emerald-500 bg-zinc-100 dark:bg-zinc-800 shadow-sm">
-                                      <img src={formData.referensiUrl} alt="Referensi" className="w-full h-full object-cover" />
+                                      <img src={resolveImageUrl(formData.referensiUrl)} alt="Referensi" className="w-full h-full object-cover" onError={handleImageError} />
                                     </div>
                                     <div className="absolute -top-2 -right-2 bg-emerald-500 rounded-full p-1 shadow-md border border-white dark:border-zinc-900">
                                       <CheckCircle2 className="w-4 h-4 text-white" />
@@ -1300,7 +1300,7 @@ Terima kasih.`;
                             <div className="flex items-center justify-center gap-3 relative z-0 py-1">
                               <div className="relative">
                                 <div className="w-12 h-12 rounded-lg overflow-hidden border border-emerald-500 bg-zinc-100 dark:bg-zinc-800 shadow-2xs">
-                                  <img src={formData.referensiUrl} alt="Referensi" className="w-full h-full object-cover" />
+                                  <img src={resolveImageUrl(formData.referensiUrl)} alt="Referensi" className="w-full h-full object-cover" onError={handleImageError} />
                                 </div>
                                 <div className="absolute -top-1.5 -right-1.5 bg-emerald-500 rounded-full p-0.5 shadow-md border border-white dark:border-zinc-900">
                                   <CheckCircle2 className="w-3 h-3 text-white" />
@@ -1444,7 +1444,7 @@ Terima kasih.`;
         {/* PAKET SPESIAL PILIHAN */}
         {(() => {
           const validActivePosters = promoPosters.filter(
-            p => p && p.active !== false && ((p.image && typeof p.image === 'string' && p.image.trim().length > 0) || (p.dataUrl && typeof p.dataUrl === 'string' && p.dataUrl.trim().length > 0))
+            p => p && p.active !== false && p.image && typeof p.image === 'string' && p.image.trim().length > 0
           );
 
           if (validActivePosters.length === 0) return null;
@@ -1474,7 +1474,7 @@ Terima kasih.`;
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-6 lg:gap-8">
                 {validActivePosters.map((poster, index) => {
                   const isStoreLink = poster.link === '#store' || poster.link === 'store' || !poster.link;
-                  const posterImgUrl = resolveImageUrl(poster.image || poster.dataUrl || '');
+                  const posterImgUrl = resolveImageUrl(poster.image);
                   return (
                     <div
                       key={poster.id ? `${poster.id}-${index}` : `promo-poster-${index}`}
@@ -1488,13 +1488,7 @@ Terima kasih.`;
                             alt={poster.title || `Poster Promosi #${index + 1}`}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
                             loading="lazy"
-                            onError={(e) => {
-                              if (poster.dataUrl && e.currentTarget.src !== poster.dataUrl) {
-                                e.currentTarget.src = poster.dataUrl;
-                                return;
-                              }
-                              handleImageError(e);
-                            }}
+                            onError={handleImageError}
                           />
 
                           {/* Badge Nomor Slot Promosi */}

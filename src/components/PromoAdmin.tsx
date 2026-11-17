@@ -35,8 +35,7 @@ const normalizeSlots = (rawList?: PromoPosterItem[]): PromoPosterItem[] => {
         slots[idx] = {
           id: p.id || `poster-${idx + 1}`,
           title: p.title || slots[idx].title,
-          image: p.image || p.dataUrl || '',
-          dataUrl: p.dataUrl || (p.image?.startsWith('data:') ? p.image : undefined),
+          image: p.image || '',
           ctaText: p.ctaText || slots[idx].ctaText,
           link: p.link || slots[idx].link,
           active: p.active !== false,

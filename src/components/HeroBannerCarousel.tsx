@@ -173,6 +173,7 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
                   className="w-full h-full object-cover rounded-2xl md:rounded-3xl lg:rounded-[32px] transition-transform duration-700 ease-out group-hover:scale-[1.02] bg-transparent border-none shadow-none"
                   onError={(e) => {
                     const target = e.currentTarget;
+                    console.error('[HeroBanner] Gagal memuat gambar banner:', target.currentSrc || target.src);
                     if (!target.src.includes('banner_promo_bca_1788696791480.jpg')) {
                       target.src = '/images/banner_promo_bca_1788696791480.jpg';
                     } else {

@@ -4,6 +4,7 @@ import {
   BlobStoreError,
   mutateJsonInBlob,
   readJsonFromBlob,
+  sanitizeStoredMediaUrl,
 } from './_lib/blobJsonStore';
 import {
   type ApiRequest,
@@ -23,9 +24,11 @@ function normalizeCvSections(rawSections: any[]): CvSectionSeed[] {
     title: String(sec?.title || ''),
     content: String(sec?.content || ''),
     images: Array.isArray(sec?.images)
-      ? sec.images.filter((u: any) => typeof u === 'string' && u.trim().length > 0)
+      ? sec.images
+          .map((u: any) => sanitizeStoredMediaUrl(u))
+          .filter((u: string) => u.length > 0)
       : typeof sec?.image === 'string' && sec.image.trim()
-      ? [sec.image.trim()]
+      ? [sanitizeStoredMediaUrl(sec.image)].filter(Boolean)
       : [],
   }));
 }
@@ -36,7 +39,14 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
   try {
     if (method === 'GET') {
       const { data } = await readJsonFromBlob<CvJsonData>(BLOB_PATHS.CV, createInitialCvSeed);
-      sendJson(res, 200, { cv: data, updatedAt: data.updatedAt, version: data.version || 1 });
+      const cleanCv: CvJsonData = {
+        ...data,
+        cvPdfFile: sanitizeStoredMediaUrl(data?.cvPdfFile),
+        cvSections: Array.isArray(data?.cvSections)
+          ? normalizeCvSections(data.cvSections)
+          : DEFAULT_CV_SECTIONS,
+      };
+      sendJson(res, 200, { cv: cleanCv, updatedAt: data.updatedAt, version: data.version || 1 });
       return;
     }
 
@@ -65,7 +75,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
               : current.cvRole || 'Desainer Grafis',
           cvPdfFile:
             incoming.cvPdfFile !== undefined
-              ? String(incoming.cvPdfFile)
+              ? sanitizeStoredMediaUrl(incoming.cvPdfFile)
               : current.cvPdfFile || '',
           cvSections: Array.isArray(incoming.cvSections)
             ? normalizeCvSections(incoming.cvSections)

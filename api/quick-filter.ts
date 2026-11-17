@@ -4,6 +4,7 @@ import {
   BlobStoreError,
   mutateJsonInBlob,
   readJsonFromBlob,
+  sanitizeStoredMediaUrl,
 } from './_lib/blobJsonStore';
 import {
   type ApiRequest,
@@ -25,8 +26,8 @@ function normalizeQuickFilterRecord(raw: any, existing?: any): any {
     ? existing.images
     : [];
   const images = imagesRaw
-    .map((u: any) => (typeof u === 'string' ? u.trim() : ''))
-    .filter((u: string) => u.length > 0 && !u.startsWith('blob:'));
+    .map((u: any) => sanitizeStoredMediaUrl(u))
+    .filter((u: string) => u.length > 0);
 
   return {
     ...(existing || {}),

@@ -4,6 +4,7 @@ import {
   BlobStoreError,
   mutateJsonInBlob,
   readJsonFromBlob,
+  sanitizeStoredMediaUrl,
 } from './_lib/blobJsonStore';
 import {
   type ApiRequest,
@@ -23,7 +24,7 @@ function normalizeBlogRecord(raw: any, existing?: any): any {
     typeof raw?.image === 'string' && raw.image.trim()
       ? raw.image.trim()
       : existing?.image || '';
-  const cleanImg = rawImg.startsWith('blob:') ? '' : rawImg;
+  const cleanImg = sanitizeStoredMediaUrl(rawImg);
 
   return {
     ...(existing || {}),
@@ -37,7 +38,9 @@ function normalizeBlogRecord(raw: any, existing?: any): any {
     published: Boolean(raw?.published ?? existing?.published ?? true),
     isCollaboration: Boolean(raw?.isCollaboration ?? existing?.isCollaboration ?? false),
     collaborationPartner: String(raw?.collaborationPartner ?? existing?.collaborationPartner ?? '').trim(),
-    collaborationLogo: String(raw?.collaborationLogo ?? existing?.collaborationLogo ?? '').trim(),
+    collaborationLogo: sanitizeStoredMediaUrl(
+      raw?.collaborationLogo !== undefined ? raw.collaborationLogo : existing?.collaborationLogo
+    ),
     collaborationText: String(raw?.collaborationText ?? existing?.collaborationText ?? '').trim(),
     isArchived: Boolean(raw?.isArchived ?? existing?.isArchived ?? false),
     archiveFolderId:
@@ -56,7 +59,9 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
         BLOB_PATHS.BLOGS,
         createInitialBlogsSeed
       );
-      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      const rawItems = (Array.isArray(data?.items) ? data.items : []).map((item: any) =>
+        normalizeBlogRecord(item, item)
+      );
       const includeArchived = getQueryParam(req, 'includeArchived') === 'true';
 
       const filtered = includeArchived

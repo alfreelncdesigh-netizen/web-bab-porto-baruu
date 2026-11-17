@@ -2,6 +2,7 @@ import { db } from './firebase';
 import { doc, setDoc } from 'firebase/firestore';
 import { compressImageToWebP, compressPortfolioImageToWebP } from './imageCompressor';
 import { renderPdfFirstPageToImage } from './pdfHelper';
+import { sanitizeMediaUrl } from './imageResolver';
 
 export const PORTFOLIO_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 export const PDF_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -143,13 +144,22 @@ async function uploadToVercelBlob(
     throw new Error(data?.error || `Upload ke Vercel Blob gagal (HTTP ${response.status}).`);
   }
 
-  const publicUrl = typeof data?.url === 'string' ? data.url.trim() : '';
-  if (!publicUrl || !/^https?:\/\//i.test(publicUrl)) {
-    throw new Error('Server tidak mengembalikan URL publik Vercel Blob yang valid.');
+  const rawPublicUrl = typeof data?.url === 'string' ? data.url.trim() : '';
+  const isLocalFallback = data?.storage === 'local-fallback';
+  const sanitizedUrl = sanitizeMediaUrl(rawPublicUrl);
+
+  if (!sanitizedUrl) {
+    console.error('[StorageUploader] URL hasil upload tidak valid:', rawPublicUrl);
+    throw new Error('Server tidak mengembalikan URL media yang valid.');
+  }
+
+  if (!isLocalFallback && !/^https:\/\//i.test(sanitizedUrl)) {
+    console.error('[StorageUploader] URL Vercel Blob produksi wajib diawali https://:', sanitizedUrl);
+    throw new Error('Server Vercel Blob tidak mengembalikan URL https:// yang valid.');
   }
 
   return {
-    url: publicUrl,
+    url: sanitizedUrl,
     pathname: data?.pathname || safeName,
     size: Number(data?.size || fileOrBlob.size || 0),
   };
@@ -369,5 +379,5 @@ export async function ensurePersistedAssetUrl(url: string, folder = 'portfolio')
     return await uploadImageToStorage(blob, filename, undefined, targetFolder, 30000);
   }
 
-  return trimmed;
+  return sanitizeMediaUrl(trimmed);
 }

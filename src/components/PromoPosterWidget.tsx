@@ -151,7 +151,7 @@ export default function PromoPosterWidget({
     const rawPosters = Array.isArray(settings.promoPosters) ? settings.promoPosters : [];
 
     return rawPosters.filter(
-      p => p && p.active !== false && ((p.image && typeof p.image === 'string' && p.image.trim().length > 0) || (p.dataUrl && typeof p.dataUrl === 'string' && p.dataUrl.trim().length > 0))
+      p => p && p.active !== false && p.image && typeof p.image === 'string' && p.image.trim().length > 0
     );
   };
 
@@ -435,17 +435,11 @@ export default function PromoPosterWidget({
           {/* Gambar Poster Promosi (Rasio 4:5) */}
           <img
             key={activePoster.id}
-            src={resolveImageUrl(activePoster.image || activePoster.dataUrl || '')}
+            src={resolveImageUrl(activePoster.image)}
             alt={activePoster.title || "Poster Promosi"}
             loading="lazy"
             className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-            onError={(e) => {
-              if (activePoster.dataUrl && e.currentTarget.src !== activePoster.dataUrl) {
-                e.currentTarget.src = activePoster.dataUrl;
-                return;
-              }
-              handleImageError(e);
-            }}
+            onError={handleImageError}
           />
 
           {/* Tombol Silang (×) di Pojok Kanan Atas Widget */}

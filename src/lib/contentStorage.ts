@@ -2,6 +2,7 @@ import { SiteSettings, defaultSettings, defaultCvSections } from '../types/site'
 import { Project } from '../types/project';
 import { BlogPost } from '../types/blog';
 import { TemplateProduct } from '../types/store';
+import { sanitizeMediaUrl } from './imageResolver';
 
 const DUMMY_PROJECT_IDS = new Set([
   'poster-lks-smkn1-sinjai',
@@ -245,13 +246,14 @@ export function cleanProjects(projs: Project[]): Project[] {
 
     const rawImages = Array.isArray(p.images) ? p.images : [];
     const cleanImages = rawImages
-      .map((img: any) => (typeof img === 'string' ? img.trim() : ''))
-      .filter((img: string) => img.length > 0 && !img.startsWith('blob:') && !img.startsWith('data:'));
+      .map((img: any) => sanitizeMediaUrl(typeof img === 'string' ? img : ''))
+      .filter((img: string) => img.length > 0 && !img.startsWith('data:'));
 
-    const rawMainImg = typeof p.image === 'string' ? p.image.trim() : '';
-    const normImage = rawMainImg && !rawMainImg.startsWith('blob:') && !rawMainImg.startsWith('data:')
-      ? rawMainImg
-      : (cleanImages[0] || '');
+    const rawMainImg = sanitizeMediaUrl(typeof p.image === 'string' ? p.image : '');
+    const normImage =
+      rawMainImg && !rawMainImg.startsWith('data:')
+        ? rawMainImg
+        : cleanImages[0] || '';
 
     if (!titleStr && !normImage) continue;
 
@@ -262,6 +264,7 @@ export function cleanProjects(projs: Project[]): Project[] {
       title: titleStr || 'Tanpa Judul',
       image: normImage,
       images: cleanImages.length > 0 ? cleanImages : (normImage ? [normImage] : []),
+      ...(p.collaborationLogo ? { collaborationLogo: sanitizeMediaUrl(p.collaborationLogo) } : {}),
     });
   }
 
@@ -337,11 +340,12 @@ export function cleanBlogs(blogs: BlogPost[]): BlogPost[] {
     if (idStr && seenIds.has(idStr)) continue;
     if (idStr) seenIds.add(idStr);
 
-    const rawImg = typeof b.image === 'string' ? b.image.trim() : '';
+    const rawImg = sanitizeMediaUrl(typeof b.image === 'string' ? b.image : '');
     cleaned.push({
       ...b,
       id: idStr || b.id,
-      image: rawImg.startsWith('blob:') ? '' : rawImg,
+      image: rawImg.startsWith('data:') ? '' : rawImg,
+      ...(b.collaborationLogo ? { collaborationLogo: sanitizeMediaUrl(b.collaborationLogo) } : {}),
     });
   }
 
@@ -402,15 +406,17 @@ export function cleanExperiences(exps: any[]): any[] {
     seenIds.add(idStr);
 
     const imgs = (Array.isArray(exp.images) ? exp.images : [])
-      .map((img: any) => (typeof img === 'string' ? img.trim() : ''))
-      .filter((img: string) => img.length > 0 && !img.startsWith('blob:'));
-    const mainImg = typeof exp.image === 'string' && !exp.image.startsWith('blob:') ? exp.image.trim() : '';
+      .map((img: any) => sanitizeMediaUrl(typeof img === 'string' ? img : ''))
+      .filter((img: string) => img.length > 0 && !img.startsWith('data:'));
+    const rawMainImg = sanitizeMediaUrl(typeof exp.image === 'string' ? exp.image : '');
+    const mainImg = rawMainImg.startsWith('data:') ? '' : rawMainImg;
 
     cleaned.push({
       ...exp,
       id: idStr,
       images: imgs.length > 0 ? imgs : (mainImg ? [mainImg] : []),
       image: mainImg || imgs[0] || '',
+      ...(exp.collaborationLogo ? { collaborationLogo: sanitizeMediaUrl(exp.collaborationLogo) } : {}),
     });
   }
 
@@ -488,39 +494,43 @@ export function cleanTemplates(_templates: TemplateProduct[]): TemplateProduct[]
 
 export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSettings> {
   const cleaned = { ...settings };
-  if (cleaned.aboutImage && cleaned.aboutImage.includes('photo-1499951360447')) {
-    cleaned.aboutImage = '';
+  if (cleaned.aboutImage) {
+    if (cleaned.aboutImage.includes('photo-1499951360447')) {
+      cleaned.aboutImage = '';
+    } else {
+      cleaned.aboutImage = sanitizeMediaUrl(cleaned.aboutImage);
+    }
   }
 
   if (cleaned.heroImage === '__RESET_DEFAULT__') {
     cleaned.heroImage = defaultSettings.heroImage;
   } else if (cleaned.heroImage && typeof cleaned.heroImage === 'string' && cleaned.heroImage.trim().length > 0) {
-    let hero = cleaned.heroImage.trim();
-    const isRemoteHttp = /^https?:\/\//i.test(hero);
-    if (!isRemoteHttp) {
-      if (hero.includes('hero-albi') || hero.includes('cover_web_') || hero.includes('editing_tools_3d')) {
-        hero = '/images/hero-albi.png';
-      } else if (hero.includes('/src/assets/images/')) {
-        const filename = hero.split('/src/assets/images/')[1];
-        hero = `/images/${filename}`;
-      } else if (hero.startsWith('src/assets/images/')) {
-        hero = `/images/${hero.replace('src/assets/images/', '')}`;
-      } else if (hero.startsWith('./assets/images/')) {
-        hero = `/images/${hero.replace('./assets/images/', '')}`;
-      }
+    const rawHero = cleaned.heroImage.trim();
+    if (rawHero.includes('hero-albi') || rawHero.includes('cover_web_') || rawHero.includes('editing_tools_3d')) {
+      cleaned.heroImage = '/images/hero-albi.png';
+    } else {
+      cleaned.heroImage = sanitizeMediaUrl(rawHero) || defaultSettings.heroImage;
     }
-    cleaned.heroImage = hero;
   } else {
     cleaned.heroImage = defaultSettings.heroImage;
+  }
+
+  if (cleaned.promoWidgetImage) {
+    cleaned.promoWidgetImage = sanitizeMediaUrl(cleaned.promoWidgetImage);
   }
 
   if (Array.isArray(cleaned.cvSections) && cleaned.cvSections.length > 0) {
     cleaned.cvSections = cleaned.cvSections.map((s: any) => {
       let imgs: string[] = [];
       if (Array.isArray(s.images) && s.images.length > 0) {
-        imgs = s.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0 && !img.startsWith('blob:'));
-      } else if (s.image && typeof s.image === 'string' && s.image.trim().length > 0 && !s.image.startsWith('blob:')) {
-        imgs = [s.image.trim()];
+        imgs = s.images
+          .map((img: any) => sanitizeMediaUrl(typeof img === 'string' ? img : ''))
+          .filter((img: string) => img.length > 0 && !img.startsWith('data:'));
+      } else if (s.image && typeof s.image === 'string' && s.image.trim().length > 0) {
+        const single = sanitizeMediaUrl(s.image);
+        if (single && !single.startsWith('data:')) {
+          imgs = [single];
+        }
       }
       return {
         title: s.title || '',
@@ -537,14 +547,7 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
     cleaned.heroBanners = cleaned.heroBanners
       .filter((b: any) => b && typeof b === 'object')
       .map((b: any, bIdx: number) => {
-        let img = b.image || '';
-        if (typeof img === 'string' && !/^https?:\/\//i.test(img)) {
-          if (img.includes('/src/assets/images/')) {
-            img = `/images/${img.split('/src/assets/images/')[1]}`;
-          } else if (img.startsWith('src/assets/images/')) {
-            img = `/images/${img.replace('src/assets/images/', '')}`;
-          }
-        }
+        const img = sanitizeMediaUrl(typeof b.image === 'string' ? b.image : '');
         let bannerId = (b.id || '').toString().trim();
         if (!bannerId || seenBannerIds.has(bannerId)) {
           bannerId = `banner-${bIdx + 1}`;
@@ -578,7 +581,9 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
         const link = p.link && p.link.includes('628112345678')
           ? p.link.replace('628112345678', '6282394549268')
           : p.link;
-        return { ...p, id: posterId, link };
+        const cleanPosterImage = sanitizeMediaUrl(typeof p.image === 'string' ? p.image : '');
+        const { dataUrl: _drop, ...restPoster } = p;
+        return { ...restPoster, id: posterId, image: cleanPosterImage, link };
       });
   } else if (cleaned.promoPosters === undefined) {
     cleaned.promoPosters = defaultSettings.promoPosters || [];

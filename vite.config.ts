@@ -8,6 +8,10 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export default defineConfig(() => {
+  const disableHmr =
+    process.env.DISABLE_HMR === 'true' ||
+    Boolean(process.env.K_SERVICE || process.env.CLOUD_RUN_JOB || process.env.AI_STUDIO);
+
   return {
     plugins: [react(), tailwindcss()],
     resolve: {
@@ -19,10 +23,10 @@ export default defineConfig(() => {
       port: 3000,
       host: '0.0.0.0',
       allowedHosts: true as const,
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // HMR dinonaktifkan di AI Studio / Cloud Run preview agar tidak memicu error WebSocket closed without opened
+      hmr: disableHmr ? false : { overlay: false },
+      // Nonaktifkan file watcher saat HMR mati untuk menghemat CPU
+      watch: disableHmr ? null : {},
     },
   };
 });

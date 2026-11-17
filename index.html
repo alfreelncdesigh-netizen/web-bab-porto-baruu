@@ -31,15 +31,70 @@
     <!-- Canonical URL -->
     <link rel="canonical" href="/" id="canonical-url" />
 
-    <!-- Global Early Image Error Handler & Fallback -->
+    <!-- Global Early Image Error Handler & Safe HMR WebSocket Guard -->
     <script>
       (function() {
+        var hmrNoticeLogged = false;
+        function isHmrWsError(msg) {
+          if (!msg) return false;
+          var text = String(msg).toLowerCase();
+          return (
+            text.indexOf('websocket closed without opened') !== -1 ||
+            text.indexOf('failed to connect to websocket') !== -1 ||
+            (text.indexOf('[vite]') !== -1 && text.indexOf('websocket') !== -1)
+          );
+        }
+        var origConsoleError = console.error;
+        console.error = function() {
+          try {
+            var joined = Array.prototype.slice.call(arguments).map(function(a) {
+              return (a && a.message) ? a.message : String(a || '');
+            }).join(' ');
+            if (isHmrWsError(joined)) {
+              if (!hmrNoticeLogged) {
+                hmrNoticeLogged = true;
+                console.info('[Vite HMR] Koneksi WebSocket preview tidak tersedia; aplikasi berjalan normal.');
+              }
+              return;
+            }
+          } catch (e) {}
+          return origConsoleError.apply(console, arguments);
+        };
+        window.addEventListener('unhandledrejection', function(event) {
+          try {
+            var reason = event && event.reason;
+            var msg = (reason && (reason.message || String(reason))) || '';
+            if (isHmrWsError(msg)) {
+              event.preventDefault();
+              if (!hmrNoticeLogged) {
+                hmrNoticeLogged = true;
+                console.info('[Vite HMR] Koneksi WebSocket preview tidak tersedia; aplikasi berjalan normal.');
+              }
+            }
+          } catch (e) {}
+        });
+        window.addEventListener('error', function(event) {
+          try {
+            var msg = (event && (event.message || (event.error && event.error.message))) || '';
+            if (isHmrWsError(msg)) {
+              event.preventDefault();
+              if (!hmrNoticeLogged) {
+                hmrNoticeLogged = true;
+                console.info('[Vite HMR] Koneksi WebSocket preview tidak tersedia; aplikasi berjalan normal.');
+              }
+            }
+          } catch (e) {}
+        });
+
         var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#18181b"/><stop offset="50%" stop-color="#121215"/><stop offset="100%" stop-color="#09090b"/></linearGradient><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#2563eb"/><stop offset="100%" stop-color="#7c3aed"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#bg)"/><g transform="translate(400,235) scale(1.75)" opacity="0.2"><circle cx="0" cy="0" r="70" fill="url(#g)"/><circle cx="0" cy="0" r="42" fill="#18181b"/><text x="0" y="11" font-family="system-ui, sans-serif" font-size="34" font-weight="900" fill="#fff" text-anchor="middle">AL</text><circle cx="-28" cy="-12" r="5" fill="#a855f7"/><circle cx="28" cy="12" r="5" fill="#3b82f6"/></g><text x="400" y="395" font-family="system-ui, sans-serif" font-size="20" font-weight="700" fill="#e4e4e7" text-anchor="middle" letter-spacing="0.8">Alfreelnc Design</text><text x="400" y="425" font-family="system-ui, sans-serif" font-size="13" font-weight="500" fill="#71717a" text-anchor="middle">Portofolio Desain Grafis</text></svg>';
         window.FALLBACK_IMAGE = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
         window.handleImageError = function(e) {
           if (!e) return;
           var t = e.currentTarget || e.target || (e instanceof HTMLElement ? e : null);
           if (!t || t.dataset.triedFallback === 'true') return;
+          if (t.src && t.src !== window.FALLBACK_IMAGE) {
+            console.error('[ImageLoader] Gambar gagal dimuat, menampilkan placeholder:', t.src);
+          }
           t.dataset.triedFallback = 'true';
           t.onerror = null;
           t.src = window.FALLBACK_IMAGE;

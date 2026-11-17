@@ -42,6 +42,14 @@ export class BlobStoreError extends Error {
   }
 }
 
+export function isVercelProduction(): boolean {
+  return Boolean(
+    process.env.VERCEL ||
+      process.env.VERCEL_ENV === 'production' ||
+      process.env.VERCEL_ENV === 'preview'
+  );
+}
+
 export function isValidVercelBlobToken(raw?: string | null): boolean {
   const token = raw?.trim();
   if (!token) return false;
@@ -64,7 +72,7 @@ export function getOptionalBlobToken(): string | null {
     if (!loggedInvalidTokenNotice) {
       loggedInvalidTokenNotice = true;
       console.warn(
-        '[BlobJsonStore] BLOB_READ_WRITE_TOKEN ditemukan tetapi formatnya tidak valid (tidak memiliki store ID Vercel Blob). Menggunakan penyimpanan JSON lokal sementara.'
+        '[BlobJsonStore] BLOB_READ_WRITE_TOKEN ditemukan tetapi formatnya tidak valid (tidak memiliki store ID Vercel Blob).'
       );
     }
     return null;
@@ -84,6 +92,75 @@ export function getBlobToken(): string {
     );
   }
   return token;
+}
+
+const AI_STUDIO_PREVIEW_HOST_REGEX = /^ais-(dev|pre)-[^.]+\.[^/]*run\.app$/i;
+const BLOB_LOCAL_FOLDER_PREFIX_REGEX =
+  /^\/?(portfolio|portofolio|works|work|karya|posters|poster|promos|promo|banners|banner|experiences|experience|pengalaman|blogs|blog|cv|resume|about|profile|hero|collaboration|orders|insight|insights|settings)\//i;
+
+export function stripDownloadQueryParam(rawUrl: string): string {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) return '';
+  if (!/^https?:\/\//i.test(trimmed)) return trimmed;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.hostname.endsWith('.vercel-storage.com') && parsed.protocol === 'http:') {
+      parsed.protocol = 'https:';
+    }
+    parsed.searchParams.delete('download');
+    return parsed.toString();
+  } catch {
+    return trimmed
+      .replace(/([?&])download=1(&|$)/i, (_m, sep, trailing) => (trailing === '&' ? sep : ''))
+      .replace(/[?&]$/, '');
+  }
+}
+
+export function sanitizeStoredMediaUrl(rawUrl: unknown, allowRelativeStatic = true): string {
+  if (typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim().replace(/&amp;/g, '&');
+  if (!trimmed) return '';
+  if (trimmed.startsWith('blob:') || DATA_URI_BASE64_REGEX.test(trimmed) || trimmed.startsWith('data:')) {
+    return '';
+  }
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      if (AI_STUDIO_PREVIEW_HOST_REGEX.test(parsed.hostname)) {
+        // Jika URL berasal dari preview AI Studio menuju /uploads/, konversi ke path statis /uploads/ jika ada, selain itu kosongkan
+        if (parsed.pathname.startsWith('/uploads/')) {
+          return parsed.pathname;
+        }
+        return '';
+      }
+      if (parsed.hostname.endsWith('.vercel-storage.com') && parsed.protocol === 'http:') {
+        parsed.protocol = 'https:';
+      }
+      parsed.searchParams.delete('download');
+      return parsed.toString();
+    } catch {
+      return '';
+    }
+  }
+
+  if (!allowRelativeStatic) {
+    return '';
+  }
+
+  if (BLOB_LOCAL_FOLDER_PREFIX_REGEX.test(trimmed)) {
+    // Path relatif seperti /portfolio/nama-file.webp tidak valid untuk aset Vercel Blob
+    return '';
+  }
+
+  if (trimmed.includes('/src/assets/images/')) {
+    return `/images/${trimmed.split('/src/assets/images/')[1]}`;
+  }
+  if (trimmed.startsWith('src/assets/images/')) {
+    return `/images/${trimmed.replace('src/assets/images/', '')}`;
+  }
+
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
 }
 
 const DATA_URI_BASE64_REGEX = /^data:(image|application\/pdf|video|audio)\/[a-zA-Z0-9.+_-]+;base64,/i;
@@ -365,7 +442,7 @@ export async function readJsonFromBlob<T>(
   pathname: string,
   seedFactory: () => T
 ): Promise<{ data: T; etag: string }> {
-  const token = getOptionalBlobToken();
+  const token = isVercelProduction() ? getBlobToken() : getOptionalBlobToken();
   if (!token) {
     try {
       return await readJsonFromLocal<T>(pathname, seedFactory);
@@ -426,7 +503,7 @@ export async function mutateJsonInBlob<T>(
   seedFactory: () => T,
   maxRetries = 3
 ): Promise<{ data: T; etag: string }> {
-  const token = getOptionalBlobToken();
+  const token = isVercelProduction() ? getBlobToken() : getOptionalBlobToken();
   if (!token) {
     try {
       return await mutateJsonInLocal<T>(pathname, mutator, seedFactory);

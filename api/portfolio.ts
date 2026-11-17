@@ -4,6 +4,7 @@ import {
   BlobStoreError,
   mutateJsonInBlob,
   readJsonFromBlob,
+  sanitizeStoredMediaUrl,
 } from './_lib/blobJsonStore';
 import {
   type ApiRequest,
@@ -25,13 +26,14 @@ function normalizeProjectRecord(raw: any, existing?: any): any {
     ? existing.images
     : [];
   const images = imagesRaw
-    .map((u: any) => (typeof u === 'string' ? u.trim() : ''))
-    .filter((u: string) => u.length > 0 && !u.startsWith('blob:'));
+    .map((u: any) => sanitizeStoredMediaUrl(u))
+    .filter((u: string) => u.length > 0);
 
-  const mainImg =
+  const rawMain =
     typeof raw?.image === 'string' && raw.image.trim()
-      ? raw.image.trim()
-      : existing?.image || images[0] || '';
+      ? sanitizeStoredMediaUrl(raw.image)
+      : sanitizeStoredMediaUrl(existing?.image);
+  const mainImg = rawMain || images[0] || '';
 
   const finalImages =
     images.length > 0
@@ -53,6 +55,9 @@ function normalizeProjectRecord(raw: any, existing?: any): any {
     description: String(raw?.description ?? existing?.description ?? '').trim(),
     date: String(raw?.date ?? existing?.date ?? '').trim() || new Date().toISOString().split('T')[0],
     role: String(raw?.role ?? existing?.role ?? '').trim(),
+    collaborationLogo: sanitizeStoredMediaUrl(
+      raw?.collaborationLogo !== undefined ? raw.collaborationLogo : existing?.collaborationLogo
+    ),
     aspectRatio: String(raw?.aspectRatio ?? existing?.aspectRatio ?? ''),
     draft: Boolean(raw?.draft ?? existing?.draft ?? false),
     isArchived: Boolean(raw?.isArchived ?? existing?.isArchived ?? false),
@@ -72,7 +77,9 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
         BLOB_PATHS.PORTFOLIO,
         createInitialPortfolioSeed
       );
-      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      const rawItems = (Array.isArray(data?.items) ? data.items : []).map((item: any) =>
+        normalizeProjectRecord(item, item)
+      );
       const includeArchived = getQueryParam(req, 'includeArchived') === 'true';
       const targetId = getQueryParam(req, 'id');
 

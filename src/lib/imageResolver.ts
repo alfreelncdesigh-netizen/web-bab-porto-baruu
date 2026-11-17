@@ -60,46 +60,80 @@ export const LOADING_IMAGE = createLoadingSvgPlaceholder('Memuat gambar...');
 export const FALLBACK_IMAGE = createDynamicSvgPlaceholder('Alfreelnc Design', 'Portofolio Desain Grafis');
 export const FALLBACK_BLOG_IMAGE = FALLBACK_IMAGE;
 
+const AI_STUDIO_PREVIEW_HOST_REGEX = /^ais-(dev|pre)-[^.]+\.[^/]*run\.app$/i;
+const BLOB_LOCAL_FOLDER_PREFIX_REGEX =
+  /^\/?(portfolio|portofolio|works|work|karya|posters|poster|promos|promo|banners|banner|experiences|experience|pengalaman|blogs|blog|cv|resume|about|profile|hero|collaboration|orders|insight|insights|settings)\//i;
+const SAFE_SVG_DATA_URI_REGEX = /^data:image\/svg\+xml[;,]/i;
+
+const loggedInvalidImageUrls = new Set<string>();
+
+function logInvalidImageUrlOnce(reason: string, url: string): void {
+  const key = `${reason}:${url.slice(0, 120)}`;
+  if (loggedInvalidImageUrls.has(key)) return;
+  loggedInvalidImageUrls.add(key);
+  console.error(`[ImageResolver] ${reason}:`, url);
+}
+
 /**
- * URL Resolver:
- * - Menjaga keutuhan semua URL publik cloud (Vercel Blob *.vercel-storage.com, Firebase Storage, HTTPS URLs).
- * - Hanya menormalisasi path aset statis relatif (/src/assets/images/ -> /images/) dan fallback statis /images/hero-albi.png.
- * - Tidak pernah membaca cache localStorage untuk menimpa URL dari Firestore.
+ * Membersihkan parameter ?download=1 dari URL dan memastikan protokol HTTPS untuk Vercel Blob.
  */
-export function resolveImageUrl(url?: string | null): string {
-  if (!url || typeof url !== 'string') {
-    return FALLBACK_IMAGE;
+export function sanitizeMediaUrl(url?: string | null): string {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim().replace(/&amp;/g, '&');
+  if (!trimmed) return '';
+
+  if (trimmed.startsWith('blob:')) {
+    logInvalidImageUrlOnce('URL sementara blob: tidak dapat digunakan untuk menampilkan media permanen', trimmed);
+    return '';
   }
 
-  let trimmed = url.trim().replace(/&amp;/g, '&');
-  if (!trimmed) {
-    return FALLBACK_IMAGE;
-  }
-
-  if (trimmed.startsWith('data:') || trimmed.startsWith('blob:')) {
-    return trimmed;
-  }
-
-  // URL HTTP/HTTPS publik (Vercel Blob, Firebase Storage, dll.) selalu dipertahankan utuh
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    if (
-      (trimmed.includes('firebasestorage.googleapis.com') ||
-        trimmed.includes('storage.googleapis.com') ||
-        trimmed.includes('.firebasestorage.app')) &&
-      !trimmed.includes('alt=media')
-    ) {
-      const sep = trimmed.includes('?') ? '&' : '?';
-      return `${trimmed}${sep}alt=media`;
+  if (trimmed.startsWith('data:')) {
+    if (SAFE_SVG_DATA_URI_REGEX.test(trimmed)) {
+      return trimmed;
     }
-
-    if (trimmed.includes('res.cloudinary.com')) {
-      return getOptimizedImageUrl(trimmed);
-    }
-
-    return trimmed;
+    logInvalidImageUrlOnce('Data URI base64 tidak diizinkan untuk tampilan gambar (gunakan URL HTTPS Vercel Blob)', trimmed);
+    return '';
   }
 
-  // Normalisasi path aset statis lokal
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const parsed = new URL(trimmed);
+      if (AI_STUDIO_PREVIEW_HOST_REGEX.test(parsed.hostname)) {
+        logInvalidImageUrlOnce('URL preview AI Studio tidak valid untuk produksi (gunakan URL HTTPS Vercel Blob)', trimmed);
+        return '';
+      }
+
+      if (parsed.hostname.endsWith('.vercel-storage.com') && parsed.protocol === 'http:') {
+        parsed.protocol = 'https:';
+      }
+
+      // Hapus parameter ?download=1 agar gambar dirender inline oleh browser
+      parsed.searchParams.delete('download');
+
+      if (
+        (parsed.hostname.includes('firebasestorage.googleapis.com') ||
+          parsed.hostname.includes('storage.googleapis.com') ||
+          parsed.hostname.includes('.firebasestorage.app')) &&
+        !parsed.searchParams.has('alt')
+      ) {
+        parsed.searchParams.set('alt', 'media');
+      }
+
+      return parsed.toString();
+    } catch {
+      logInvalidImageUrlOnce('Format URL gambar tidak valid', trimmed);
+      return '';
+    }
+  }
+
+  if (BLOB_LOCAL_FOLDER_PREFIX_REGEX.test(trimmed)) {
+    logInvalidImageUrlOnce(
+      'Path lokal untuk file Vercel Blob (mis. /portfolio/...) tidak valid; harus menggunakan URL https:// lengkap dari Vercel Blob',
+      trimmed
+    );
+    return '';
+  }
+
   if (trimmed.includes('hero-albi')) {
     return '/images/hero-albi.png';
   }
@@ -109,6 +143,29 @@ export function resolveImageUrl(url?: string | null): string {
   }
 
   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
+/**
+ * URL Resolver:
+ * - Menjaga keutuhan semua URL publik HTTPS Vercel Blob (*.vercel-storage.com) & URL remote valid.
+ * - Menghapus parameter ?download=1 agar tidak memicu force-download.
+ * - Menolak URL blob:, base64, URL preview AI Studio, dan path lokal folder Vercel Blob (/portfolio/...) dengan console.error + fallback rapi.
+ */
+export function resolveImageUrl(url?: string | null): string {
+  if (!url || typeof url !== 'string') {
+    return FALLBACK_IMAGE;
+  }
+
+  const sanitized = sanitizeMediaUrl(url);
+  if (!sanitized) {
+    return FALLBACK_IMAGE;
+  }
+
+  if (sanitized.includes('res.cloudinary.com')) {
+    return getOptimizedImageUrl(sanitized);
+  }
+
+  return sanitized;
 }
 
 export function handleImageError(
@@ -127,6 +184,11 @@ export function handleImageError(
 
   if (!target) return;
   if (target.dataset.triedFallback === 'true') return;
+
+  const failedSrc = target.currentSrc || target.getAttribute('src') || target.src || '';
+  if (failedSrc && failedSrc !== FALLBACK_IMAGE) {
+    console.error('[ImageLoader] Gagal memuat gambar dari URL:', failedSrc);
+  }
 
   target.dataset.triedFallback = 'true';
   target.onerror = null;

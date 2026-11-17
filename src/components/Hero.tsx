@@ -37,6 +37,7 @@ export default function Hero() {
   // Penanganan fallback gambar hero: mengutamakan aset lokal permanen hero-albi.png
   const handleHeroImgError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
     const target = e.currentTarget;
+    console.error('[Hero] Gagal memuat gambar hero:', target.currentSrc || target.src);
     if (target.src !== heroAlbiImg) {
       target.src = heroAlbiImg;
       return;

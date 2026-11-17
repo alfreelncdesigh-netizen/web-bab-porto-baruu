@@ -4,6 +4,7 @@ import {
   BlobStoreError,
   mutateJsonInBlob,
   readJsonFromBlob,
+  sanitizeStoredMediaUrl,
 } from './_lib/blobJsonStore';
 import {
   type ApiRequest,
@@ -25,13 +26,14 @@ function normalizeExperienceRecord(raw: any, existing?: any): any {
     ? existing.images
     : [];
   const images = imagesRaw
-    .map((u: any) => (typeof u === 'string' ? u.trim() : ''))
-    .filter((u: string) => u.length > 0 && !u.startsWith('blob:'));
+    .map((u: any) => sanitizeStoredMediaUrl(u))
+    .filter((u: string) => u.length > 0);
 
-  const mainImg =
+  const rawMain =
     typeof raw?.image === 'string' && raw.image.trim()
-      ? raw.image.trim()
-      : existing?.image || images[0] || '';
+      ? sanitizeStoredMediaUrl(raw.image)
+      : sanitizeStoredMediaUrl(existing?.image);
+  const mainImg = rawMain || images[0] || '';
 
   const finalImages =
     images.length > 0
@@ -53,7 +55,9 @@ function normalizeExperienceRecord(raw: any, existing?: any): any {
     images: finalImages,
     isCollaboration: Boolean(raw?.isCollaboration ?? existing?.isCollaboration ?? false),
     collaborationPartner: String(raw?.collaborationPartner ?? existing?.collaborationPartner ?? '').trim(),
-    collaborationLogo: String(raw?.collaborationLogo ?? existing?.collaborationLogo ?? '').trim(),
+    collaborationLogo: sanitizeStoredMediaUrl(
+      raw?.collaborationLogo !== undefined ? raw.collaborationLogo : existing?.collaborationLogo
+    ),
     collaborationText: String(raw?.collaborationText ?? existing?.collaborationText ?? '').trim(),
     isArchived: Boolean(raw?.isArchived ?? existing?.isArchived ?? false),
     archiveFolderId:
@@ -72,7 +76,9 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
         BLOB_PATHS.EXPERIENCE,
         createInitialExperienceSeed
       );
-      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      const rawItems = (Array.isArray(data?.items) ? data.items : []).map((item: any) =>
+        normalizeExperienceRecord(item, item)
+      );
       const includeArchived = getQueryParam(req, 'includeArchived') === 'true';
 
       const filtered = includeArchived

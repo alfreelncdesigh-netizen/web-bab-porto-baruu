@@ -4,6 +4,7 @@ import {
   BlobStoreError,
   mutateJsonInBlob,
   readJsonFromBlob,
+  sanitizeStoredMediaUrl,
 } from './_lib/blobJsonStore';
 import {
   type ApiRequest,
@@ -26,7 +27,36 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
         BLOB_PATHS.SITE_SETTINGS,
         createInitialSiteSettingsSeed
       );
-      sendJson(res, 200, { settings: data, updatedAt: data.updatedAt, version: data.version || 1 });
+      const cleanSettings: SiteSettingsJsonData = {
+        ...data,
+        heroImage: sanitizeStoredMediaUrl(data?.heroImage) || DEFAULT_SITE_SETTINGS_SEED.heroImage,
+        aboutImage: sanitizeStoredMediaUrl(data?.aboutImage),
+        promoWidgetImage: sanitizeStoredMediaUrl(data?.promoWidgetImage),
+        heroBanners: Array.isArray(data?.heroBanners)
+          ? data.heroBanners.map((b: any) => ({
+              ...b,
+              image: sanitizeStoredMediaUrl(b?.image) || b?.image || '',
+            }))
+          : DEFAULT_SITE_SETTINGS_SEED.heroBanners,
+        promoPosters: Array.isArray(data?.promoPosters)
+          ? data.promoPosters.map((p: any) => ({
+              ...p,
+              image: sanitizeStoredMediaUrl(p?.image),
+            }))
+          : [],
+        collaboration: {
+          ...DEFAULT_SITE_SETTINGS_SEED.collaboration,
+          ...(data?.collaboration || {}),
+          partnerLogo: sanitizeStoredMediaUrl(data?.collaboration?.partnerLogo),
+          collaboratorAccounts: Array.isArray(data?.collaboration?.collaboratorAccounts)
+            ? data.collaboration.collaboratorAccounts.map((acc: any) => ({
+                ...acc,
+                partnerLogo: sanitizeStoredMediaUrl(acc?.partnerLogo),
+              }))
+            : DEFAULT_SITE_SETTINGS_SEED.collaboration.collaboratorAccounts,
+        },
+      };
+      sendJson(res, 200, { settings: cleanSettings, updatedAt: data.updatedAt, version: data.version || 1 });
       return;
     }
 
@@ -56,6 +86,43 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
 
       if (sanitizedIncoming.heroImage === '__RESET_DEFAULT__') {
         sanitizedIncoming.heroImage = DEFAULT_SITE_SETTINGS_SEED.heroImage;
+      } else if (sanitizedIncoming.heroImage !== undefined) {
+        sanitizedIncoming.heroImage =
+          sanitizeStoredMediaUrl(sanitizedIncoming.heroImage) || DEFAULT_SITE_SETTINGS_SEED.heroImage;
+      }
+      if (sanitizedIncoming.aboutImage !== undefined) {
+        sanitizedIncoming.aboutImage = sanitizeStoredMediaUrl(sanitizedIncoming.aboutImage);
+      }
+      if (sanitizedIncoming.promoWidgetImage !== undefined) {
+        sanitizedIncoming.promoWidgetImage = sanitizeStoredMediaUrl(sanitizedIncoming.promoWidgetImage);
+      }
+      if (Array.isArray(sanitizedIncoming.heroBanners)) {
+        sanitizedIncoming.heroBanners = sanitizedIncoming.heroBanners.map((b: any) => ({
+          ...b,
+          image: sanitizeStoredMediaUrl(b?.image) || b?.image || '',
+        }));
+      }
+      if (Array.isArray(sanitizedIncoming.promoPosters)) {
+        sanitizedIncoming.promoPosters = sanitizedIncoming.promoPosters.map((p: any) => ({
+          ...p,
+          image: sanitizeStoredMediaUrl(p?.image),
+        }));
+      }
+      if (sanitizedIncoming.collaboration && typeof sanitizedIncoming.collaboration === 'object') {
+        sanitizedIncoming.collaboration = {
+          ...sanitizedIncoming.collaboration,
+          ...(sanitizedIncoming.collaboration.partnerLogo !== undefined
+            ? { partnerLogo: sanitizeStoredMediaUrl(sanitizedIncoming.collaboration.partnerLogo) }
+            : {}),
+          ...(Array.isArray(sanitizedIncoming.collaboration.collaboratorAccounts)
+            ? {
+                collaboratorAccounts: sanitizedIncoming.collaboration.collaboratorAccounts.map((acc: any) => ({
+                  ...acc,
+                  partnerLogo: sanitizeStoredMediaUrl(acc?.partnerLogo),
+                })),
+              }
+            : {}),
+        };
       }
 
       const { data } = await mutateJsonInBlob<SiteSettingsJsonData>(

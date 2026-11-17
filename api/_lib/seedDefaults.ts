@@ -199,6 +199,21 @@ function stripBase64Deep(value: any): any {
     if (trimmed.includes('/src/assets/images/')) {
       return `/images/${trimmed.split('/src/assets/images/')[1]}`;
     }
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const parsed = new URL(trimmed);
+        if (/^ais-(dev|pre)-[^.]+\.[^/]*run\.app$/i.test(parsed.hostname)) {
+          return parsed.pathname.startsWith('/uploads/') ? parsed.pathname : '';
+        }
+        if (parsed.hostname.endsWith('.vercel-storage.com') && parsed.protocol === 'http:') {
+          parsed.protocol = 'https:';
+        }
+        parsed.searchParams.delete('download');
+        return parsed.toString();
+      } catch {
+        return trimmed;
+      }
+    }
     return value;
   }
   if (Array.isArray(value)) {

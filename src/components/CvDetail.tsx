@@ -43,7 +43,10 @@ export function IrregularPhotoCollage({
   // Hover/tap state untuk memicu transform scale(1.08) rotate(0deg) dan z-index terdepan
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
-  const handleImageError = (index: number) => {
+  const handleImageError = (index: number, failedUrl?: string) => {
+    if (failedUrl) {
+      console.error('[CvDetail] Gagal memuat gambar kolase CV:', failedUrl);
+    }
     setError((prev) => ({ ...prev, [index]: true }));
     setLoadedMap((prev) => ({ ...prev, [index]: true }));
   };
@@ -125,7 +128,7 @@ export function IrregularPhotoCollage({
                   }`}
                   loading="lazy"
                   onLoad={() => setLoadedMap((prev) => ({ ...prev, [imgIdx]: true }))}
-                  onError={() => handleImageError(imgIdx)}
+                  onError={() => handleImageError(imgIdx, imgUrl)}
                 />
               )}
             </div>
@@ -565,6 +568,8 @@ export default function CvDetail() {
                       }`}
                       onLoad={() => setLightboxLoaded(true)}
                       onError={(e) => {
+                        console.error('[CvDetail] Gagal memuat gambar lightbox CV:', lightbox.images[lightbox.index]);
+                        setLightboxError(true);
                         setLightboxLoaded(true);
                         globalHandleImageError(e);
                       }}

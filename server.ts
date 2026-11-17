@@ -17,7 +17,14 @@ import messagesHandler from './api/messages';
 import quickFilterHandler from './api/quick-filter';
 import blogCommentsHandler from './api/blog-comments';
 import ordersHandler from './api/orders';
-import { BLOB_PATHS, readJsonFromBlob, getOptionalBlobToken } from './api/_lib/blobJsonStore';
+import {
+  BLOB_PATHS,
+  readJsonFromBlob,
+  getOptionalBlobToken,
+  getBlobToken,
+  isVercelProduction,
+  stripDownloadQueryParam,
+} from './api/_lib/blobJsonStore';
 import {
   createInitialPortfolioSeed,
   createInitialSiteSettingsSeed,
@@ -2084,7 +2091,7 @@ app.post('/api/blob-upload', (req: Request, res: Response): void => {
     }
   }
 
-  const token = getOptionalBlobToken();
+  const token = isVercelProduction() ? getBlobToken() : getOptionalBlobToken();
 
   const getExtAndMime = (filename: string, rawMime?: string): { ext: string; mime: string } | null => {
     const lower = filename.toLowerCase();
@@ -2140,9 +2147,8 @@ app.post('/api/blob-upload', (req: Request, res: Response): void => {
         uploadedAt: new Date().toISOString(),
         dataUrl: `data:${typeInfo.mime};base64,${fileBuffer.toString('base64')}`,
       });
-      const origin = getRequestOrigin(req);
       res.status(200).json({
-        url: `${origin}${localUrl}`,
+        url: localUrl,
         pathname: blobPathname,
         size: fileBuffer.length,
         storage: 'local-fallback',
@@ -2157,8 +2163,10 @@ app.post('/api/blob-upload', (req: Request, res: Response): void => {
       token
     });
 
+    const cleanUrl = stripDownloadQueryParam(blob.url);
+
     res.status(200).json({
-      url: blob.url,
+      url: cleanUrl,
       pathname: blob.pathname,
       size: fileBuffer.length,
       storage: 'vercel-blob'
@@ -2615,13 +2623,23 @@ async function injectDynamicMeta(html: string, req: Request): Promise<string> {
 // ============================================================================
 async function startServer() {
   const server = http.createServer(app);
+  server.on('clientError', (err: any, socket) => {
+    if (err?.code === 'ECONNRESET' || !socket.writable) return;
+    try {
+      socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+    } catch {}
+  });
 
   if (!isProd) {
     const { createServer } = await import('vite');
+    const disableHmr =
+      process.env.DISABLE_HMR === 'true' ||
+      Boolean(process.env.K_SERVICE || process.env.CLOUD_RUN_JOB || process.env.AI_STUDIO);
     const vite = await createServer({
       server: { 
         middlewareMode: true,
-        hmr: process.env.DISABLE_HMR === 'true' ? false : { server }
+        hmr: disableHmr ? false : { server, overlay: false },
+        watch: disableHmr ? null : undefined,
       },
       appType: 'custom',
     });
@@ -2644,7 +2662,13 @@ async function startServer() {
 
       try {
         const rawTemplate = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
-        const viteTemplate = await vite.transformIndexHtml(req.originalUrl, rawTemplate);
+        let viteTemplate = await vite.transformIndexHtml(req.originalUrl, rawTemplate);
+        if (disableHmr) {
+          viteTemplate = viteTemplate.replace(
+            /<script\s+type=["']module["']\s+src=["']\/@vite\/client["']\s*><\/script>\s*/i,
+            ''
+          );
+        }
         const finalHtml = await injectDynamicMeta(viteTemplate, req);
         res.status(200).set({ 'Content-Type': 'text/html; charset=utf-8' }).send(finalHtml);
       } catch (e: any) {

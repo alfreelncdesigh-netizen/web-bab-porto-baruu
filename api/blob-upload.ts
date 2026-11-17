@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import path from 'path';
 import { put } from '@vercel/blob';
+import { BlobStoreError, getBlobToken, stripDownloadQueryParam } from './_lib/blobJsonStore';
 
 export const config = {
   api: {
@@ -167,13 +168,19 @@ export default async function handler(
     return;
   }
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
-  if (!token) {
-    res.statusCode = 500;
+  let token: string;
+  try {
+    token = getBlobToken();
+  } catch (err: any) {
+    const status = err instanceof BlobStoreError ? err.statusCode : 503;
+    res.statusCode = status;
     res.setHeader('Content-Type', 'application/json');
     res.end(
       JSON.stringify({
-        error: 'Konfigurasi Vercel Blob belum diatur: environment variable BLOB_READ_WRITE_TOKEN tidak ditemukan di server.',
+        error:
+          err?.message ||
+          'Konfigurasi Vercel Blob belum diatur: environment variable BLOB_READ_WRITE_TOKEN tidak ditemukan di server.',
+        code: 'BLOB_TOKEN_MISSING',
       })
     );
     return;
@@ -231,11 +238,13 @@ export default async function handler(
       token,
     });
 
+    const cleanUrl = stripDownloadQueryParam(blob.url);
+
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
     res.end(
       JSON.stringify({
-        url: blob.url,
+        url: cleanUrl,
         pathname: blob.pathname,
         size: fileBuffer.length,
         storage: 'vercel-blob',
