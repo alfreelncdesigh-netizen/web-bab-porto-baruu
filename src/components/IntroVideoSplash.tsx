@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-export const INTRO_LOGO_VIDEO_SRC = '/assets/aistudio/animasi_logo_4286200d.mp4';
+export const INTRO_LOGO_VIDEO_SRC = '/assets/aistudio/animasi_logo_cafcdb69.mp4';
 
 interface IntroVideoSplashProps {
   onComplete: () => void;
 }
 
-const INTRO_DURATION_MS = 2000;
-const SAFETY_TIMEOUT_MS = 3500;
+const INTRO_DURATION_MS = 3000;
+const SAFETY_TIMEOUT_MS = 4500;
 const FADE_DURATION_MS = 220;
 const REDUCED_MOTION_FADE_MS = 100;
 
@@ -125,7 +125,7 @@ export default function IntroVideoSplash({ onComplete }: IntroVideoSplashProps) 
     };
   }, [clearAllTimers]);
 
-  // Putar video setiap kali website dimuat & siapkan durasi 2 detik + batas pengaman
+  // Putar video setiap kali website dimuat & siapkan durasi 3 detik + batas pengaman
   useEffect(() => {
     const videoEl = videoRef.current;
 

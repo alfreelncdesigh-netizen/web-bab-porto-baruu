@@ -4,10 +4,10 @@
 // Offline Strategy: App Shell Fallback + Stale-While-Revalidate + Cache-First
 // ============================================================================
 
-const STATIC_CACHE_NAME = 'portfolio-static-v5';
-const IMAGE_CACHE_NAME = 'portfolio-images-v5';
-const FIRESTORE_CACHE_NAME = 'portfolio-firestore-snapshots-v5';
-const FONT_CACHE_NAME = 'portfolio-fonts-v5';
+const STATIC_CACHE_NAME = 'portfolio-static-v6';
+const IMAGE_CACHE_NAME = 'portfolio-images-v6';
+const FIRESTORE_CACHE_NAME = 'portfolio-firestore-snapshots-v6';
+const FONT_CACHE_NAME = 'portfolio-fonts-v6';
 
 const CURRENT_CACHES = [
   STATIC_CACHE_NAME,
@@ -36,7 +36,7 @@ const PRECACHE_ASSETS = [
   '/logo-text-putih.svg',
   '/api/settings',
   '/api/hero-image',
-  '/assets/aistudio/animasi_logo_4286200d.mp4'
+  '/assets/aistudio/animasi_logo_cafcdb69.mp4'
 ];
 
 // ----------------------------------------------------------------------------
