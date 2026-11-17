@@ -443,6 +443,23 @@ app.use('/assets/experiences', express.static(experienceAssetsDir, {
   }
 }));
 
+// Static serving for general backend assets (/assets/*, including intro logo animation video)
+app.use('/assets', express.static(path.join(publicDir, 'assets'), {
+  maxAge: '1y',
+  immutable: true,
+  acceptRanges: true,
+  setHeaders: (res, filePath) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (/\.mp4$/i.test(filePath)) {
+      res.setHeader('Content-Type', 'video/mp4');
+    } else if (/\.svg$/i.test(filePath)) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+    }
+  }
+}));
+
 // Static serving for user uploads
 app.use('/uploads', express.static(uploadsDir, {
   maxAge: '1y',
@@ -2456,7 +2473,7 @@ async function startServer() {
       if (
         req.path.startsWith('/api') ||
         req.path.startsWith('/uploads') ||
-        req.path.startsWith('/assets/experiences') ||
+        req.path.startsWith('/assets') ||
         req.path.startsWith('/images') ||
         req.path.startsWith('/@') ||
         req.path.startsWith('/src') ||

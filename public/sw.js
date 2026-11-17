@@ -4,10 +4,10 @@
 // Offline Strategy: App Shell Fallback + Stale-While-Revalidate + Cache-First
 // ============================================================================
 
-const STATIC_CACHE_NAME = 'portfolio-static-v3';
-const IMAGE_CACHE_NAME = 'portfolio-images-v3';
-const FIRESTORE_CACHE_NAME = 'portfolio-firestore-snapshots-v3';
-const FONT_CACHE_NAME = 'portfolio-fonts-v3';
+const STATIC_CACHE_NAME = 'portfolio-static-v5';
+const IMAGE_CACHE_NAME = 'portfolio-images-v5';
+const FIRESTORE_CACHE_NAME = 'portfolio-firestore-snapshots-v5';
+const FONT_CACHE_NAME = 'portfolio-fonts-v5';
 
 const CURRENT_CACHES = [
   STATIC_CACHE_NAME,
@@ -35,7 +35,8 @@ const PRECACHE_ASSETS = [
   '/logo-text-hitam.svg',
   '/logo-text-putih.svg',
   '/api/settings',
-  '/api/hero-image'
+  '/api/hero-image',
+  '/assets/aistudio/animasi_logo_4286200d.mp4'
 ];
 
 // ----------------------------------------------------------------------------
@@ -157,8 +158,10 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Bypass Vite internal modules & HMR sockets
+  // Bypass Vite internal modules, HMR sockets, and byte-range video requests
   if (
+    request.headers.has('range') ||
+    url.pathname.endsWith('.mp4') ||
     url.pathname.startsWith('/@vite/') ||
     url.pathname.startsWith('/@fs/') ||
     url.pathname.startsWith('/src/') ||

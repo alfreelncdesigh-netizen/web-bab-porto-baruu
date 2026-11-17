@@ -18,49 +18,11 @@ export default function CookieBanner() {
   const [isCaching, setIsCaching] = useState(false);
   const [cachingProgressText, setCachingProgressText] = useState('');
 
-  // Lock body & document scroll completely when visible
   useEffect(() => {
-    if (isVisible) {
-      const prevBodyOverflow = document.body.style.overflow;
-      const prevDocOverflow = document.documentElement.style.overflow;
-      const prevTouchAction = document.body.style.touchAction;
-
-      document.body.style.overflow = 'hidden';
-      document.documentElement.style.overflow = 'hidden';
-      document.body.style.touchAction = 'none';
-
-      const preventTouchAndScroll = (e: TouchEvent | WheelEvent) => {
-        const target = e.target as HTMLElement | null;
-        if (target && target.closest('.allow-scroll')) {
-          return;
-        }
-        e.preventDefault();
-      };
-
-      const preventKeys = (e: KeyboardEvent) => {
-        if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) {
-          const target = e.target as HTMLElement | null;
-          if (target && target.closest('.allow-scroll')) {
-            return;
-          }
-          e.preventDefault();
-        }
-      };
-
-      window.addEventListener('wheel', preventTouchAndScroll, { passive: false });
-      window.addEventListener('touchmove', preventTouchAndScroll, { passive: false });
-      window.addEventListener('keydown', preventKeys);
-
-      return () => {
-        document.body.style.overflow = prevBodyOverflow;
-        document.documentElement.style.overflow = prevDocOverflow;
-        document.body.style.touchAction = prevTouchAction;
-        window.removeEventListener('wheel', preventTouchAndScroll);
-        window.removeEventListener('touchmove', preventTouchAndScroll);
-        window.removeEventListener('keydown', preventKeys);
-      };
-    }
-  }, [isVisible]);
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+    document.body.style.touchAction = '';
+  }, []);
 
   useEffect(() => {
     const existingConsent = getStoredCookieConsent();
@@ -130,30 +92,20 @@ export default function CookieBanner() {
     <AnimatePresence>
       {isVisible && (
         <motion.div
-          key="cookie-blocking-overlay"
+          key="cookie-floating-banner"
           role="dialog"
-          aria-modal="true"
+          aria-modal="false"
           aria-labelledby="cookie-consent-title"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.25 }}
-          className="fixed inset-0 z-[999998] bg-black/65 dark:bg-black/80 backdrop-blur-xl flex items-end sm:items-center justify-center p-3 sm:p-6 pb-4 sm:pb-8 pointer-events-auto select-none"
-          onClick={() => {
-            // Berikan feedback getar jika pengunjung mencoba mengeklik area luar sebelum menerima cookie
-            setShake(true);
-            setTimeout(() => setShake(false), 500);
-          }}
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 24 }}
+          transition={{ duration: 0.2 }}
+          className="fixed bottom-3 sm:bottom-5 inset-x-3 sm:inset-x-auto sm:right-6 z-[9990] sm:w-full sm:max-w-md pointer-events-none select-none"
         >
-          <motion.div
-            initial={{ opacity: 0, y: 140, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 140, scale: 0.95 }}
-            transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-            className={`w-full max-w-lg bg-white/95 dark:bg-[#121212]/95 backdrop-blur-2xl rounded-3xl p-5 sm:p-7 shadow-2xl border border-zinc-200/90 dark:border-zinc-800/90 text-zinc-900 dark:text-zinc-100 relative allow-scroll max-h-[90vh] overflow-y-auto transition-transform ${
+          <div
+            className={`pointer-events-auto w-full bg-white dark:bg-[#121212] rounded-3xl p-5 sm:p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 relative max-h-[85vh] overflow-y-auto transition-transform ${
               shake ? 'animate-bounce ring-4 ring-zinc-500/40 dark:ring-zinc-400/40' : ''
             }`}
-            onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-start justify-between gap-3 mb-3.5">
@@ -223,7 +175,7 @@ export default function CookieBanner() {
                 Yang Penting Saja
               </button>
             </div>
-          </motion.div>
+          </div>
         </motion.div>
       )}
     </AnimatePresence>

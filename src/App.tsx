@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Header from './components/Header';
 import Hero from './components/Hero';
@@ -35,6 +35,7 @@ import { resolveImageUrl } from './lib/imageResolver';
 import { preloadPortfolioImagesFast, markImageLoaded } from './lib/imageLoadCache';
 import { syncFirestoreSnapshotToSW, getCachedFirestoreSnapshot } from './lib/firestoreSnapshotCache';
 import { OfflineIndicator } from './components/OfflineIndicator';
+import IntroVideoSplash from './components/IntroVideoSplash';
 
 const skeletonGradient = "animate-shimmer";
 const skeletonCard = "bg-white/80 dark:bg-zinc-900/60 border border-zinc-200/60 dark:border-zinc-800/60";
@@ -248,7 +249,25 @@ const SectionDivider = () => (
 export default function App() {
   const [view, setView] = useState<'home' | 'about' | 'portfolio' | 'store' | 'contact' | 'blog' | 'insight' | 'admin' | 'cv' | 'stats' | 'experience'>('home');
   const [isAppLoading, setIsAppLoading] = useState(true);
+  const [showIntro, setShowIntro] = useState<boolean>(true);
   const [isSecondHalfLoaded, setIsSecondHalfLoaded] = useState(false);
+
+  const handleIntroComplete = useCallback(() => {
+    if (typeof document !== 'undefined') {
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      document.body.style.touchAction = '';
+      document.body.style.filter = '';
+      document.body.style.pointerEvents = '';
+    }
+    setIsAppLoading(false);
+    setShowIntro(false);
+    const rawHash = typeof window !== 'undefined' ? window.location.hash.replace('#', '').trim() : '';
+    if (!rawHash || rawHash === 'home') {
+      setView('home');
+      window.scrollTo(0, 0);
+    }
+  }, []);
   const [isAdminAuth, setIsAdminAuth] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     try {
@@ -889,15 +908,20 @@ export default function App() {
       <LanguageProvider>
         <TopProgressBar trigger={view} />
 
-      {/* Global High-Fidelity Skeleton Screen */}
+      {/* Intro Logo Video Splash on Initial Website Open (unmounts completely after fade-out) */}
+      {showIntro && <IntroVideoSplash onComplete={handleIntroComplete} />}
+
+      {/* Global High-Fidelity Skeleton Screen (only if intro already dismissed while still loading) */}
       <AnimatePresence>
-        {isAppLoading && <AppSkeleton />}
+        {isAppLoading && !showIntro && <AppSkeleton />}
       </AnimatePresence>
 
-      {/* Application Container (Fully mounted & painted during load, then revealed seamlessly) */}
+      {/* Application Container (Always crisp, zero scale/blur transforms) */}
       <div 
-        className={`min-h-screen bg-[var(--bg-main)] dark:bg-[#0A0A0A] text-black dark:text-white font-sans selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-[#0A0A0A] transition-opacity duration-500 ease-out ${
-          isAppLoading ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'
+        className={`min-h-screen bg-[var(--bg-main)] dark:bg-[#0A0A0A] text-black dark:text-white font-sans selection:bg-black selection:text-white dark:selection:bg-white dark:selection:text-[#0A0A0A] transition-opacity duration-200 ease-out ${
+          !showIntro && isAppLoading
+            ? 'opacity-0 pointer-events-none'
+            : 'opacity-100 pointer-events-auto'
         }`}
       >
         <Header currentView={view} setView={handleSetView} />
@@ -905,7 +929,7 @@ export default function App() {
         {!isLockedInAdmin && (
           <PromoPosterWidget currentView={view} onNavigateToStore={() => handleSetView('store')} />
         )}
-        <CookieBanner />
+        {!showIntro && <CookieBanner />}
         
         <main className={view !== 'home' ? 'pt-20 sm:pt-24 md:pt-28' : ''}>
           {view !== 'home' && view !== 'admin' && (
