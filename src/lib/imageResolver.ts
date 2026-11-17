@@ -156,8 +156,8 @@ export function resolveImageUrl(url?: string | null): string {
 
   // 4. Jika URL absolute (http:// atau https://)
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    // Jika URL mengarah ke /uploads/ di host lain, normalisasi ke origin saat ini secara dinamis
-    if (trimmed.includes('/uploads/')) {
+    // Jika URL mengarah ke /uploads/ atau /assets/experiences/ di host lain, normalisasi ke origin saat ini secara dinamis
+    if (trimmed.includes('/uploads/') || trimmed.includes('/assets/experiences/')) {
       try {
         const parsed = new URL(trimmed);
         const origin = typeof window !== 'undefined' ? window.location.origin : '';

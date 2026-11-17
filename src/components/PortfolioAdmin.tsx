@@ -12,6 +12,7 @@ import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { withTimeout, compressAndUpload, ensurePersistedAssetUrl, validatePortfolioImageFile, uploadPortfolioImageToVercelBlob } from '../lib/storageUploader';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function PortfolioAdmin() {
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
@@ -24,6 +25,7 @@ export default function PortfolioAdmin() {
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { isSaved, markSaved, resetSaveState } = useAdminSaveState(editingProject);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -267,8 +269,9 @@ export default function PortfolioAdmin() {
     } catch {}
 
     await refreshProjectsList();
+    setEditingProject(savedProj);
+    markSaved(savedProj);
     showToast("Karya berhasil disimpan & langsung tampil di web!");
-    setEditingProject(null);
     setUploadError(null);
     setSaving(false);
   };
@@ -364,6 +367,7 @@ export default function PortfolioAdmin() {
       } catch {}
     }
 
+    resetSaveState();
     setUploadError(null);
 
     // Saat menambahkan karya baru, toggle kolaborator selalu OFF secara default
@@ -518,8 +522,11 @@ export default function PortfolioAdmin() {
             </h3>
             <button
               type="button"
-              onClick={() => setEditingProject(null)}
-              className="text-black hover:text-black dark:text-zinc-400 dark:hover:text-zinc-500 transition-colors bg-white dark:bg-zinc-900 p-2 rounded-2xl"
+              onClick={() => {
+                resetSaveState();
+                setEditingProject(null);
+              }}
+              className="text-black hover:text-black dark:text-zinc-400 dark:hover:text-zinc-500 transition-colors bg-white dark:bg-zinc-900 p-2 rounded-2xl cursor-pointer"
             >
               <X size={20} />
             </button>
@@ -893,11 +900,21 @@ export default function PortfolioAdmin() {
           </div>
 
           {/* Tombol Simpan & Status Indikator Terintegrasi */}
-          <div className="flex justify-end pt-4">
+          <div className="flex justify-end items-center gap-3 pt-4">
+            <button
+              type="button"
+              onClick={() => {
+                resetSaveState();
+                setEditingProject(null);
+              }}
+              className="bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 px-6 py-4 text-[10px] font-semibold hover:opacity-80 transition-opacity rounded-2xl active:scale-95 cursor-pointer"
+            >
+              {isSaved ? 'Tutup' : 'Batal'}
+            </button>
             <button
               type="submit"
-              disabled={uploading || saving}
-              className="bg-black text-white dark:bg-white dark:text-black px-8 py-4 text-[10px] font-semibold hover:opacity-80 transition-opacity rounded-2xl active:scale-95 flex items-center gap-2 disabled:opacity-50"
+              disabled={uploading || saving || isSaved}
+              className="bg-black text-white dark:bg-white dark:text-black px-8 py-4 text-[10px] font-semibold hover:opacity-80 transition-opacity rounded-2xl active:scale-95 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {uploading ? (
                 <>
@@ -908,6 +925,11 @@ export default function PortfolioAdmin() {
                 <>
                   <Loader2 size={16} className="animate-spin" />
                   <span>Menyimpan Data...</span>
+                </>
+              ) : isSaved ? (
+                <>
+                  <Check size={16} />
+                  <span>Tersimpan</span>
                 </>
               ) : (
                 <>
@@ -976,6 +998,7 @@ export default function PortfolioAdmin() {
                 <div className="pt-2.5 border-t border-zinc-100 dark:border-zinc-800/60 grid grid-cols-4 gap-2">
                   <button
                     onClick={() => {
+                      resetSaveState();
                       setUploadError(null);
                       setEditingProject(project);
                     }}
@@ -1068,6 +1091,7 @@ export default function PortfolioAdmin() {
                     <td className="p-4 md:p-5 flex justify-end gap-2 items-center">
                       <button
                         onClick={() => {
+                          resetSaveState();
                           setUploadError(null);
                           setEditingProject(project);
                         }}

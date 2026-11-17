@@ -8,6 +8,7 @@ import { getStoredSettings, saveStoredSettings, cleanSettings } from '../lib/con
 import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl } from '../lib/imageResolver';
 import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function AboutAdmin() {
  const [settings, setSettings] = useState(() => getStoredSettings());
@@ -15,6 +16,7 @@ export default function AboutAdmin() {
  const [isSaving, setIsSaving] = useState(false);
  const [uploadingImage, setUploadingImage] = useState(false);
  const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
+ const { isSaved, markSaved } = useAdminSaveState(settings);
 
  useEffect(() => {
   const fetchSettings = async () => {
@@ -120,6 +122,7 @@ export default function AboutAdmin() {
   setIsSaving(true);
   try {
    const success = await saveStoredSettings(settings);
+   markSaved(settings);
    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: settings }));
    if (success) {
      showToast('Profil Tentang Saya berhasil disimpan!');
@@ -249,8 +252,20 @@ export default function AboutAdmin() {
      <textarea name="aboutDescription2" value={settings.aboutDescription2 || ''} onChange={handleChange} className="w-full h-32 bg-zinc-100 dark:bg-zinc-900 border-none rounded-xl px-4 py-3 text-sm text-black dark:text-white focus:ring-2 focus:ring-black dark:focus:ring-white transition-all outline-none resize-none" placeholder="Jelaskan pengalaman profesional atau spesialisasi Anda..." required onKeyDown={(e) => handleKeyDown(e, "aboutDescription2")} />
     </div>
 
-    <button type="submit" disabled={isSaving} className="bg-black text-white dark:bg-white dark:text-black px-8 py-4 rounded-xl text-sm font-bold hover:opacity-80 transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-     {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Simpan Profil'}
+    <button type="submit" disabled={isSaving || uploadingImage || isSaved} className="bg-black text-white dark:bg-white dark:text-black px-8 py-4 rounded-xl text-sm font-bold hover:opacity-80 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
+     {isSaving ? (
+      <>
+       <Loader2 className="w-4 h-4 animate-spin" />
+       <span>Menyimpan...</span>
+      </>
+     ) : isSaved ? (
+      <>
+       <Check className="w-4 h-4" />
+       <span>Tersimpan</span>
+      </>
+     ) : (
+      'Simpan Profil'
+     )}
     </button>
    </form>
   </div>

@@ -20,6 +20,7 @@ import {
 } from '../lib/collaboratorLogger';
 import BrandLogo from './BrandLogo';
 import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function CollaborationAdmin() {
   const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
@@ -50,6 +51,7 @@ export default function CollaborationAdmin() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
+  const { isSaved, markSaved } = useAdminSaveState(collab);
   const [showPasswordMap, setShowPasswordMap] = useState<Record<string, boolean>>({});
   const [newAccountUsername, setNewAccountUsername] = useState('');
   const [newAccountPassword, setNewAccountPassword] = useState('');
@@ -386,6 +388,7 @@ export default function CollaborationAdmin() {
     }
 
     window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
+    return updatedSettings.collaboration as CollaborationConfig;
   };
 
   const handleSave = async (e?: React.FormEvent) => {
@@ -407,7 +410,9 @@ export default function CollaborationAdmin() {
             }
           ];
 
-      await syncCollaboratorAccountsToStorageAndCloud(accounts);
+      const savedCollab = await syncCollaboratorAccountsToStorageAndCloud(accounts);
+      setCollab(savedCollab);
+      markSaved(savedCollab);
       showToast("Pengaturan kolaborasi & seluruh akun kolaborator berhasil disimpan permanen!");
     } catch (err: any) {
       console.error("Failed saving collaboration settings:", err);
@@ -589,12 +594,13 @@ export default function CollaborationAdmin() {
         </div>
 
         <button
+          type="button"
           onClick={() => handleSave()}
-          disabled={saving}
-          className="bg-black text-white dark:bg-white dark:text-black px-5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:opacity-85 transition-opacity active:scale-95 disabled:opacity-50 shadow-md cursor-pointer shrink-0 self-start sm:self-auto"
+          disabled={saving || uploadingLogo || isSaved}
+          className="bg-black text-white dark:bg-white dark:text-black px-5 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 hover:opacity-85 transition-opacity active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-md cursor-pointer shrink-0 self-start sm:self-auto"
         >
           {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-          <span>{saving ? 'Menyimpan...' : 'Simpan Perubahan'}</span>
+          <span>{saving ? 'Menyimpan...' : isSaved ? 'Tersimpan' : 'Simpan Perubahan'}</span>
         </button>
       </div>
 
@@ -1276,11 +1282,11 @@ export default function CollaborationAdmin() {
         <div className="pt-4 flex items-center justify-end gap-3">
           <button
             type="submit"
-            disabled={saving}
-            className="w-full sm:w-auto bg-black text-white dark:bg-white dark:text-black px-8 py-3.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 hover:opacity-85 transition-all active:scale-95 disabled:opacity-50 shadow-md cursor-pointer"
+            disabled={saving || uploadingLogo || isSaved}
+            className="w-full sm:w-auto bg-black text-white dark:bg-white dark:text-black px-8 py-3.5 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 hover:opacity-85 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-md cursor-pointer"
           >
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-            <span>{saving ? 'Menyimpan Pengaturan...' : 'Simpan Pengaturan Kolaborasi'}</span>
+            <span>{saving ? 'Menyimpan Pengaturan...' : isSaved ? 'Tersimpan' : 'Simpan Pengaturan Kolaborasi'}</span>
           </button>
         </div>
       </form>

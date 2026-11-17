@@ -119,17 +119,21 @@ const softApiProtection = (req: Request, res: Response, next: NextFunction): voi
 
 app.use(softApiProtection);
 
-// Ensure public/uploads directory exists safely
+// Ensure public/uploads and public/assets/experiences directories exist safely
 const uploadsDir = path.resolve(__dirname, 'public/uploads');
+const experienceAssetsDir = path.resolve(__dirname, 'public/assets/experiences');
 try {
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
+  if (!fs.existsSync(experienceAssetsDir)) {
+    fs.mkdirSync(experienceAssetsDir, { recursive: true });
+  }
 } catch (e) {
-  console.warn('Notice: uploads directory creation:', e);
+  console.warn('Notice: asset directories creation:', e);
 }
 
-// Static file serving for uploads (/uploads/*) and public assets (/images/*)
+// Static file serving for uploads (/uploads/*) and public assets (/images/*, /assets/experiences/*)
 const publicDir = path.resolve(__dirname, 'public');
 
 // Service Worker must always be fresh
@@ -325,6 +329,119 @@ app.get('/uploads/:filename', async (req: Request, res: Response, next: NextFunc
 
   next();
 });
+
+// Helper pemulihan dataUrl media dari registry lokal atau Cloud Firestore uploadedMedia
+async function recoverMediaFromRegistryOrFirestore(filename: string): Promise<{ dataUrl: string; mimeType: string } | null> {
+  let base64Data = '';
+  let mimeType = 'image/webp';
+  if (filename.endsWith('.svg')) mimeType = 'image/svg+xml';
+  else if (filename.endsWith('.pdf')) mimeType = 'application/pdf';
+  else if (filename.endsWith('.png')) mimeType = 'image/png';
+  else if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) mimeType = 'image/jpeg';
+
+  if (fs.existsSync(mediaRegistryPath)) {
+    try {
+      const list = JSON.parse(fs.readFileSync(mediaRegistryPath, 'utf-8'));
+      if (Array.isArray(list)) {
+        const match = list.find((item: any) => item.filename === filename || (item.url && item.url.endsWith(filename)));
+        if (match && match.dataUrl && typeof match.dataUrl === 'string') {
+          base64Data = match.dataUrl;
+          if (match.mimeType) mimeType = match.mimeType;
+        }
+      }
+    } catch {}
+  }
+
+  if (!base64Data) {
+    const safeDocId = `media_${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+    const safeFilename = filename.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const candidates = [safeDocId, safeFilename];
+
+    for (const docId of candidates) {
+      try {
+        const firestoreUrl = getFirestoreRestDocUrl('uploadedMedia', docId);
+        const resp = await fetch(firestoreUrl, { method: 'GET', signal: AbortSignal.timeout(5000) });
+        if (resp.ok) {
+          const docJson: any = await resp.json();
+          const fields = docJson?.fields;
+          if (fields?.dataUrl?.stringValue) {
+            base64Data = fields.dataUrl.stringValue;
+            if (fields?.mimeType?.stringValue) {
+              mimeType = fields.mimeType.stringValue;
+            }
+            break;
+          }
+        }
+      } catch {}
+    }
+  }
+
+  if (!base64Data) return null;
+  return { dataUrl: base64Data, mimeType };
+}
+
+// Auto-recovery & serving untuk aset gambar Pengalaman di /assets/experiences/:filename
+app.get('/assets/experiences/:filename', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  const filename = path.basename(req.params.filename);
+  const assetPath = path.join(experienceAssetsDir, filename);
+
+  if (fs.existsSync(assetPath)) {
+    return next();
+  }
+
+  try {
+    // 1. Jika masih berada di public/uploads/, salin ke public/assets/experiences/
+    const legacyUploadPath = path.join(uploadsDir, filename);
+    if (fs.existsSync(legacyUploadPath)) {
+      const buf = fs.readFileSync(legacyUploadPath);
+      fs.writeFileSync(assetPath, buf);
+      let mime = 'image/webp';
+      if (filename.endsWith('.svg')) mime = 'image/svg+xml';
+      else if (filename.endsWith('.pdf')) mime = 'application/pdf';
+      else if (filename.endsWith('.png')) mime = 'image/png';
+      else if (filename.endsWith('.jpg') || filename.endsWith('.jpeg')) mime = 'image/jpeg';
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('Content-Type', mime);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.status(200).send(buf);
+      return;
+    }
+
+    // 2. Pulihkan dari uploads-registry.json atau Firestore uploadedMedia
+    const recovered = await recoverMediaFromRegistryOrFirestore(filename);
+    if (recovered?.dataUrl) {
+      const cleanBase64 = recovered.dataUrl.replace(/^data:[^;]+;base64,/, '');
+      const buffer = Buffer.from(cleanBase64, 'base64');
+      if (buffer.length > 0) {
+        fs.writeFileSync(assetPath, buffer);
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        res.setHeader('Content-Type', recovered.mimeType);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.status(200).send(buffer);
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('Experience asset auto-recovery notice:', err);
+  }
+
+  next();
+});
+
+app.use('/assets/experiences', express.static(experienceAssetsDir, {
+  maxAge: '1y',
+  immutable: true,
+  setHeaders: (res, filePath) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    if (/\.svg$/i.test(filePath)) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+    }
+  }
+}));
 
 // Static serving for user uploads
 app.use('/uploads', express.static(uploadsDir, {
@@ -741,13 +858,16 @@ function offloadSingleDataUrl(dataUrl: string, prefix = 'asset'): string {
     const ext = getExtFromMime(mimeType);
     const safePrefix = (prefix || 'asset').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32) || 'asset';
     const filename = `${safePrefix}_${hash}${ext}`;
-    const filePath = path.join(uploadsDir, filename);
+    const isExp = safePrefix === 'exp' || safePrefix === 'experiences' || safePrefix === 'experience';
+    const targetDir = isExp ? experienceAssetsDir : uploadsDir;
+    const publicPrefix = isExp ? '/assets/experiences' : '/uploads';
+    const filePath = path.join(targetDir, filename);
 
     if (!fs.existsSync(filePath)) {
       fs.writeFileSync(filePath, buffer);
     }
 
-    const publicUrl = `/uploads/${filename}`;
+    const publicUrl = `${publicPrefix}/${filename}`;
     registerUploadedMedia({
       url: publicUrl,
       filename,
@@ -793,6 +913,193 @@ function offloadDataUrlsToDisk(value: any, prefix = 'asset'): { sanitized: any; 
   return { sanitized: value, changed: false };
 }
 
+async function persistImageSourceToExperienceAssets(rawUrl: string): Promise<string> {
+  if (!rawUrl || typeof rawUrl !== 'string') return '';
+  const trimmed = rawUrl.trim();
+  if (!trimmed || trimmed.startsWith('blob:')) return '';
+
+  // 1. Jika berupa base64 data URI -> simpan langsung ke public/assets/experiences/
+  if (trimmed.startsWith('data:image/') || trimmed.startsWith('data:application/pdf')) {
+    return offloadSingleDataUrl(trimmed, 'exp');
+  }
+
+  // 2. Jika sudah mengarah ke /assets/experiences/<file>
+  if (trimmed.startsWith('/assets/experiences/')) {
+    const filename = path.basename(trimmed.split('?')[0]);
+    const destPath = path.join(experienceAssetsDir, filename);
+    if (!fs.existsSync(destPath)) {
+      const legacyPath = path.join(uploadsDir, filename);
+      if (fs.existsSync(legacyPath)) {
+        try { fs.copyFileSync(legacyPath, destPath); } catch {}
+      } else {
+        const recovered = await recoverMediaFromRegistryOrFirestore(filename);
+        if (recovered?.dataUrl) {
+          const buf = Buffer.from(recovered.dataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64');
+          if (buf.length > 0) fs.writeFileSync(destPath, buf);
+        }
+      }
+    }
+    return `/assets/experiences/${filename}`;
+  }
+
+  // 3. Jika URL lokal /uploads/<file> atau URL http(s) yang mengarah ke /uploads/<file> atau /assets/experiences/<file>
+  const isLocalUploadsPath = trimmed.startsWith('/uploads/') || trimmed.includes('/uploads/');
+  const isRemoteExpAssetsPath = trimmed.includes('/assets/experiences/');
+  if (isLocalUploadsPath || isRemoteExpAssetsPath) {
+    try {
+      const pathOnly = trimmed.startsWith('http') ? new URL(trimmed).pathname : trimmed.split('?')[0];
+      const filename = path.basename(pathOnly);
+      if (filename) {
+        const destPath = path.join(experienceAssetsDir, filename);
+        const srcUploadPath = path.join(uploadsDir, filename);
+        if (!fs.existsSync(destPath)) {
+          if (fs.existsSync(srcUploadPath)) {
+            fs.copyFileSync(srcUploadPath, destPath);
+          } else {
+            const recovered = await recoverMediaFromRegistryOrFirestore(filename);
+            if (recovered?.dataUrl) {
+              const buf = Buffer.from(recovered.dataUrl.replace(/^data:[^;]+;base64,/, ''), 'base64');
+              if (buf.length > 0) fs.writeFileSync(destPath, buf);
+            }
+          }
+        }
+        if (fs.existsSync(destPath)) {
+          return `/assets/experiences/${filename}`;
+        }
+      }
+    } catch {}
+  }
+
+  // 4. Jika URL eksternal (https:// / http://, misal Firebase Storage / Vercel Blob / URL internet) -> unduh & simpan fisik ke public/assets/experiences/
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const urlHash = crypto.createHash('sha1').update(trimmed).digest('hex').slice(0, 12);
+      const urlPathName = (() => {
+        try { return new URL(trimmed).pathname; } catch { return ''; }
+      })();
+      let ext = path.extname(urlPathName).toLowerCase();
+      if (!['.webp', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.avif'].includes(ext)) {
+        ext = '';
+      }
+
+      // Cek apakah file hasil download dari URL ini sudah ada di disk
+      const existingMatch = fs.readdirSync(experienceAssetsDir).find(f => f.startsWith(`exp_ext_${urlHash}`));
+      if (existingMatch) {
+        return `/assets/experiences/${existingMatch}`;
+      }
+
+      const resp = await fetch(trimmed, { method: 'GET', signal: AbortSignal.timeout(8000) });
+      if (resp.ok) {
+        const cType = (resp.headers.get('content-type') || '').toLowerCase();
+        if (cType.startsWith('image/') || ext) {
+          const arrBuf = await resp.arrayBuffer();
+          const buffer = Buffer.from(arrBuf);
+          if (buffer.length > 0 && buffer.length <= 15 * 1024 * 1024) {
+            const finalExt = ext || getExtFromMime(cType || 'image/webp');
+            const filename = `exp_ext_${urlHash}${finalExt}`;
+            const destPath = path.join(experienceAssetsDir, filename);
+            if (!fs.existsSync(destPath)) {
+              fs.writeFileSync(destPath, buffer);
+            }
+            const publicUrl = `/assets/experiences/${filename}`;
+            registerUploadedMedia({
+              url: publicUrl,
+              filename,
+              size: buffer.length,
+              mimeType: cType || 'image/webp',
+              uploadedAt: new Date().toISOString()
+            });
+            return publicUrl;
+          }
+        }
+      }
+    } catch (dlErr) {
+      console.warn('Notice: persist external experience image skipped:', dlErr);
+    }
+  }
+
+  return trimmed;
+}
+
+async function persistExperienceListAssets(rawList: any[]): Promise<{ data: any[]; changed: boolean }> {
+  let changed = false;
+  const out: any[] = [];
+
+  for (const item of Array.isArray(rawList) ? rawList : []) {
+    if (!item || typeof item !== 'object') {
+      out.push(item);
+      continue;
+    }
+
+    const rawImages: string[] = Array.isArray(item.images)
+      ? item.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0)
+      : (typeof item.image === 'string' && item.image.trim() ? [item.image.trim()] : []);
+
+    const nextImages: string[] = [];
+    for (const img of rawImages) {
+      const persisted = await persistImageSourceToExperienceAssets(img);
+      if (persisted) {
+        if (persisted !== img) changed = true;
+        if (!nextImages.includes(persisted)) nextImages.push(persisted);
+      }
+    }
+
+    let nextMainImage = typeof item.image === 'string' ? item.image.trim() : '';
+    if (nextMainImage) {
+      const persistedMain = await persistImageSourceToExperienceAssets(nextMainImage);
+      if (persistedMain) {
+        if (persistedMain !== nextMainImage) changed = true;
+        nextMainImage = persistedMain;
+      }
+    }
+    if (!nextMainImage && nextImages.length > 0) {
+      nextMainImage = nextImages[0];
+      changed = true;
+    }
+
+    out.push({
+      ...item,
+      images: nextImages,
+      image: nextMainImage || nextImages[0] || ''
+    });
+  }
+
+  return { data: out, changed };
+}
+
+async function migrateExistingExperienceAssets(): Promise<void> {
+  try {
+    // 1. Salin file exp_* lama yang ada di public/uploads ke public/assets/experiences/
+    if (fs.existsSync(uploadsDir)) {
+      const files = fs.readdirSync(uploadsDir);
+      for (const f of files) {
+        if (f.startsWith('exp_') && !FORBIDDEN_EXTENSIONS.has(path.extname(f).toLowerCase())) {
+          const src = path.join(uploadsDir, f);
+          const dst = path.join(experienceAssetsDir, f);
+          if (!fs.existsSync(dst)) {
+            try { fs.copyFileSync(src, dst); } catch {}
+          }
+        }
+      }
+    }
+
+    // 2. Pastikan seluruh URL gambar di experiences-storage.json tersimpan di public/assets/experiences/
+    if (fs.existsSync(experiencesFilePath)) {
+      const raw = fs.readFileSync(experiencesFilePath, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const { data, changed } = await persistExperienceListAssets(parsed);
+        if (changed) {
+          fs.writeFileSync(experiencesFilePath, JSON.stringify(data, null, 2), 'utf-8');
+          console.log('[Experience Assets] Gambar pengalaman berhasil disinkronkan ke /public/assets/experiences/');
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Notice: migrateExistingExperienceAssets skipped:', err);
+  }
+}
+
 function migrateStorageFilesOnStartup(): void {
   const targets: Array<{ filePath: string; prefix: string }> = [
     { filePath: projectsFilePath, prefix: 'project' },
@@ -810,12 +1117,15 @@ function migrateStorageFilesOnStartup(): void {
       const { sanitized, changed } = offloadDataUrlsToDisk(parsed, prefix);
       if (changed) {
         fs.writeFileSync(filePath, JSON.stringify(sanitized, null, 2), 'utf-8');
-        console.log(`[Startup Migration] Offloaded inline base64 media in ${path.basename(filePath)} to /uploads/`);
+        console.log(`[Startup Migration] Offloaded inline base64 media in ${path.basename(filePath)} to disk assets`);
       }
     } catch (err) {
       console.warn(`Notice: startup base64 offload skipped for ${path.basename(filePath)}:`, err);
     }
   }
+
+  // Migrasi aset gambar pengalaman ke /public/assets/experiences/
+  void migrateExistingExperienceAssets();
 
   // Hitung semua karya aktif, lengkapi dimensi asli gambar, dan simpan manifest ke projects-manifest.json
   try {
@@ -1023,6 +1333,30 @@ app.post('/api/quick-filter', requireAdminAuth, (req: Request, res: Response): v
   }
 });
 
+app.post('/api/experiences/persist-asset', requireAdminAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { url, data, filename } = req.body || {};
+    if (data && typeof data === 'string' && data.startsWith('data:')) {
+      const persisted = offloadSingleDataUrl(data, 'exp');
+      res.status(200).json({ url: persisted });
+      return;
+    }
+    if (url && typeof url === 'string' && url.trim()) {
+      const persisted = await persistImageSourceToExperienceAssets(url.trim());
+      res.status(200).json({ url: persisted || url.trim() });
+      return;
+    }
+    if (filename && typeof filename === 'string') {
+      const persisted = await persistImageSourceToExperienceAssets(`/uploads/${path.basename(filename)}`);
+      res.status(200).json({ url: persisted });
+      return;
+    }
+    res.status(400).json({ error: 'URL atau data gambar wajib disediakan' });
+  } catch {
+    res.status(500).json({ error: 'Gagal menyimpan gambar ke aset pengalaman' });
+  }
+});
+
 app.get('/api/experiences', (_req: Request, res: Response): void => {
   try {
     if (fs.existsSync(experiencesFilePath)) {
@@ -1034,13 +1368,14 @@ app.get('/api/experiences', (_req: Request, res: Response): void => {
   res.status(200).json([]);
 });
 
-app.post('/api/experiences', requireAdminAuth, (req: Request, res: Response): void => {
+app.post('/api/experiences', requireAdminAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const payload = req.body;
     if (Array.isArray(payload)) {
       const { sanitized } = offloadDataUrlsToDisk(payload, 'exp');
-      fs.writeFileSync(experiencesFilePath, JSON.stringify(sanitized, null, 2), 'utf-8');
-      res.status(200).json({ success: true, data: sanitized });
+      const { data: persistedList } = await persistExperienceListAssets(sanitized);
+      fs.writeFileSync(experiencesFilePath, JSON.stringify(persistedList, null, 2), 'utf-8');
+      res.status(200).json({ success: true, data: persistedList });
       return;
     }
     res.status(400).json({ error: 'Format data pengalaman tidak valid' });
@@ -1508,6 +1843,11 @@ app.delete('/api/collaborator-logs', requireAdminAuth, (_req: Request, res: Resp
 });
 
 app.post('/api/upload', (req: Request, res: Response): void => {
+  const folderHint = String(req.body?.folder || req.headers['x-upload-folder'] || req.query?.folder || '').toLowerCase().trim();
+  const isExperienceFolder = folderHint === 'experiences' || folderHint === 'experience' || folderHint === 'pengalaman';
+  const targetDir = isExperienceFolder ? experienceAssetsDir : uploadsDir;
+  const publicBasePath = isExperienceFolder ? '/assets/experiences' : '/uploads';
+
   // A. JSON base64 upload
   if (req.body && (req.body.data || req.body.file)) {
     try {
@@ -1533,10 +1873,10 @@ app.post('/api/upload', (req: Request, res: Response): void => {
       const baseName = path.basename(rawFilename, cleanExt).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
       const randomSuffix = crypto.randomBytes(4).toString('hex');
       const safeName = `${baseName || 'file'}_${Date.now()}_${randomSuffix}${cleanExt}`;
-      const filePath = path.join(uploadsDir, safeName);
+      const filePath = path.join(targetDir, safeName);
 
       fs.writeFileSync(filePath, fileBuffer);
-      const publicUrl = `/uploads/${safeName}`;
+      const publicUrl = `${publicBasePath}/${safeName}`;
 
       const mime = cleanExt === '.svg' ? 'image/svg+xml' : cleanExt === '.pdf' ? 'application/pdf' : 'image/webp';
       const effectiveDataUrl = rawData.startsWith('data:') ? rawData : `data:${mime};base64,${base64Data}`;
@@ -1629,10 +1969,10 @@ app.post('/api/upload', (req: Request, res: Response): void => {
       const baseName = path.basename(filename, cleanExt).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
       const randomSuffix = crypto.randomBytes(4).toString('hex');
       const safeName = `${baseName || 'file'}_${Date.now()}_${randomSuffix}${cleanExt}`;
-      const filePath = path.join(uploadsDir, safeName);
+      const filePath = path.join(targetDir, safeName);
 
       fs.writeFileSync(filePath, fileBuffer);
-      const publicUrl = `/uploads/${safeName}`;
+      const publicUrl = `${publicBasePath}/${safeName}`;
 
       const mime = cleanExt === '.svg' ? 'image/svg+xml' : cleanExt === '.pdf' ? 'application/pdf' : 'image/webp';
       const effectiveDataUrl = `data:${mime};base64,${fileBuffer.toString('base64')}`;
@@ -2112,10 +2452,11 @@ async function startServer() {
     app.use(vite.middlewares);
 
     app.get('*', async (req: Request, res: Response, next: NextFunction) => {
-      // Don't intercept API, uploads, images, or vite internal assets
+      // Don't intercept API, uploads, assets, images, or vite internal assets
       if (
         req.path.startsWith('/api') ||
         req.path.startsWith('/uploads') ||
+        req.path.startsWith('/assets/experiences') ||
         req.path.startsWith('/images') ||
         req.path.startsWith('/@') ||
         req.path.startsWith('/src') ||

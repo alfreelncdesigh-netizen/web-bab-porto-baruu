@@ -1,11 +1,11 @@
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Menu, X, Lock, LogOut, Image as ImageIcon, FileText, Settings, 
   ShoppingCart, Briefcase, BarChart3, User, Mail, Archive, Sparkles, 
-  Eye, EyeOff, ShieldCheck, Search
+  Eye, EyeOff, ShieldCheck, Search, Upload, Check, Copy, Loader2, AlertCircle
 } from 'lucide-react';
 import { doc, getDoc, setDoc, getDocs, query, collection, where } from 'firebase/firestore';
 
@@ -27,6 +27,15 @@ import { getStoredSettings } from '../lib/contentStorage';
 import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 import { Handshake } from 'lucide-react';
+import {
+  compressAndUpload,
+  ensurePersistedAssetUrl,
+  getStoredUploadedMedia,
+  type StoredMediaRecord
+} from '../lib/storageUploader';
+import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+
+type AdminUploadFolder = 'works' | 'experiences' | 'blogs' | 'promos' | 'about' | 'cv' | 'settings';
 
 export const MASTER_ADMINS = [
   'albian',
@@ -50,6 +59,15 @@ export default function AdminDashboard() {
   const [loginMode, setLoginMode] = useState<'credentials' | 'google'>('credentials');
   const [activeAdminName, setActiveAdminName] = useState('albian');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Quick backend image uploader states (reuses storageUploader + localStorage cache + imageResolver)
+  const quickUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadFolder, setUploadFolder] = useState<AdminUploadFolder>('works');
+  const [isUploadingAsset, setIsUploadingAsset] = useState(false);
+  const [uploadAssetError, setUploadAssetError] = useState<string | null>(null);
+  const [lastUploadedUrl, setLastUploadedUrl] = useState<string | null>(null);
+  const [copiedAssetUrl, setCopiedAssetUrl] = useState<string | null>(null);
+  const [cachedMediaList, setCachedMediaList] = useState<StoredMediaRecord[]>(() => getStoredUploadedMedia());
 
   // Cek sesi yang sudah tersimpan di browser (sessionStorage) dan Firebase Auth saat pertama kali dimuat
   useEffect(() => {
@@ -112,6 +130,14 @@ export default function AdminDashboard() {
   useEffect(() => {
     window.dispatchEvent(new CustomEvent('admin_auth_changed', { detail: { isAuth } }));
   }, [isAuth]);
+
+  useEffect(() => {
+    if (!isAuth) return;
+    setCachedMediaList(getStoredUploadedMedia());
+    const syncCache = () => setCachedMediaList(getStoredUploadedMedia());
+    window.addEventListener('storage', syncCache);
+    return () => window.removeEventListener('storage', syncCache);
+  }, [isAuth, activeTab]);
 
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -456,6 +482,53 @@ export default function AdminDashboard() {
       window.history.replaceState({}, '', window.location.pathname + window.location.search);
     }
     window.dispatchEvent(new CustomEvent('forceChangeView', { detail: { view: 'home' } }));
+  };
+
+  const handleQuickBackendUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    const isValidType = allowedTypes.includes(file.type) || /\.(jpe?g|png|webp)$/i.test(file.name);
+    if (!isValidType) {
+      setUploadAssetError('Format file harus berupa JPG, JPEG, PNG, atau WebP.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadAssetError('Ukuran file maksimal 5 MB.');
+      return;
+    }
+
+    setIsUploadingAsset(true);
+    setUploadAssetError(null);
+
+    try {
+      const rawUrl = await compressAndUpload(file, uploadFolder, 1400, 0.82, 25000);
+      const persistedUrl = await ensurePersistedAssetUrl(rawUrl, uploadFolder);
+      if (!persistedUrl || persistedUrl.startsWith('blob:')) {
+        throw new Error('Gagal mendapatkan URL aset yang valid dari server.');
+      }
+
+      setLastUploadedUrl(persistedUrl);
+      setCachedMediaList(getStoredUploadedMedia());
+    } catch (err: any) {
+      setUploadAssetError(err?.message || 'Gagal mengunggah gambar ke backend.');
+    } finally {
+      setIsUploadingAsset(false);
+    }
+  };
+
+  const handleCopyAssetUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedAssetUrl(url);
+      setTimeout(() => {
+        setCopiedAssetUrl((prev) => (prev === url ? null : prev));
+      }, 2000);
+    } catch {
+      setCopiedAssetUrl(null);
+    }
   };
 
   if (isChecking) {
@@ -882,6 +955,150 @@ export default function AdminDashboard() {
               </span>
             </div>
           )}
+
+          {/* Quick Backend Image Uploader & LocalStorage Cache Utility */}
+          <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-zinc-50/90 dark:bg-[#101010] border border-zinc-200/80 dark:border-zinc-800 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-black text-white dark:bg-white dark:text-black flex items-center justify-center shrink-0">
+                  <Upload size={15} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-xs font-bold text-black dark:text-white leading-tight">
+                    Upload Aset Gambar ke Backend
+                  </h3>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
+                    Kompres WebP otomatis, simpan ke backend, dan cache di localStorage.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <select
+                  value={uploadFolder}
+                  onChange={(e) => setUploadFolder(e.target.value as AdminUploadFolder)}
+                  disabled={isUploadingAsset}
+                  aria-label="Folder tujuan aset gambar"
+                  className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-[#171717] border border-zinc-200 dark:border-zinc-700 text-xs font-medium text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-black/10 dark:focus:ring-white/20"
+                >
+                  <option value="works">Folder: Karya (works)</option>
+                  <option value="experiences">Folder: Pengalaman (experiences)</option>
+                  <option value="blogs">Folder: Insight (blogs)</option>
+                  <option value="promos">Folder: Promo (promos)</option>
+                  <option value="about">Folder: Tentang (about)</option>
+                  <option value="cv">Folder: CV (cv)</option>
+                  <option value="settings">Folder: Situs (settings)</option>
+                </select>
+
+                <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                  isUploadingAsset
+                    ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                    : 'bg-black text-white dark:bg-white dark:text-black hover:opacity-90 active:scale-95'
+                }`}>
+                  {isUploadingAsset ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      <span>Mengunggah...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={14} />
+                      <span>Pilih Gambar</span>
+                    </>
+                  )}
+                  <input
+                    ref={quickUploadInputRef}
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp,image/*"
+                    onChange={handleQuickBackendUpload}
+                    disabled={isUploadingAsset}
+                    className="sr-only"
+                    aria-label="Upload gambar ke backend"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {uploadAssetError && (
+              <div className="mt-2.5 flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-xs text-red-700 dark:text-red-300">
+                <AlertCircle size={14} className="shrink-0" />
+                <span>{uploadAssetError}</span>
+              </div>
+            )}
+
+            {lastUploadedUrl && (
+              <div className="mt-3 p-2.5 rounded-xl bg-white dark:bg-[#161616] border border-zinc-200/80 dark:border-zinc-800 flex items-center gap-3">
+                <img
+                  src={resolveImageUrl(lastUploadedUrl)}
+                  onError={handleImageError}
+                  alt="Preview aset terunggah"
+                  className="w-12 h-12 rounded-lg object-cover border border-zinc-200 dark:border-zinc-700 shrink-0 bg-zinc-100 dark:bg-zinc-900"
+                />
+                <div className="min-w-0 flex-1">
+                  <span className="block text-[10px] font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold">
+                    Tersimpan di Backend & Cache
+                  </span>
+                  <span className="block text-xs font-mono text-zinc-700 dark:text-zinc-300 truncate">
+                    {lastUploadedUrl}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopyAssetUrl(lastUploadedUrl)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-[11px] font-semibold text-zinc-800 dark:text-zinc-200 shrink-0 cursor-pointer transition-colors"
+                >
+                  {copiedAssetUrl === lastUploadedUrl ? (
+                    <>
+                      <Check size={12} className="text-emerald-500" />
+                      <span>Disalin</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy size={12} />
+                      <span>Salin URL</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {cachedMediaList.length > 0 && (
+              <div className="mt-3 pt-2.5 border-t border-zinc-200/70 dark:border-zinc-800/80">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold">
+                    Cache Aset Terakhir ({cachedMediaList.length})
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                  {cachedMediaList.slice(0, 6).map((item, idx) => (
+                    <button
+                      key={`${item.url}-${idx}`}
+                      type="button"
+                      onClick={() => {
+                        setLastUploadedUrl(item.url);
+                        handleCopyAssetUrl(item.url);
+                      }}
+                      title={`${item.filename || item.url} — Klik untuk salin URL`}
+                      className="group relative w-11 h-11 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700 shrink-0 bg-zinc-100 dark:bg-zinc-900 hover:border-black dark:hover:border-white transition-colors cursor-pointer"
+                    >
+                      <img
+                        src={resolveImageUrl(item.url)}
+                        onError={handleImageError}
+                        alt={item.filename || 'Aset tersimpan'}
+                        loading="lazy"
+                        className="w-full h-full object-cover"
+                      />
+                      {copiedAssetUrl === item.url && (
+                        <span className="absolute inset-0 bg-black/60 flex items-center justify-center text-white">
+                          <Check size={13} />
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           <AnimatePresence mode="wait">
             <motion.div 

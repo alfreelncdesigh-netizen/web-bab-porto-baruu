@@ -22,6 +22,7 @@ import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 const createDefaultSlots = (): PromoPosterItem[] => [
   { id: 'poster-1', title: 'Promo Diskon Desain Grafis', image: '', ctaText: 'Ambil Diskon', link: '#store', active: true },
@@ -61,6 +62,7 @@ export default function PromoAdmin() {
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'info'; message: string } | null>(null);
   const [cookieStatus, setCookieStatus] = useState<string>('');
+  const { isSaved, markSaved } = useAdminSaveState({ isGlobalActive, posters });
 
   const refreshCookieStatus = () => {
     const raw = getCookie(NAMA_COOKIE_RIWAYAT);
@@ -295,6 +297,7 @@ export default function PromoAdmin() {
         }
       }
 
+      markSaved({ isGlobalActive, posters });
       window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
       showNotification('Semua pengaturan 3 poster promosi berhasil disimpan & aktif!');
     } catch (err) {
@@ -638,11 +641,11 @@ export default function PromoAdmin() {
         <button
           type="button"
           onClick={handleSaveAll}
-          disabled={saving || uploadingIndex !== null}
-          className="w-full sm:w-auto bg-black text-white dark:bg-white dark:text-black px-8 py-3.5 text-sm font-bold hover:opacity-85 transition-opacity rounded-2xl flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 cursor-pointer active:scale-95"
+          disabled={saving || uploadingIndex !== null || isSaved}
+          className="w-full sm:w-auto bg-black text-white dark:bg-white dark:text-black px-8 py-3.5 text-sm font-bold hover:opacity-85 transition-opacity rounded-2xl flex items-center justify-center gap-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer active:scale-95"
         >
           {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-          <span>Simpan Semua Pengaturan Widget Promosi</span>
+          <span>{saving ? 'Menyimpan...' : isSaved ? 'Tersimpan' : 'Simpan Semua Pengaturan Widget Promosi'}</span>
         </button>
       </div>
     </div>

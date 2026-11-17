@@ -21,6 +21,7 @@ import { CustomLoadingPlaceholder } from './SectionInsight';
 import { compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function QuickFilterAdmin() {
   const [items, setItems] = useState<QuickFilterItem[]>(() => getStoredQuickFilterItems());
@@ -47,6 +48,18 @@ export default function QuickFilterAdmin() {
   const [formTags, setFormTags] = useState('');
   const [formOrder, setFormOrder] = useState<number>(1);
   const [formPublished, setFormPublished] = useState(true);
+
+  const { isSaved, markSaved, resetSaveState } = useAdminSaveState({
+    editingId: editingItem?.id || '',
+    formQuestion,
+    formAnswer,
+    formCategory,
+    formCustomCategory,
+    formImages,
+    formTags,
+    formOrder,
+    formPublished,
+  });
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -136,6 +149,7 @@ export default function QuickFilterAdmin() {
     : items.filter(i => i.category === selectedCategory);
 
   const openAddModal = () => {
+    resetSaveState();
     setEditingItem(null);
     setFormQuestion('');
     setFormAnswer('');
@@ -150,6 +164,7 @@ export default function QuickFilterAdmin() {
   };
 
   const openEditModal = (item: QuickFilterItem) => {
+    resetSaveState();
     setEditingItem(item);
     setFormQuestion(item.question);
     setFormAnswer(item.answer);
@@ -253,8 +268,21 @@ export default function QuickFilterAdmin() {
       };
 
       await saveQuickFilterItemToFirestore(payload);
+      const savedImages = payload.images || [];
+      setEditingItem(payload);
+      setFormImages(savedImages);
+      markSaved({
+        editingId: payload.id,
+        formQuestion: payload.question,
+        formAnswer: payload.answer,
+        formCategory,
+        formCustomCategory,
+        formImages: savedImages,
+        formTags,
+        formOrder: payload.order ?? 1,
+        formPublished: payload.published !== false,
+      });
       showToast(editingItem ? 'Pertanyaan & Jawaban berhasil diperbarui!' : 'Pertanyaan baru berhasil ditambahkan ke database!', 'success');
-      setIsModalOpen(false);
     } catch (err: any) {
       showToast(err?.message || 'Gagal menyimpan data ke Firestore', 'error');
     } finally {
@@ -478,7 +506,11 @@ export default function QuickFilterAdmin() {
                   {editingItem ? 'Edit Pertanyaan & Gambar Insight' : 'Tambah Pertanyaan Insight Baru'}
                 </h3>
                 <button
-                  onClick={() => setIsModalOpen(false)}
+                  type="button"
+                  onClick={() => {
+                    resetSaveState();
+                    setIsModalOpen(false);
+                  }}
                   className="p-2 text-zinc-400 hover:text-black dark:hover:text-white rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 cursor-pointer"
                 >
                   <X size={18} />
@@ -691,18 +723,35 @@ export default function QuickFilterAdmin() {
                 <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-zinc-100 dark:border-zinc-800">
                   <button
                     type="button"
-                    onClick={() => setIsModalOpen(false)}
+                    onClick={() => {
+                      resetSaveState();
+                      setIsModalOpen(false);
+                    }}
                     className="px-4 py-2.5 rounded-full text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 font-bold cursor-pointer"
                   >
-                    Batal
+                    {isSaved ? 'Tutup' : 'Batal'}
                   </button>
                   <button
                     type="submit"
-                    disabled={isSaving || isUploadingImages}
-                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold shadow-md cursor-pointer active:scale-95 transition-all"
+                    disabled={isSaving || isUploadingImages || isSaved}
+                    className="inline-flex items-center gap-2 px-6 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold shadow-md cursor-pointer active:scale-95 transition-all"
                   >
-                    {isSaving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                    <span>{editingItem ? 'Simpan Perubahan' : 'Terbitkan Q&A'}</span>
+                    {isSaving ? (
+                      <Loader2 size={15} className="animate-spin" />
+                    ) : isSaved ? (
+                      <Check size={15} />
+                    ) : (
+                      <Save size={15} />
+                    )}
+                    <span>
+                      {isSaving
+                        ? 'Menyimpan...'
+                        : isSaved
+                        ? 'Tersimpan'
+                        : editingItem
+                        ? 'Simpan Perubahan'
+                        : 'Terbitkan Q&A'}
+                    </span>
                   </button>
                 </div>
               </form>

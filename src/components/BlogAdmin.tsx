@@ -12,6 +12,7 @@ import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function BlogAdmin() {
   const [posts, setPosts] = useState<BlogPost[]>(() => getStoredBlogs());
@@ -23,6 +24,7 @@ export default function BlogAdmin() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
   const [savingPost, setSavingPost] = useState(false);
+  const { isSaved, markSaved, resetSaveState } = useAdminSaveState(editingPost);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -151,9 +153,10 @@ export default function BlogAdmin() {
       }
     }
 
-    // Tutup modal dan tampilkan notifikasi berhasil seketika (optimistic save)
+    // Simpan state & tandai tersimpan tanpa menutup editor sehingga tombol berubah menjadi "Tersimpan" & disable
+    setEditingPost(payloadToSave);
+    markSaved(payloadToSave);
     showToast("Postingan berhasil disimpan & tampil di website!");
-    setEditingPost(null);
     setSavingPost(false);
 
     // Lacak aktivitas kolaborator secara realtime jika sesi aktif adalah kolaborator
@@ -349,6 +352,7 @@ export default function BlogAdmin() {
 
     const isAutoCollab = isCollabUser || Boolean(siteSettings.collaboration?.enabled && siteSettings.collaboration?.autoTagNewItems);
 
+    resetSaveState();
     setEditingPost({
       id: Date.now().toString(),
       title: '',
@@ -405,8 +409,11 @@ export default function BlogAdmin() {
             <h3 className="text-lg font-semibold text-black dark:text-white">Editor Blog</h3>
             <button
               type="button"
-              onClick={() => setEditingPost(null)}
-              className="text-black hover:text-black dark:text-zinc-400 dark:hover:text-zinc-500 transition-colors bg-white dark:bg-zinc-900 p-2 rounded-2xl"
+              onClick={() => {
+                resetSaveState();
+                setEditingPost(null);
+              }}
+              className="text-black hover:text-black dark:text-zinc-400 dark:hover:text-zinc-500 transition-colors bg-white dark:bg-zinc-900 p-2 rounded-2xl cursor-pointer"
             >
               <X size={20} />
             </button>
@@ -666,25 +673,42 @@ export default function BlogAdmin() {
             </label>
 
             {/* Tombol Simpan dengan Status Indikator Terintegrasi */}
-            <button
-              type="submit"
-              disabled={uploadingImage || savingPost}
-              className="bg-black text-white dark:bg-white dark:text-black px-8 py-4 text-[10px] font-semibold hover:opacity-80 transition-opacity rounded-2xl active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {uploadingImage ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  <span>{uploadStatusText || "Mengunggah Gambar..."}</span>
-                </>
-              ) : savingPost ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  <span>Menyimpan Data...</span>
-                </>
-              ) : (
-                <span>Simpan Postingan</span>
-              )}
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  resetSaveState();
+                  setEditingPost(null);
+                }}
+                className="bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 px-6 py-4 text-[10px] font-semibold hover:opacity-80 transition-opacity rounded-2xl active:scale-95 cursor-pointer"
+              >
+                {isSaved ? 'Tutup' : 'Batal'}
+              </button>
+              <button
+                type="submit"
+                disabled={uploadingImage || savingPost || isSaved}
+                className="bg-black text-white dark:bg-white dark:text-black px-8 py-4 text-[10px] font-semibold hover:opacity-80 transition-opacity rounded-2xl active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {uploadingImage ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>{uploadStatusText || "Mengunggah Gambar..."}</span>
+                  </>
+                ) : savingPost ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Menyimpan Data...</span>
+                  </>
+                ) : isSaved ? (
+                  <>
+                    <Check size={16} />
+                    <span>Tersimpan</span>
+                  </>
+                ) : (
+                  <span>Simpan Postingan</span>
+                )}
+              </button>
+            </div>
           </div>
         </motion.form>
       ) : (
@@ -747,7 +771,10 @@ export default function BlogAdmin() {
                 {/* Mobile Action Buttons Bar */}
                 <div className="pt-2.5 border-t border-zinc-100 dark:border-zinc-800/60 grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => setEditingPost(post)}
+                    onClick={() => {
+                      resetSaveState();
+                      setEditingPost(post);
+                    }}
                     className="flex items-center justify-center gap-1.5 py-2.5 bg-zinc-100 dark:bg-zinc-800 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black rounded-xl text-xs font-semibold text-black dark:text-white transition-all active:scale-95"
                     title="Edit Artikel"
                   >
@@ -835,7 +862,10 @@ export default function BlogAdmin() {
                     </td>
                     <td className="p-4 md:p-5 flex justify-end gap-2 items-center">
                       <button
-                        onClick={() => setEditingPost(post)}
+                        onClick={() => {
+                          resetSaveState();
+                          setEditingPost(post);
+                        }}
                         className="w-9 h-9 flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-300 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black rounded-xl transition-all active:scale-95 cursor-pointer shadow-2xs"
                         title="Edit"
                       >

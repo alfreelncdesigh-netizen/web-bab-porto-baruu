@@ -14,6 +14,7 @@ import { uploadImageToStorage, ensurePersistedAssetUrl } from '../lib/storageUpl
 import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import ConfirmModal from './ConfirmModal';
 import { FastInput, FastTextarea } from './FastInput';
+import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function CvAdmin() {
   const [settings, setSettings] = useState<any>(() => {
@@ -36,6 +37,7 @@ export default function CvAdmin() {
   const [targetSectionIndex, setTargetSectionIndex] = useState<number>(0);
   const [sectionIdxToClear, setSectionIdxToClear] = useState<number | null>(null);
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
+  const { isSaved, markSaved } = useAdminSaveState(settings);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -233,6 +235,7 @@ export default function CvAdmin() {
       setSettings(settingsToSave);
 
       const success = await saveStoredSettings(settingsToSave);
+      markSaved(settingsToSave);
       if (success) {
         showToast('Data CV & Foto berhasil disimpan ke Cloud Database & Sinkron Real-time!', 'success');
       } else {
@@ -935,7 +938,7 @@ export default function CvAdmin() {
         <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-end">
           <button 
             type="submit" 
-            disabled={isSaving || uploading || isImageUploading} 
+            disabled={isSaving || uploading || isImageUploading || isSaved} 
             className="w-full sm:w-auto bg-black text-white dark:bg-white dark:text-black px-8 py-4 rounded-xl text-sm font-bold hover:opacity-85 transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 shadow-lg shadow-black/10 dark:shadow-white/5 cursor-pointer disabled:cursor-not-allowed"
           >
             {isSaving ? (
@@ -947,6 +950,11 @@ export default function CvAdmin() {
               <>
                 <Loader2 className="w-4 h-4 animate-spin text-white dark:text-black" />
                 <span>{uploadStatusText || 'Mengunggah Foto...'}</span>
+              </>
+            ) : isSaved ? (
+              <>
+                <Check className="w-4 h-4 text-white dark:text-black" />
+                <span>Tersimpan</span>
               </>
             ) : (
               'Simpan Perubahan'

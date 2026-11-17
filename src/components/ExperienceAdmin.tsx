@@ -10,6 +10,7 @@ import { withTimeout, compressAndUpload, ensurePersistedAssetUrl } from '../lib/
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 import { isQuotaExhausted, markQuotaExhausted, isQuotaError, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function ExperienceAdmin() {
   const [experiences, setExperiences] = useState<any[]>(() => getStoredExperiences());
@@ -20,10 +21,13 @@ export default function ExperienceAdmin() {
   const [saving, setSaving] = useState(false);
   const [archiveItemId, setArchiveItemId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [addingImageUrl, setAddingImageUrl] = useState(false);
   const [uploadProgressText, setUploadProgressText] = useState<string>('');
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const migratedIdsRef = useRef<Set<string>>(new Set());
+  const { isSaved, markSaved, resetSaveState } = useAdminSaveState(editingItem);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type });
@@ -37,6 +41,74 @@ export default function ExperienceAdmin() {
     };
     window.addEventListener('user_experiences_updated', handleUpdate);
 
+    const migrateLoadedExperiences = async (items: any[]) => {
+      if (!Array.isArray(items) || items.length === 0) return;
+      const candidates = items.filter((exp) => {
+        if (!exp || !exp.id) return false;
+        const idStr = String(exp.id);
+        if (migratedIdsRef.current.has(idStr)) return false;
+        const imgs = Array.isArray(exp.images)
+          ? exp.images
+          : (exp.image ? [exp.image] : []);
+        return imgs.some(
+          (u: any) =>
+            typeof u === 'string' &&
+            u.trim().length > 0 &&
+            !u.trim().startsWith('blob:') &&
+            !u.trim().startsWith('/assets/experiences/')
+        );
+      });
+      if (candidates.length === 0) return;
+
+      for (const c of candidates) migratedIdsRef.current.add(String(c.id));
+
+      const migratedItems: any[] = [];
+      for (const exp of candidates) {
+        const rawImgs: string[] = Array.isArray(exp.images)
+          ? exp.images.filter((u: any) => typeof u === 'string' && u.trim().length > 0)
+          : (exp.image ? [String(exp.image).trim()] : []);
+        const persistedImgs: string[] = [];
+        let changed = false;
+        for (const raw of rawImgs) {
+          const next = raw.startsWith('/assets/experiences/')
+            ? raw
+            : await ensurePersistedAssetUrl(raw, 'experiences');
+          if (next && !next.startsWith('blob:')) {
+            persistedImgs.push(next);
+            if (next !== raw) changed = true;
+          } else {
+            persistedImgs.push(raw);
+          }
+        }
+        if (changed) {
+          const updatedExp = {
+            ...exp,
+            images: persistedImgs,
+            image: persistedImgs[0] || exp.image || '',
+          };
+          migratedItems.push(updatedExp);
+          if (!isQuotaExhausted()) {
+            setDoc(
+              doc(db, 'experiences', String(exp.id)),
+              {
+                images: updatedExp.images,
+                image: updatedExp.image,
+                _adminAuth: 'alfreelnc_admin_auth_verified',
+                updatedByAdmin: true,
+              },
+              { merge: true }
+            ).catch(() => {});
+          }
+        }
+      }
+
+      if (migratedItems.length > 0 && isMounted) {
+        const synced = mergeExperiences(migratedItems, getStoredExperiences());
+        setExperiences(synced);
+        await saveStoredExperiences(synced);
+      }
+    };
+
     (async () => {
       await syncDeletedIdsFromServer();
       try {
@@ -47,6 +119,7 @@ export default function ExperienceAdmin() {
             const merged = mergeExperiences(getStoredExperiences(), apiData);
             setExperiences(merged);
             await saveStoredExperiences(merged);
+            migrateLoadedExperiences(merged).catch(() => {});
           }
         }
       } catch {}
@@ -65,6 +138,7 @@ export default function ExperienceAdmin() {
           const merged = mergeExperiences(getStoredExperiences(), data);
           setExperiences(merged);
           saveStoredExperiences(merged);
+          migrateLoadedExperiences(merged).catch(() => {});
         },
         (error) => {
           if (isQuotaError(error)) markQuotaExhausted();
@@ -99,6 +173,7 @@ export default function ExperienceAdmin() {
     }
 
     // Saat menambahkan pengalaman baru, toggle kolaborator selalu OFF secara default
+    resetSaveState();
     setEditingItem({
       id: Date.now().toString(),
       header: '',
@@ -123,6 +198,7 @@ export default function ExperienceAdmin() {
     if (existingImages.length === 0 && item.image && typeof item.image === 'string' && item.image.trim()) {
       existingImages = [item.image.trim()];
     }
+    resetSaveState();
     setEditingItem({
       ...item,
       images: existingImages,
@@ -312,10 +388,13 @@ export default function ExperienceAdmin() {
       }
     } catch {}
 
-    // Tutup editor dan tampilkan notifikasi berhasil
+    const savedItemState = {
+      ...toLocalAndServer,
+      isNew: false
+    };
+    setEditingItem(savedItemState);
+    markSaved(savedItemState);
     showToast("Pengalaman & foto dokumentasi berhasil disimpan permanen!");
-    setIsEditing(false);
-    setEditingItem(null);
     setSaving(false);
   };
 
@@ -343,7 +422,7 @@ export default function ExperienceAdmin() {
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-      setUploadProgressText(`Mengompres & Mengunggah ke Firebase Storage (/experiences/) (${i + 1}/${fileList.length})...`);
+      setUploadProgressText(`Mengompres & Menyimpan ke Aset Backend (/assets/experiences/) (${i + 1}/${fileList.length})...`);
       try {
         const rawUrl = await compressAndUpload(file, 'experiences', 1200, 0.8, 25000);
         const url = await ensurePersistedAssetUrl(rawUrl, 'experiences');
@@ -352,7 +431,7 @@ export default function ExperienceAdmin() {
           successCount++;
         }
       } catch (err: any) {
-        console.warn(`Gagal mengunggah file ${file.name} ke Firebase Storage:`, err);
+        console.warn(`Gagal mengunggah file ${file.name} ke aset backend:`, err);
       }
     }
 
@@ -383,7 +462,7 @@ export default function ExperienceAdmin() {
           image: mergedImages[0] || ''
         };
       });
-      showToast(`${successCount} gambar berhasil ditambahkan!`);
+      showToast(`${successCount} gambar berhasil disimpan ke aset backend!`);
     } else {
       showToast("Gagal mengunggah gambar, silakan coba lagi.", "error");
     }
@@ -393,35 +472,43 @@ export default function ExperienceAdmin() {
   };
 
   const handleAddImageUrl = async () => {
-    if (!imageUrlInput.trim() || !editingItem) return;
-    const url = imageUrlInput.trim();
+    if (!imageUrlInput.trim() || !editingItem || addingImageUrl) return;
+    const rawUrl = imageUrlInput.trim();
+    setAddingImageUrl(true);
 
-    if (!editingItem.isNew && editingItem.id && !isQuotaExhausted() && !url.startsWith('data:')) {
-      try {
-        const docRef = doc(db, 'experiences', editingItem.id.toString());
-        await updateDoc(docRef, {
-          images: arrayUnion(url),
-          updatedAt: new Date().toISOString()
-        });
-      } catch (syncErr: any) {
-        if (isQuotaError(syncErr)) markQuotaExhausted();
+    try {
+      const persistedUrl = await ensurePersistedAssetUrl(rawUrl, 'experiences');
+      const finalUrl = persistedUrl && !persistedUrl.startsWith('blob:') ? persistedUrl : rawUrl;
+
+      if (!editingItem.isNew && editingItem.id && !isQuotaExhausted() && !finalUrl.startsWith('data:')) {
+        try {
+          const docRef = doc(db, 'experiences', editingItem.id.toString());
+          await updateDoc(docRef, {
+            images: arrayUnion(finalUrl),
+            updatedAt: new Date().toISOString()
+          });
+        } catch (syncErr: any) {
+          if (isQuotaError(syncErr)) markQuotaExhausted();
+        }
       }
-    }
 
-    setEditingItem((prev: any) => {
-      if (!prev) return prev;
-      const currentImages = Array.isArray(prev.images)
-        ? prev.images.filter((img: any) => typeof img === 'string' && img.trim())
-        : (prev.image ? [prev.image] : []);
-      const mergedImages = [...currentImages, url];
-      return {
-        ...prev,
-        images: mergedImages,
-        image: mergedImages[0] || ''
-      };
-    });
-    setImageUrlInput('');
-    showToast("Gambar berhasil ditambahkan dari tautan URL!");
+      setEditingItem((prev: any) => {
+        if (!prev) return prev;
+        const currentImages = Array.isArray(prev.images)
+          ? prev.images.filter((img: any) => typeof img === 'string' && img.trim())
+          : (prev.image ? [prev.image] : []);
+        const mergedImages = [...currentImages, finalUrl];
+        return {
+          ...prev,
+          images: mergedImages,
+          image: mergedImages[0] || ''
+        };
+      });
+      setImageUrlInput('');
+      showToast("Gambar berhasil disimpan ke aset backend dari tautan URL!");
+    } finally {
+      setAddingImageUrl(false);
+    }
   };
 
   const removeImage = (idx: number) => {
@@ -486,8 +573,13 @@ export default function ExperienceAdmin() {
               {editingItem.isNew ? 'Tambah Pengalaman Baru' : 'Edit Pengalaman'}
             </h2>
             <button
-              onClick={() => setIsEditing(false)}
-              className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+              type="button"
+              onClick={() => {
+                resetSaveState();
+                setIsEditing(false);
+                setEditingItem(null);
+              }}
+              className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors cursor-pointer"
             >
               <X className="w-5 h-5 text-zinc-500" />
             </button>
@@ -832,16 +924,17 @@ export default function ExperienceAdmin() {
                           handleAddImageUrl();
                         }
                       }}
-                      placeholder="https://... atau /uploads/..."
+                      placeholder="https://... atau /assets/experiences/..."
                       className="flex-1 min-w-0 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-black dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-mono"
                     />
                     <button
                       type="button"
                       onClick={handleAddImageUrl}
-                      disabled={!imageUrlInput.trim()}
-                      className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-black text-white dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-xs font-semibold disabled:opacity-40 cursor-pointer transition-colors shrink-0"
+                      disabled={!imageUrlInput.trim() || addingImageUrl}
+                      className="px-2.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-black text-white dark:bg-white dark:text-black dark:hover:bg-zinc-200 text-xs font-semibold disabled:opacity-40 cursor-pointer transition-colors shrink-0 flex items-center gap-1"
                     >
-                      + Tambah
+                      {addingImageUrl ? <Loader2 size={12} className="animate-spin" /> : null}
+                      <span>{addingImageUrl ? 'Menyimpan...' : '+ Tambah'}</span>
                     </button>
                   </div>
                 </div>
@@ -852,8 +945,8 @@ export default function ExperienceAdmin() {
             <div className="flex gap-4 pt-4 border-t border-zinc-200 dark:border-zinc-800">
               <button
                 type="submit"
-                disabled={saving || uploading}
-                className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2 hover:opacity-90 disabled:opacity-50"
+                disabled={saving || uploading || isSaved}
+                className="bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2 hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-all"
               >
                 {uploading ? (
                   <>
@@ -865,6 +958,11 @@ export default function ExperienceAdmin() {
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>Menyimpan Data...</span>
                   </>
+                ) : isSaved ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Tersimpan</span>
+                  </>
                 ) : (
                   <>
                     <Check className="w-4 h-4" />
@@ -874,10 +972,14 @@ export default function ExperienceAdmin() {
               </button>
               <button
                 type="button"
-                onClick={() => setIsEditing(false)}
-                className="bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400 px-6 py-3 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                onClick={() => {
+                  resetSaveState();
+                  setIsEditing(false);
+                  setEditingItem(null);
+                }}
+                className="bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400 px-6 py-3 rounded-xl text-sm font-bold hover:bg-zinc-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
               >
-                Batal
+                {isSaved ? 'Tutup' : 'Batal'}
               </button>
             </div>
           </form>
@@ -918,7 +1020,7 @@ export default function ExperienceAdmin() {
               >
                 {exp.images && exp.images.length > 0 && (
                   <div className="w-full h-44 sm:h-48 bg-zinc-100 dark:bg-zinc-900 overflow-hidden relative">
-                    <img src={exp.images[0]} alt="" className="w-full h-full object-cover" />
+                    <img src={resolveImageUrl(exp.images[0])} alt={exp.header || ''} onError={handleImageError} className="w-full h-full object-cover" />
                     {exp.images.length > 1 && (
                       <div className="absolute bottom-2.5 right-2.5 bg-black/75 backdrop-blur text-white text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 font-mono">
                         <ImageIcon className="w-3 h-3" /> +{exp.images.length - 1}

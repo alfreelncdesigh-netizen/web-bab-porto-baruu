@@ -370,7 +370,8 @@ export async function uploadImageToStorage(
           },
           body: JSON.stringify({
             data: base64Data,
-            filename: cleanName
+            filename: cleanName,
+            folder: targetFolder
           })
         }),
         10000,
@@ -605,13 +606,14 @@ export async function ensurePersistedAssetUrl(url: string, folder = 'works'): Pr
   const trimmed = url.trim();
   if (!trimmed || trimmed.startsWith('blob:')) return '';
 
+  const targetFolder = normalizeStorageFolder(folder);
+
   if (trimmed.startsWith('data:image/') || trimmed.startsWith('data:application/pdf')) {
     const isPdf = trimmed.startsWith('data:application/pdf');
     const isPng = trimmed.startsWith('data:image/png');
     const isSvg = trimmed.startsWith('data:image/svg');
     const ext = isPdf ? '.pdf' : isSvg ? '.svg' : isPng ? '.png' : '.webp';
-    const targetFolder = normalizeStorageFolder(folder);
-    const filename = `${targetFolder}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}${ext}`;
+    const filename = `${targetFolder === 'experiences' ? 'exp' : targetFolder}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}${ext}`;
 
     try {
       const serverRes = await withTimeout(
@@ -621,7 +623,7 @@ export async function ensurePersistedAssetUrl(url: string, folder = 'works'): Pr
             'Content-Type': 'application/json',
             'x-admin-token': 'alfreelnc_admin_auth_verified'
           },
-          body: JSON.stringify({ data: trimmed, filename })
+          body: JSON.stringify({ data: trimmed, filename, folder: targetFolder })
         }),
         12000,
         'Batas waktu unggah aset terlampaui'
@@ -640,6 +642,30 @@ export async function ensurePersistedAssetUrl(url: string, folder = 'works'): Pr
         const uploaded = await uploadImageToStorage(blob, filename, undefined, targetFolder, 10000);
         if (uploaded && !uploaded.startsWith('blob:')) {
           return uploaded;
+        }
+      }
+    } catch {}
+  }
+
+  // Untuk menu Pengalaman: pastikan seluruh gambar lama / URL eksternal / /uploads/ tersimpan ke public/assets/experiences/
+  if (targetFolder === 'experiences' && !trimmed.startsWith('/assets/experiences/')) {
+    try {
+      const res = await withTimeout(
+        fetch('/api/experiences/persist-asset', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-token': 'alfreelnc_admin_auth_verified'
+          },
+          body: JSON.stringify({ url: trimmed })
+        }),
+        10000,
+        'Batas waktu penyimpanan aset pengalaman terlampaui'
+      );
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.url && typeof json.url === 'string' && json.url.trim()) {
+          return json.url.trim();
         }
       }
     } catch {}

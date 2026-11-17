@@ -9,6 +9,7 @@ import { Loader2, Check, Upload, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, 
 import { renderPdfFirstPageToImage } from '../lib/pdfHelper';
 import { resolveImageUrl } from '../lib/imageResolver';
 import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function SettingsAdmin() {
  const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
@@ -16,6 +17,7 @@ export default function SettingsAdmin() {
  const [saving, setSaving] = useState(false);
  const [uploading, setUploading] = useState(false);
  const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
+ const { isSaved, markSaved } = useAdminSaveState(settings);
 
  useEffect(() => {
   const fetchSettings = async () => {
@@ -81,6 +83,7 @@ export default function SettingsAdmin() {
   
   try {
    const success = await saveStoredSettings(settings);
+   markSaved(settings);
    // Kirim event broadcast agar seluruh halaman website seketika terupdate tanpa refresh
    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: settings }));
    if (success) {
@@ -918,9 +921,9 @@ export default function SettingsAdmin() {
     </div>
 
     <div className="flex justify-end pt-6 border-t border-zinc-200 dark:border-zinc-800">
-     <button type="submit" disabled={saving || uploading} className="bg-black text-white dark:bg-white dark:text-black px-8 py-3 text-sm font-semibold hover:opacity-80 transition-opacity rounded-2xl flex items-center gap-2 disabled:opacity-50">
+     <button type="submit" disabled={saving || uploading || isSaved} className="bg-black text-white dark:bg-white dark:text-black px-8 py-3 text-sm font-semibold hover:opacity-80 transition-opacity rounded-2xl flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
       {saving ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-      Simpan Perubahan
+      <span>{saving ? 'Menyimpan...' : isSaved ? 'Tersimpan' : 'Simpan Perubahan'}</span>
      </button>
     </div>
    </form>
