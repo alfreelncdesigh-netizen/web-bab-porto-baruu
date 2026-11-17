@@ -4,7 +4,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { motion, AnimatePresence } from 'motion/react';
 import BrandLogo from './BrandLogo';
-import { SiteSettings } from '../data/settings';
+import { SiteSettings } from '../types/site';
 import { getStoredSettings } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { PWAInstallButton } from './PWAInstallButton';

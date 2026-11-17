@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, onSnapshot, doc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import { db, auth } from '../lib/firebase';
+import { auth } from '../lib/firebase';
 import { Eye, Image as ImageIcon, ShoppingCart, FileText, Mail, BarChart3, Download, Tag, Sparkles } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { motion, AnimatePresence } from 'framer-motion';
 import BrandLogo from './BrandLogo';
 import { cleanProjects, cleanBlogs, getStoredProjects, getStoredBlogs, subscribeProjectsRealtime, subscribeBlogsRealtime } from '../lib/contentStorage';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { MASTER_ADMINS } from './AdminDashboard';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -162,7 +160,7 @@ export default function Stats({
     }
   };
 
-  const [pageViews, setPageViews] = useState<number>(128);
+  const [pageViews, setPageViews] = useState<number>(0);
 
   const [projects, setProjects] = useState<any[]>(() => {
     const stored = getStoredProjects();
@@ -196,27 +194,39 @@ export default function Stats({
     window.addEventListener('user_projects_updated', handleProjectsUpdate);
     window.addEventListener('blog_posts_updated', handleBlogsUpdate);
 
-    // 1. Data Agregat Publik: Jumlah Pengunjung (stats/views) langsung dari Cloud Firestore
-    const unsubViews = onSnapshot(
-      doc(db, 'stats', 'views'),
-      (docSnap) => {
-        if (!isSubscribed) return;
-        if (docSnap.exists()) {
-          const c = docSnap.data().count;
-          if (typeof c === 'number' && c > 0) {
-            setPageViews(c);
-          }
-        }
-        setLoading(false);
-      },
-      (err) => {
-        if (!isSubscribed) return;
-        if (err.code !== 'permission-denied') {
-          logFirestoreError(err, OperationType.GET, 'stats/views');
-        }
-        setLoading(false);
+    const handleStatsUpdate = (e: any) => {
+      if (isSubscribed && e?.detail && typeof e.detail.totalViews === 'number') {
+        setPageViews(e.detail.totalViews);
+        setStatsError(null);
       }
-    );
+    };
+    window.addEventListener('app_stats_updated', handleStatsUpdate);
+
+    // 1. Data Agregat Publik: Jumlah Pengunjung dari Vercel Blob (data/stats.json via cache server 5 menit)
+    const loadStatsFromBlob = async () => {
+      try {
+        const res = await fetch('/api/stats', { method: 'GET', cache: 'no-store' });
+        let data: any = null;
+        try {
+          data = await res.json();
+        } catch {
+          data = null;
+        }
+        if (!isSubscribed) return;
+        if (!res.ok) {
+          setStatsError(data?.error || 'Gagal memuat data statistik pengunjung dari Vercel Blob (data/stats.json).');
+        } else if (data && typeof data.totalViews === 'number') {
+          setPageViews(data.totalViews);
+          setStatsError(null);
+        }
+      } catch (err: any) {
+        if (!isSubscribed) return;
+        setStatsError(err?.message || 'Gagal menghubungi server untuk membaca data statistik dari Vercel Blob.');
+      } finally {
+        if (isSubscribed) setLoading(false);
+      }
+    };
+    loadStatsFromBlob();
 
     // 2. Data Publik: Portofolio Proyek (projects) melalui singleton shared subscription
     const unsubProjects = subscribeProjectsRealtime((sorted) => {
@@ -232,37 +242,29 @@ export default function Stats({
       setLoading(false);
     });
 
-    // 4. Data Privat Admin: Pesanan (orders) & Pesan Masuk (messages)
+    // 4. Data Privat Admin: Pesanan (orders) & Pesan Masuk (messages) dari API Blob/JSON
     if (isEffectiveAdmin) {
-      unsubOrders = onSnapshot(
-        collection(db, 'orders'),
-        (snapshot) => {
-          if (!isSubscribed) return;
-          const loaded = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter((o: any) => o.isArchived !== true);
-          setOrders(loaded);
-        },
-        (err) => {
-          if (!isSubscribed) return;
-          if (err.code === 'permission-denied') {
-            if (unsubOrders) { unsubOrders(); unsubOrders = null; }
-          }
-        }
-      );
+      fetch('/api/orders', {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { 'x-admin-token': 'alfreelnc_admin_auth_verified' },
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!isSubscribed || !data) return;
+          const raw = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+          setOrders(raw.filter((o: any) => o && o.isArchived !== true));
+        })
+        .catch(() => {});
 
-      unsubMsgs = onSnapshot(
-        collection(db, 'messages'),
-        (snapshot) => {
-          if (!isSubscribed) return;
-          const activeMsgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter((m: any) => m.isArchived !== true);
-          setMessages(activeMsgs);
-        },
-        (err) => {
-          if (!isSubscribed) return;
-          if (err.code === 'permission-denied') {
-            if (unsubMsgs) { unsubMsgs(); unsubMsgs = null; }
-          }
-        }
-      );
+      fetch('/api/messages', { method: 'GET', cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!isSubscribed || !data) return;
+          const raw = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+          setMessages(raw.filter((m: any) => m && m.isArchived !== true && m.isDeleted !== true));
+        })
+        .catch(() => {});
     }
 
     const safetyTimer = setTimeout(() => {
@@ -274,7 +276,7 @@ export default function Stats({
       clearTimeout(safetyTimer);
       window.removeEventListener('user_projects_updated', handleProjectsUpdate);
       window.removeEventListener('blog_posts_updated', handleBlogsUpdate);
-      unsubViews();
+      window.removeEventListener('app_stats_updated', handleStatsUpdate);
       unsubProjects();
       unsubBlogs();
       if (unsubOrders) unsubOrders();

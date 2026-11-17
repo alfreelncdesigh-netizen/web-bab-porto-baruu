@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Check, Copy, Share2, ExternalLink, Sparkles } from 'lucide-react';
-import { Project } from '../data/projects';
+import { Project } from '../types/project';
 import { resolveImageUrl } from '../lib/imageResolver';
 
 interface ShareProjectModalProps {

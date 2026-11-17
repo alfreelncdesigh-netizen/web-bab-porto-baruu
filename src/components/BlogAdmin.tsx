@@ -4,14 +4,22 @@ import ConfirmModal from './ConfirmModal';
 import { motion } from 'motion/react';
 import { BlogPost } from '../types/blog';
 import { Edit, Trash, Plus, X, Check, Cloud, Upload, Loader2, Image as ImageIcon, Archive, AlertCircle, Handshake } from 'lucide-react';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { getStoredBlogs, saveStoredBlogs, cleanBlogs, sortBlogsByRecency, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
-import { SiteSettings } from '../data/settings';
+import {
+  getStoredBlogs,
+  saveStoredBlogs,
+  cleanBlogs,
+  sortBlogsByRecency,
+  getStoredSettings,
+  saveStoredSettings,
+  fetchBlogsFromBlob,
+  saveBlogToBlob,
+  patchBlogInBlob,
+  deleteBlogFromBlob,
+} from '../lib/contentStorage';
+import { SiteSettings } from '../types/site';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function BlogAdmin() {
@@ -38,29 +46,18 @@ export default function BlogAdmin() {
     };
     window.addEventListener('blog_posts_updated', handleUpdate);
 
-    const unsubscribe = onSnapshot(
-      collection(db, 'blogPosts'),
-      (snapshot) => {
-        if (!isMounted) return;
-        const loadedPosts: BlogPost[] = [];
-        snapshot.forEach((docSnap) => {
-          loadedPosts.push({ id: docSnap.id, ...docSnap.data() } as BlogPost);
-        });
-        const sorted = sortBlogsByRecency(cleanBlogs(loadedPosts));
-        setPosts(sorted);
-        saveStoredBlogs(sorted);
-      },
-      (error) => {
-        logFirestoreError(error, OperationType.LIST, 'blogPosts');
+    fetchBlogsFromBlob({ includeArchived: false })
+      .then((sorted) => {
+        if (isMounted) setPosts(sorted);
+      })
+      .catch((error: any) => {
         if (isMounted) {
-          showToast(error?.message || 'Gagal memuat daftar blog dari Cloud Firestore.', 'error');
+          showToast(error?.message || 'Gagal memuat daftar blog dari Vercel Blob.', 'error');
         }
-      }
-    );
+      });
 
     return () => {
       isMounted = false;
-      unsubscribe();
       window.removeEventListener('blog_posts_updated', handleUpdate);
     };
   }, []);
@@ -107,12 +104,7 @@ export default function BlogAdmin() {
         archiveFolderId: null,
       };
 
-      await setDoc(doc(db, 'blogPosts', payloadToSave.id), {
-        ...payloadToSave,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true,
-        updatedAt: new Date(nowMs).toISOString()
-      }, { merge: true });
+      const { item: savedItem, items: updatedList } = await saveBlogToBlob(payloadToSave);
 
       if (payloadToSave.isCollaboration) {
         const siteSettings = getStoredSettings();
@@ -135,12 +127,10 @@ export default function BlogAdmin() {
         await saveStoredSettings(updatedSettings);
       }
 
-      const nextPosts = [payloadToSave, ...posts.filter(p => p.id !== docId)];
-      await savePosts(nextPosts);
-
-      setEditingPost(payloadToSave);
-      markSaved(payloadToSave);
-      showToast("Postingan berhasil disimpan ke Cloud Firestore & tampil di website!");
+      setPosts(updatedList);
+      setEditingPost(savedItem);
+      markSaved(savedItem);
+      showToast("Postingan berhasil disimpan & tampil di website!");
 
       try {
         const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
@@ -154,8 +144,7 @@ export default function BlogAdmin() {
         }
       } catch {}
     } catch (err: any) {
-      logFirestoreError(err, OperationType.WRITE, `blogPosts/${docId}`);
-      showToast(err?.message || "Gagal menyimpan postingan ke Cloud Firestore.", "error");
+      showToast(err?.message || "Gagal menyimpan postingan ke Vercel Blob.", "error");
     } finally {
       setSavingPost(false);
     }
@@ -168,13 +157,12 @@ export default function BlogAdmin() {
   const handleConfirmDelete = async () => {
     if (!postToDelete) return;
     setIsDeleting(true);
-    const id = postToDelete.id;
+    const id = String(postToDelete.id);
 
     try {
-      await deleteDoc(doc(db, 'blogPosts', id));
-      const updated = posts.filter(p => p.id !== id);
-      await savePosts(updated);
-      showToast(`"${postToDelete.title || 'Postingan'}" berhasil dihapus permanen dari Cloud Firestore.`);
+      const updated = await deleteBlogFromBlob(id);
+      setPosts(updated);
+      showToast(`"${postToDelete.title || 'Postingan'}" berhasil dihapus permanen.`);
 
       try {
         const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
@@ -189,8 +177,7 @@ export default function BlogAdmin() {
 
       setPostToDelete(null);
     } catch (err: any) {
-      logFirestoreError(err, OperationType.DELETE, `blogPosts/${id}`);
-      showToast(err?.message || `Gagal menghapus postingan dari Cloud Firestore.`, "error");
+      showToast(err?.message || `Gagal menghapus postingan dari Vercel Blob.`, "error");
     } finally {
       setIsDeleting(false);
     }
@@ -199,20 +186,16 @@ export default function BlogAdmin() {
   const togglePublish = async (id: string) => {
     const targetPost = posts.find(p => p.id === id);
     if (!targetPost) return;
-    const nowMs = Date.now();
-    const updatedPost = { ...targetPost, published: !targetPost.published, updatedAt: nowMs };
+    const nextPublished = !targetPost.published;
     try {
-      await setDoc(doc(db, 'blogPosts', id), {
-        ...updatedPost,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true,
-        updatedAt: new Date(nowMs).toISOString()
-      }, { merge: true });
-      await savePosts(posts.map(p => p.id === id ? updatedPost : p));
-      showToast(updatedPost.published ? "Postingan dipublikasikan!" : "Postingan dijadikan Draft.");
+      const updatedList = await patchBlogInBlob({
+        id: String(id),
+        updates: { published: nextPublished },
+      });
+      setPosts(updatedList);
+      showToast(nextPublished ? "Postingan dipublikasikan!" : "Postingan dijadikan Draft.");
     } catch (err: any) {
-      logFirestoreError(err, OperationType.WRITE, `blogPosts/${id}`);
-      showToast(err?.message || "Gagal mengubah status postingan di Cloud Firestore.", "error");
+      showToast(err?.message || "Gagal mengubah status postingan.", "error");
     }
   };
 
@@ -229,14 +212,6 @@ export default function BlogAdmin() {
         const rawUrl = await compressAndUpload(fileList[0], 'blogs', 1200, 0.75, 25000);
         const cleanUrl = await ensurePersistedAssetUrl(rawUrl, 'blogs');
 
-        if (editingPost?.id && posts.some(p => p.id === editingPost.id) && !cleanUrl.startsWith('data:')) {
-          const docRef = doc(db, 'blogPosts', editingPost.id);
-          await updateDoc(docRef, {
-            image: cleanUrl,
-            updatedAt: new Date().toISOString()
-          });
-        }
-
         setEditingPost(prev => prev ? ({ ...prev, image: cleanUrl }) : null);
         showToast("Gambar berhasil diunggah ke Vercel Blob!");
       } else {
@@ -251,14 +226,6 @@ export default function BlogAdmin() {
         );
         const cleanUrls = await Promise.all(rawUrls.map(u => ensurePersistedAssetUrl(u, 'blogs')));
         if (cleanUrls.length > 0) {
-          if (editingPost?.id && posts.some(p => p.id === editingPost.id) && !cleanUrls[0].startsWith('data:')) {
-            const docRef = doc(db, 'blogPosts', editingPost.id);
-            await updateDoc(docRef, {
-              image: cleanUrls[0],
-              updatedAt: new Date().toISOString()
-            });
-          }
-
           setEditingPost(prev => prev ? ({ ...prev, image: cleanUrls[0] }) : null);
           showToast(`${cleanUrls.length} gambar berhasil diunggah ke Vercel Blob!`);
         }

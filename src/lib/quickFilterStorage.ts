@@ -1,9 +1,7 @@
 import { QuickFilterItem } from '../types/quickFilter';
-import { db } from './firebase';
-import { collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
-import { logFirestoreError, OperationType } from './firestoreErrorHandler';
-import { cleanForFirestore, getTimestampMs } from './contentStorage';
+import { getTimestampMs } from './contentStorage';
 
+const ADMIN_AUTH_TOKEN = 'alfreelnc_admin_auth_verified';
 let memoryQuickFilterItems: QuickFilterItem[] = [];
 
 export function cleanQuickFilterItems(items: any[]): QuickFilterItem[] {
@@ -74,6 +72,37 @@ export async function saveStoredQuickFilterItems(items: QuickFilterItem[]): Prom
   }
 }
 
+let hasHydratedQuickFilter = false;
+let quickFilterSubActive = false;
+let inFlightQuickFilterFetch: Promise<QuickFilterItem[]> | null = null;
+const quickFilterCallbacks = new Set<(items: QuickFilterItem[]) => void>();
+
+export async function fetchQuickFilterFromBlob(): Promise<QuickFilterItem[]> {
+  if (inFlightQuickFilterFetch) return inFlightQuickFilterFetch;
+
+  inFlightQuickFilterFetch = (async () => {
+    try {
+      const res = await fetch('/api/quick-filter', { method: 'GET', cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || `Gagal memuat Quick Filter (HTTP ${res.status})`);
+      }
+      const rawItems = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+      const cleaned = cleanQuickFilterItems(rawItems);
+      hasHydratedQuickFilter = true;
+      await saveStoredQuickFilterItems(cleaned);
+      quickFilterCallbacks.forEach(fn => {
+        try { fn(cleaned); } catch {}
+      });
+      return cleaned;
+    } finally {
+      inFlightQuickFilterFetch = null;
+    }
+  })();
+
+  return inFlightQuickFilterFetch;
+}
+
 export async function saveQuickFilterItemToFirestore(item: QuickFilterItem): Promise<boolean> {
   const cleanedItem: QuickFilterItem = {
     ...item,
@@ -82,49 +111,54 @@ export async function saveQuickFilterItemToFirestore(item: QuickFilterItem): Pro
     createdAt: item.createdAt || new Date().toISOString()
   };
 
-  try {
-    const docRef = doc(db, 'quickFilterQA', cleanedItem.id);
-    await setDoc(
-      docRef,
-      cleanForFirestore({
-        ...cleanedItem,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
-      }),
-      { merge: true }
-    );
-
-    const existingIdx = memoryQuickFilterItems.findIndex(q => q.id === cleanedItem.id);
-    const updated = [...memoryQuickFilterItems];
-    if (existingIdx >= 0) {
-      updated[existingIdx] = cleanedItem;
-    } else {
-      updated.push(cleanedItem);
-    }
-    await saveStoredQuickFilterItems(updated);
-    return true;
-  } catch (err) {
-    logFirestoreError(err, OperationType.UPDATE, `quickFilterQA/${cleanedItem.id}`);
-    throw err;
+  const res = await fetch('/api/quick-filter', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify({ item: cleanedItem }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.error || `Gagal menyimpan wawasan Quick Filter (HTTP ${res.status})`);
   }
+
+  const nextList = cleanQuickFilterItems(Array.isArray(data?.items) ? data.items : [...memoryQuickFilterItems, cleanedItem]);
+  hasHydratedQuickFilter = true;
+  await saveStoredQuickFilterItems(nextList);
+  quickFilterCallbacks.forEach(fn => {
+    try { fn(nextList); } catch {}
+  });
+  return true;
 }
 
 export async function deleteQuickFilterItemFromFirestore(id: string): Promise<boolean> {
-  try {
-    const docRef = doc(db, 'quickFilterQA', id);
-    await deleteDoc(docRef);
-    const filtered = memoryQuickFilterItems.filter(q => q.id !== id);
-    await saveStoredQuickFilterItems(filtered);
-    return true;
-  } catch (err) {
-    logFirestoreError(err, OperationType.DELETE, `quickFilterQA/${id}`);
-    throw err;
+  const res = await fetch('/api/quick-filter', {
+    method: 'DELETE',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify({ id }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(data?.error || `Gagal menghapus wawasan Quick Filter (HTTP ${res.status})`);
   }
-}
 
-let hasHydratedQuickFilter = false;
-let quickFilterSubActive = false;
-const quickFilterCallbacks = new Set<(items: QuickFilterItem[]) => void>();
+  const filtered = cleanQuickFilterItems(
+    Array.isArray(data?.items) ? data.items : memoryQuickFilterItems.filter(q => q.id !== id)
+  );
+  hasHydratedQuickFilter = true;
+  await saveStoredQuickFilterItems(filtered);
+  quickFilterCallbacks.forEach(fn => {
+    try { fn(filtered); } catch {}
+  });
+  return true;
+}
 
 export function subscribeQuickFilterRealtime(cb?: (items: QuickFilterItem[]) => void): () => void {
   if (cb) {
@@ -136,40 +170,12 @@ export function subscribeQuickFilterRealtime(cb?: (items: QuickFilterItem[]) => 
 
   if (!quickFilterSubActive && typeof window !== 'undefined') {
     quickFilterSubActive = true;
-    onSnapshot(
-      collection(db, 'quickFilterQA'),
-      (snapshot) => {
-        const loaded: QuickFilterItem[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          loaded.push({
-            id: docSnap.id,
-            question: data.question || '',
-            answer: data.answer || '',
-            category: data.category || 'Tren Desain',
-            images: Array.isArray(data.images) ? data.images : (typeof data.image === 'string' && data.image ? [data.image] : []),
-            tags: data.tags || [],
-            order: data.order ?? 0,
-            published: data.published !== false,
-            createdAt: data.createdAt,
-            updatedAt: data.updatedAt
-          });
-        });
-        const cleaned = cleanQuickFilterItems(loaded);
-        hasHydratedQuickFilter = true;
-        saveStoredQuickFilterItems(cleaned);
-        quickFilterCallbacks.forEach(fn => {
-          try { fn(cleaned); } catch {}
-        });
-      },
-      (error) => {
-        logFirestoreError(error, OperationType.LIST, 'quickFilterQA');
-        hasHydratedQuickFilter = true;
-        quickFilterCallbacks.forEach(fn => {
-          try { fn(memoryQuickFilterItems); } catch {}
-        });
-      }
-    );
+    fetchQuickFilterFromBlob().catch(() => {
+      hasHydratedQuickFilter = true;
+      quickFilterCallbacks.forEach(fn => {
+        try { fn(memoryQuickFilterItems); } catch {}
+      });
+    });
   }
 
   return () => {

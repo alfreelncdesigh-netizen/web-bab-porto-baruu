@@ -7,6 +7,23 @@ import fs from 'fs';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { put } from '@vercel/blob';
+import statsHandler from './api/stats';
+import portfolioHandler from './api/portfolio';
+import experienceHandler from './api/experience';
+import siteSettingsHandler from './api/site-settings';
+import cvHandler from './api/cv';
+import blogsHandler from './api/blogs';
+import messagesHandler from './api/messages';
+import quickFilterHandler from './api/quick-filter';
+import blogCommentsHandler from './api/blog-comments';
+import ordersHandler from './api/orders';
+import { BLOB_PATHS, readJsonFromBlob, getOptionalBlobToken } from './api/_lib/blobJsonStore';
+import {
+  createInitialPortfolioSeed,
+  createInitialSiteSettingsSeed,
+  type PortfolioJsonData,
+  type SiteSettingsJsonData,
+} from './api/_lib/seedDefaults';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -229,83 +246,35 @@ app.get('/uploads/:filename', async (req: Request, res: Response, next: NextFunc
       }
     }
 
-    // 3. Khusus foto hero: periksa settings/hero dan settings/global di Firestore
+    // 3. Khusus foto hero: gunakan file cover_web yang ada di disk lokal jika ada
     if (!base64Data && (filename.includes('cover_web') || filename.includes('hero'))) {
-      try {
-        const heroUrl = getFirestoreRestDocUrl('settings', 'hero');
-        const heroRes = await fetch(heroUrl);
-        if (heroRes.ok) {
-          const heroJson: any = await heroRes.json();
-          if (heroJson?.fields?.heroImageDataUrl?.stringValue) {
-            base64Data = heroJson.fields.heroImageDataUrl.stringValue;
-          }
-        }
-      } catch {}
-
-      if (!base64Data) {
+      const existingCover = ['cover_web_dejwax_1792936005852_d33cf44f.webp', 'cover_web_1792581846511.png'].find(f => fs.existsSync(path.join(uploadsDir, f)));
+      if (existingCover) {
         try {
-          const globalUrl = getFirestoreRestDocUrl('settings', 'global');
-          const globalRes = await fetch(globalUrl);
-          if (globalRes.ok) {
-            const globalJson: any = await globalRes.json();
-            if (globalJson?.fields?.heroImageDataUrl?.stringValue) {
-              base64Data = globalJson.fields.heroImageDataUrl.stringValue;
-            }
-          }
+          const srcBuf = fs.readFileSync(path.join(uploadsDir, existingCover));
+          fs.writeFileSync(filePath, srcBuf);
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          res.setHeader('Content-Type', existingCover.endsWith('.png') ? 'image/png' : 'image/webp');
+          res.status(200).send(srcBuf);
+          return;
         } catch {}
-      }
-
-      // Jika belum ditemukan di database, gunakan file cover_web yang ada di disk lokal
-      if (!base64Data) {
-        const existingCover = ['cover_web_dejwax_1792936005852_d33cf44f.webp', 'cover_web_1792581846511.png'].find(f => fs.existsSync(path.join(uploadsDir, f)));
-        if (existingCover) {
-          try {
-            const srcBuf = fs.readFileSync(path.join(uploadsDir, existingCover));
-            fs.writeFileSync(filePath, srcBuf);
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-            res.setHeader('Content-Type', existingCover.endsWith('.png') ? 'image/png' : 'image/webp');
-            res.status(200).send(srcBuf);
-            return;
-          } catch {}
-        }
       }
     }
 
-    // 4. Khusus poster promosi: periksa settings/promoPosters di Firestore
+    // 4. Khusus poster promosi: cadangan fallback dari gambar promo bawaan jika tersedia
     if (!base64Data && filename.includes('promo_poster')) {
-      try {
-        const promoUrl = getFirestoreRestDocUrl('settings', 'promoPosters');
-        const promoRes = await fetch(promoUrl);
-        if (promoRes.ok) {
-          const promoJson: any = await promoRes.json();
-          const posterVals = promoJson?.fields?.posters?.arrayValue?.values || [];
-          for (const pv of posterVals) {
-            const pFields = pv.mapValue?.fields;
-            const pImg = pFields?.image?.stringValue || '';
-            const pData = pFields?.dataUrl?.stringValue || '';
-            if (pData && (pImg.includes(filename) || pData.startsWith('data:'))) {
-              base64Data = pData;
-              break;
-            }
-          }
-        }
-      } catch {}
-
-      // Cadangan fallback dari gambar promo bawaan jika tersedia
-      if (!base64Data) {
-        const fallbackPromo = path.resolve(publicDir, 'images/promo_poster_1789471291192.jpg');
-        if (fs.existsSync(fallbackPromo)) {
-          try {
-            const pBuf = fs.readFileSync(fallbackPromo);
-            fs.writeFileSync(filePath, pBuf);
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-            res.setHeader('Content-Type', 'image/jpeg');
-            res.status(200).send(pBuf);
-            return;
-          } catch {}
-        }
+      const fallbackPromo = path.resolve(publicDir, 'images/promo_poster_1789471291192.jpg');
+      if (fs.existsSync(fallbackPromo)) {
+        try {
+          const pBuf = fs.readFileSync(fallbackPromo);
+          fs.writeFileSync(filePath, pBuf);
+          res.setHeader('Access-Control-Allow-Origin', '*');
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          res.setHeader('Content-Type', 'image/jpeg');
+          res.status(200).send(pBuf);
+          return;
+        } catch {}
       }
     }
 
@@ -1170,6 +1139,59 @@ const requireAdminAuth = (req: Request, res: Response, next: NextFunction): void
   }
   res.status(401).json({ error: 'Akses ditolak: Operasi ini membutuhkan otorisasi administrator.' });
 };
+
+// ============================================================================
+// VERCEL BLOB JSON API ROUTES (stats, portfolio, experience, site-settings, cv)
+// ============================================================================
+app.all('/api/stats', (req: Request, res: Response): void => {
+  void statsHandler(req as any, res);
+});
+
+app.all('/api/portfolio', (req: Request, res: Response): void => {
+  void portfolioHandler(req as any, res);
+});
+
+app.all('/api/experience', (req: Request, res: Response): void => {
+  void experienceHandler(req as any, res);
+});
+
+app.all('/api/site-settings', (req: Request, res: Response): void => {
+  void siteSettingsHandler(req as any, res);
+});
+
+app.all('/api/cv', (req: Request, res: Response): void => {
+  void cvHandler(req as any, res);
+});
+
+app.all('/api/blogs', (req: Request, res: Response): void => {
+  void blogsHandler(req as any, res);
+});
+
+app.all('/api/messages', (req: Request, res: Response): void => {
+  void messagesHandler(req as any, res);
+});
+
+app.all('/api/quick-filter', (req: Request, res: Response): void => {
+  void quickFilterHandler(req as any, res);
+});
+
+app.all('/api/blog-comments', (req: Request, res: Response): void => {
+  void blogCommentsHandler(req as any, res);
+});
+
+app.all('/api/blog-comments/:blogId', (req: Request, res: Response): void => {
+  req.query = { ...(req.query || {}), blogId: req.params.blogId };
+  void blogCommentsHandler(req as any, res);
+});
+
+app.all('/api/orders', (req: Request, res: Response): void => {
+  void ordersHandler(req as any, res);
+});
+
+app.all('/api/orders/:id', (req: Request, res: Response): void => {
+  req.query = { ...(req.query || {}), id: req.params.id };
+  void ordersHandler(req as any, res);
+});
 
 app.get('/api/settings', (_req: Request, res: Response): void => {
   try {
@@ -2062,13 +2084,7 @@ app.post('/api/blob-upload', (req: Request, res: Response): void => {
     }
   }
 
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
-  if (!token) {
-    res.status(500).json({
-      error: 'Konfigurasi Vercel Blob belum diatur: environment variable BLOB_READ_WRITE_TOKEN tidak ditemukan di server.'
-    });
-    return;
-  }
+  const token = getOptionalBlobToken();
 
   const getExtAndMime = (filename: string, rawMime?: string): { ext: string; mime: string } | null => {
     const lower = filename.toLowerCase();
@@ -2110,6 +2126,29 @@ app.post('/api/blob-upload', (req: Request, res: Response): void => {
       .replace(/^-+|-+$/g, '')
       .slice(0, 60) || 'asset';
     const blobPathname = `${targetFolder}/${Date.now()}-${rawBase}${typeInfo.ext}`;
+
+    if (!token) {
+      const localName = `${targetFolder}_${Date.now()}_${rawBase}${typeInfo.ext}`;
+      const localPath = path.join(uploadsDir, localName);
+      fs.writeFileSync(localPath, fileBuffer);
+      const localUrl = `/uploads/${localName}`;
+      registerUploadedMedia({
+        url: localUrl,
+        filename: localName,
+        size: fileBuffer.length,
+        mimeType: typeInfo.mime,
+        uploadedAt: new Date().toISOString(),
+        dataUrl: `data:${typeInfo.mime};base64,${fileBuffer.toString('base64')}`,
+      });
+      const origin = getRequestOrigin(req);
+      res.status(200).json({
+        url: `${origin}${localUrl}`,
+        pathname: blobPathname,
+        size: fileBuffer.length,
+        storage: 'local-fallback',
+      });
+      return;
+    }
 
     const blob = await put(blobPathname, fileBuffer, {
       access: 'public',
@@ -2231,7 +2270,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction): void => {
 // ============================================================================
 // 5. DYNAMIC METADATA & OPENGRAPH INJECTOR (WHATSAPP & SOCIAL SHARING)
 // ============================================================================
-const KNOWN_PUBLIC_ORIGIN = process.env.PUBLIC_URL || process.env.VITE_APP_URL || 'https://ais-pre-m55vh2eazot5s2owza5ozo-535307665475.asia-southeast1.run.app';
+const KNOWN_PUBLIC_ORIGIN = process.env.PUBLIC_URL || process.env.VITE_APP_URL || 'https://ais-pre-mxab2e5ln5bmg4bqdlekao-238675116784.asia-southeast1.run.app';
 
 function getRequestOrigin(req: Request): string {
   const forwardedProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim();
@@ -2310,29 +2349,45 @@ function getProjectById(projectId: string): any | null {
   return null;
 }
 
-async function resolveProjectData(projectId: string): Promise<any | null> {
-  const local = getProjectById(projectId);
-  if (local) return local;
-
-  // Coba ambil dari Cloud Firestore melalui REST API
+async function resolvePrimaryCoverImage(): Promise<{ imagePath: string; mimeType: string; width: number; height: number }> {
   try {
-    const firestoreUrl = getFirestoreRestDocUrl('projects', projectId);
-    const resp = await fetch(firestoreUrl, { method: 'GET' });
-    if (resp.ok) {
-      const docJson: any = await resp.json();
-      const fields = docJson?.fields;
-      if (fields) {
+    const { data } = await readJsonFromBlob<SiteSettingsJsonData>(
+      BLOB_PATHS.SITE_SETTINGS,
+      createInitialSiteSettingsSeed
+    );
+    if (data && typeof data.heroImage === 'string' && data.heroImage.trim().length > 0) {
+      const candidate = data.heroImage.trim();
+      if (candidate.startsWith('http://') || candidate.startsWith('https://')) {
+        const isWebp = candidate.toLowerCase().endsWith('.webp');
+        const isJpg = candidate.toLowerCase().endsWith('.jpg') || candidate.toLowerCase().endsWith('.jpeg');
         return {
-          id: projectId,
-          title: fields.title?.stringValue || 'Karya Desain',
-          category: fields.category?.stringValue || 'Desain Grafis',
-          description: fields.description?.stringValue || '',
-          image: fields.image?.stringValue || '',
+          imagePath: candidate,
+          mimeType: isWebp ? 'image/webp' : isJpg ? 'image/jpeg' : 'image/png',
+          width: 1200,
+          height: 630,
         };
       }
     }
-  } catch {}
-  return null;
+  } catch {
+    // Fallback to local seed config
+  }
+  return getPrimaryCoverImage();
+}
+
+async function resolveProjectData(projectId: string): Promise<any | null> {
+  try {
+    const { data } = await readJsonFromBlob<PortfolioJsonData>(
+      BLOB_PATHS.PORTFOLIO,
+      createInitialPortfolioSeed
+    );
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const found = items.find((p: any) => String(p?.id) === String(projectId));
+    if (found) return found;
+  } catch {
+    // Fallback to local JSON file
+  }
+
+  return getProjectById(projectId);
 }
 
 async function injectDynamicMeta(html: string, req: Request): Promise<string> {
@@ -2386,7 +2441,7 @@ async function injectDynamicMeta(html: string, req: Request): Promise<string> {
     imageAlt = `${project.title || 'Karya'} - Portofolio Desain Grafis Alfreelnc`;
   } else {
     // 2. Halaman utama (tanpa parameter karya): gunakan default setting brand & cover hero utama
-    const cover = getPrimaryCoverImage();
+    const cover = await resolvePrimaryCoverImage();
     imagePath = cover.imagePath;
     mimeType = cover.mimeType;
     width = cover.width;
@@ -2566,7 +2621,7 @@ async function startServer() {
     const vite = await createServer({
       server: { 
         middlewareMode: true,
-        hmr: { server }
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server }
       },
       appType: 'custom',
     });

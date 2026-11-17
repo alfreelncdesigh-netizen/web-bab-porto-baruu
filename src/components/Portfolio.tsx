@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
-import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRight, Sparkles, Search, MessageCircle, ChevronLeft, ChevronRight, Eye, Clock, Wrench, CalendarCheck, Activity, ChevronDown, Maximize2, Minimize2, Handshake } from 'lucide-react';
-import { Project } from '../data/projects';
-import { getStoredProjects, cleanProjects, sortProjectsByRecency, subscribeProjectsRealtime } from '../lib/contentStorage';
+import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRight, Sparkles, Search, MessageCircle, ChevronLeft, ChevronRight, Eye, Clock, Wrench, CalendarCheck, Activity, ChevronDown, Maximize2, Minimize2, Handshake, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Project } from '../types/project';
+import { getStoredProjects, cleanProjects, sortProjectsByRecency, subscribeProjectsRealtime, subscribeContentBlobErrors, fetchProjectsFromBlob } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
 import {
   isImageAlreadyLoaded,
@@ -373,6 +373,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   const [sharingProject, setSharingProject] = useState<Project | null>(null);
   const [shareToast, setShareToast] = useState<string | null>(null);
   const [loading, setLoading] = useState(() => getStoredProjects().length === 0);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
 
   // Mode Layout Kisi Portofolio: 'grid-3' (tampilan 3 karya) atau 'grid-2' (dua gambar kanan & kiri rasio asli)
   const [layoutMode, setLayoutMode] = useState<'grid-3' | 'grid-2'>(() => {
@@ -474,6 +475,14 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       }
     });
 
+    const unsubscribeErrors = subscribeContentBlobErrors((errs) => {
+      if (!isMounted) return;
+      setProjectsError(errs.projects);
+      if (errs.projects) {
+        setLoading(false);
+      }
+    });
+
     const timer = setTimeout(() => {
       if (isMounted) setLoading(false);
     }, 1500);
@@ -482,6 +491,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       isMounted = false;
       clearTimeout(timer);
       unsubscribe();
+      unsubscribeErrors();
       window.removeEventListener('user_projects_updated', handleUpdate);
     };
   }, []);
@@ -807,6 +817,22 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           </div>
         </div>
 
+        {projectsError && (
+          <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/25 text-red-700 dark:text-red-300 text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
+              <span>{projectsError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchProjectsFromBlob().catch(() => {})}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0 w-fit cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Muat Ulang
+            </button>
+          </div>
+        )}
+
         {loading && filteredProjects.length === 0 ? (
           <div className={
             layoutMode === 'grid-2'
@@ -1042,7 +1068,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               ) : (
                 <div className="col-span-full py-16 text-center bg-zinc-50 dark:bg-[#111111] rounded-2xl border border-zinc-200/50 dark:border-zinc-800/50">
                   <p className="text-black dark:text-zinc-400 text-xs md:text-sm font-medium">
-                    Belum ada karya yang ditampilkan.
+                    {projectsError ? 'Data karya gagal dimuat dari Vercel Blob.' : 'Belum ada karya yang ditampilkan.'}
                   </p>
                 </div>
               )

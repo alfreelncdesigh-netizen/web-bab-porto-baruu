@@ -8,17 +8,13 @@ import {
 import { QuickFilterItem } from '../types/quickFilter';
 import { 
   getStoredQuickFilterItems, 
-  saveStoredQuickFilterItems,
+  fetchQuickFilterFromBlob,
   saveQuickFilterItemToFirestore, 
   deleteQuickFilterItemFromFirestore,
-  cleanQuickFilterItems
 } from '../lib/quickFilterStorage';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
 import { CustomLoadingPlaceholder } from './SectionInsight';
 import { compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function QuickFilterAdmin() {
@@ -64,52 +60,32 @@ export default function QuickFilterAdmin() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Subscribe directly to Cloud Firestore quickFilterQA collection for real-time admin sync
   useEffect(() => {
     let isMounted = true;
     const handleUpdate = (e: any) => {
-      if (e.detail && Array.isArray(e.detail) && isMounted) setItems(e.detail);
+      if (e.detail && Array.isArray(e.detail) && isMounted) {
+        setItems(e.detail);
+        setIsLoading(false);
+      }
     };
     window.addEventListener('quick_filter_updated', handleUpdate);
 
-    const unsubscribe = onSnapshot(
-      collection(db, 'quickFilterQA'),
-      (snapshot) => {
-        if (!isMounted) return;
-        const loaded: QuickFilterItem[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          loaded.push({
-            id: docSnap.id,
-            question: data.question || '',
-            answer: data.answer || '',
-            category: data.category || 'Tren Desain',
-            images: Array.isArray(data.images) ? data.images : (typeof data.image === 'string' && data.image ? [data.image] : []),
-            tags: data.tags || [],
-            order: data.order ?? 0,
-            published: data.published !== false,
-            createdAt: data.createdAt,
-            updatedAt: data.updatedAt
-          });
-        });
-
-        const cleaned = cleanQuickFilterItems(loaded);
-        setItems(cleaned);
-        saveStoredQuickFilterItems(cleaned);
-        setIsLoading(false);
-      },
-      (error) => {
-        logFirestoreError(error, OperationType.LIST, 'quickFilterQA');
+    fetchQuickFilterFromBlob()
+      .then((cleaned) => {
+        if (isMounted) {
+          setItems(cleaned);
+          setIsLoading(false);
+        }
+      })
+      .catch((error: any) => {
         if (isMounted) {
           setIsLoading(false);
-          showToast(error?.message || 'Gagal memuat data Insight dari Cloud Firestore.', 'error');
+          showToast(error?.message || 'Gagal memuat data Insight.', 'error');
         }
-      }
-    );
+      });
 
     return () => {
       isMounted = false;
-      unsubscribe();
       window.removeEventListener('quick_filter_updated', handleUpdate);
     };
   }, []);

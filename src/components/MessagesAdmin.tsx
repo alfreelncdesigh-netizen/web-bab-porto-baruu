@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
 import { Trash2, Mail, Calendar, Check, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import ConfirmModal from './ConfirmModal';
+
+const ADMIN_AUTH_TOKEN = 'alfreelnc_admin_auth_verified';
 
 export default function MessagesAdmin() {
   const [messages, setMessages] = useState<any[]>([]);
@@ -20,38 +20,49 @@ export default function MessagesAdmin() {
   useEffect(() => {
     const DUMMY_COMMENT_NAMES = new Set(['Rahmat Hidayat', 'Siti Nurhaliza', 'Dimas Pratama', 'Putri Ayu Lestari']);
     const DUMMY_COMMENT_IDS = new Set(['msg_1730000101', 'msg_1730000102', 'msg_1730000103', 'msg_1730000104']);
+    let active = true;
 
-    const unsubscribe = onSnapshot(
-      collection(db, 'messages'),
-      (snapshot) => {
-        const msgData: any[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (
-            data.isDeleted === true ||
-            data.status === 'deleted' ||
-            DUMMY_COMMENT_IDS.has(docSnap.id) ||
-            DUMMY_COMMENT_NAMES.has(String(data.name || '').trim())
-          ) {
-            return;
-          }
-          msgData.push({ id: docSnap.id, ...data });
+    const loadMessages = async () => {
+      try {
+        const res = await fetch('/api/messages', { method: 'GET', cache: 'no-store' });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(data?.error || `Gagal memuat pesan (HTTP ${res.status})`);
+        }
+        const rawList = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+        const msgData = rawList.filter((item: any) => {
+          if (!item) return false;
+          return !(
+            item.isDeleted === true ||
+            item.status === 'deleted' ||
+            DUMMY_COMMENT_IDS.has(String(item.id || '')) ||
+            DUMMY_COMMENT_NAMES.has(String(item.name || '').trim())
+          );
         });
-        msgData.sort((a, b) => {
+        msgData.sort((a: any, b: any) => {
           const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
           const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
           return timeB - timeA;
         });
-        setMessages(msgData);
-        setLoading(false);
-      },
-      (err) => {
-        console.error("Messages error:", err);
-        showToast(err?.message || "Gagal memuat pesan dari Firestore.", "error");
-        setLoading(false);
+        if (active) setMessages(msgData);
+      } catch (err: any) {
+        if (active) showToast(err?.message || 'Gagal memuat pesan masuk.', 'error');
+      } finally {
+        if (active) setLoading(false);
       }
-    );
-    return () => unsubscribe();
+    };
+
+    void loadMessages();
+
+    const handleUpdated = () => {
+      void loadMessages();
+    };
+    window.addEventListener('messages_updated', handleUpdated);
+
+    return () => {
+      active = false;
+      window.removeEventListener('messages_updated', handleUpdated);
+    };
   }, []);
 
   const handleDelete = (msg: any) => {
@@ -64,16 +75,28 @@ export default function MessagesAdmin() {
     const id = String(messageToDelete.id);
 
     try {
-      await deleteDoc(doc(db, 'messages', id));
+      const res = await fetch('/api/messages', {
+        method: 'DELETE',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': ADMIN_AUTH_TOKEN,
+        },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || `Gagal menghapus pesan (HTTP ${res.status})`);
+      }
 
       setMessages(prev => prev.filter(m => String(m.id) !== id));
       setMessageToDelete(null);
       window.dispatchEvent(new CustomEvent('message_deleted', { detail: { id } }));
       window.dispatchEvent(new CustomEvent('messages_updated'));
-      showToast("Pesan berhasil dihapus dari Firestore.");
+      showToast('Pesan berhasil dihapus permanen.');
     } catch (err: any) {
-      console.error("Delete message error:", err);
-      showToast(err?.message || "Gagal menghapus pesan dari Firestore.", "error");
+      console.error('Delete message error:', err);
+      showToast(err?.message || 'Gagal menghapus pesan.', 'error');
     } finally {
       setIsDeleting(false);
     }

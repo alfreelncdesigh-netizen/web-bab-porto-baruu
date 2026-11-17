@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, ArrowUpRight, Sparkles } from 'lucide-react';
 import { getStoredCookieConsent } from "../lib/cookies";
-import { SiteSettings, defaultSettings, PromoPosterItem, defaultPromoPosters } from '../data/settings';
+import { SiteSettings, defaultSettings, PromoPosterItem, defaultPromoPosters } from '../types/site';
 import { getStoredSettings, subscribeSettingsRealtime } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 

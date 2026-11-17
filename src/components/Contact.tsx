@@ -1,11 +1,8 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, MapPin, Phone, Check, ArrowRight, MessageSquare, MessageCircle, Send, CheckCircle2, X, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
-import { db } from '../lib/firebase';
-import { onSnapshot, collection, setDoc, doc } from 'firebase/firestore';
-import { SiteSettings } from '../data/settings';
+import { SiteSettings } from '../types/site';
 import { getStoredSettings, subscribeSettingsRealtime } from '../lib/contentStorage';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { FastInput, FastTextarea } from './FastInput';
 import { useLanguage } from '../contexts/LanguageContext';
 import { 
@@ -89,43 +86,49 @@ export default function Contact() {
   };
   window.addEventListener('message_deleted', handleMessageDeleted);
 
-  // 1. Berlangganan pesan & komentar langsung dari Cloud Firestore
-  const unsubscribeMessages = onSnapshot(
-    collection(db, 'messages'),
-    (snapshot) => {
-      const currentStored = getStoredSettings();
-      const deletedSet = new Set(currentStored.deletedMessageIds || []);
-
-      const msgData: any[] = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (
-          data.isDeleted === true ||
-          data.status === 'deleted' ||
-          deletedSet.has(docSnap.id) ||
-          DUMMY_COMMENT_IDS.has(docSnap.id) ||
-          DUMMY_COMMENT_NAMES.has(String(data.name || '').trim())
-        ) {
-          return;
-        }
-        msgData.push({ id: docSnap.id, ...data });
-      });
-
-      msgData.sort((a, b) => {
-        const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
-        const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
-        return timeB - timeA;
-      });
-      setMessages(msgData);
-      setLoadingMessages(false);
-    },
-    (err) => {
-      logFirestoreError(err, OperationType.LIST, 'messages');
+  const loadMessagesFromApi = async () => {
+    try {
+      const res = await fetch('/api/messages', { method: 'GET', cache: 'no-store' });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        const currentStored = getStoredSettings();
+        const deletedSet = new Set(currentStored.deletedMessageIds || []);
+        const rawList = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+        const msgData = rawList.filter((item: any) => {
+          if (!item) return false;
+          if (
+            item.isDeleted === true ||
+            item.status === 'deleted' ||
+            deletedSet.has(String(item.id || '')) ||
+            DUMMY_COMMENT_IDS.has(String(item.id || '')) ||
+            DUMMY_COMMENT_NAMES.has(String(item.name || '').trim())
+          ) {
+            return false;
+          }
+          return true;
+        });
+        msgData.sort((a: any, b: any) => {
+          const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+          const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+          return timeB - timeA;
+        });
+        setMessages(msgData);
+      }
+    } catch {
+      // Abaikan jika gagal sementara
+    } finally {
       setLoadingMessages(false);
     }
-  );
+  };
 
-  // 2. Berlangganan pengaturan kontak langsung dari Cloud Firestore (shared singleton)
+  void loadMessagesFromApi();
+
+  const handleMessagesUpdated = () => {
+    void loadMessagesFromApi();
+  };
+  window.addEventListener('messages_updated', handleMessagesUpdated);
+
+  // 2. Berlangganan pengaturan kontak dari Vercel Blob (shared singleton)
   const unsubscribe = subscribeSettingsRealtime((nextSettings) => {
     setSettings(nextSettings);
     if (Array.isArray(nextSettings.deletedMessageIds) && nextSettings.deletedMessageIds.length > 0) {
@@ -141,10 +144,10 @@ export default function Contact() {
   return () => {
     clearTimeout(commentsTimeout);
     unsubscribe();
-    unsubscribeMessages();
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     window.removeEventListener('app_settings_updated', handleSettingsUpdate);
     window.removeEventListener('message_deleted', handleMessageDeleted);
+    window.removeEventListener('messages_updated', handleMessagesUpdated);
   };
  }, []);
 
@@ -163,21 +166,32 @@ export default function Contact() {
   };
 
   try {
-    await setDoc(doc(db, 'messages', newCommentObj.id), newCommentObj, { merge: true });
+    const res = await fetch('/api/messages', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newCommentObj),
+    });
+    const result = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(result?.error || `Gagal menyimpan pesan (HTTP ${res.status})`);
+    }
+    const savedItem = result?.item || newCommentObj;
+    setMessages(prev => [savedItem, ...prev.filter(m => String(m.id) !== String(savedItem.id))]);
     setIsSuccess(true);
     setFormData({ name: '', email: '', message: '' });
+    window.dispatchEvent(new CustomEvent('messages_updated'));
     triggerToast(
       'success',
       'Pesan Berhasil Terkirim!',
-      `Terima kasih${currentName ? `, ${currentName}` : ''}. Komentar Anda telah tersimpan di Cloud Firestore dan tampil di website.`
+      `Terima kasih${currentName ? `, ${currentName}` : ''}. Komentar Anda telah tersimpan dan tampil di website.`
     );
     setTimeout(() => setIsSuccess(false), 5000);
   } catch (error: any) {
-    logFirestoreError(error, OperationType.CREATE, `messages/${newCommentObj.id}`);
     triggerToast(
       'error',
       'Gagal Mengirim Pesan',
-      `Operasi Cloud Firestore gagal: ${error?.message || 'Silakan coba lagi.'}`
+      error?.message || 'Silakan coba lagi.'
     );
   } finally {
     setIsSubmitting(false);

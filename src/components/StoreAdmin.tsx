@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShoppingCart, Trash2, Calendar, Phone, CheckCircle, Clock, Search, MessageSquare, ExternalLink, RefreshCw } from 'lucide-react';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import ConfirmModal from './ConfirmModal';
 import { getTimestampMs } from '../lib/contentStorage';
+
+const ADMIN_AUTH_TOKEN = 'alfreelnc_admin_auth_verified';
 
 interface OrderItem {
   id: string;
@@ -41,24 +41,36 @@ export default function StoreAdmin() {
   };
 
   useEffect(() => {
-    const unsub = onSnapshot(
-      collection(db, 'orders'),
-      (snapshot) => {
-        const loaded: OrderItem[] = [];
-        snapshot.forEach((d) => {
-          loaded.push({ id: d.id, ...d.data() } as OrderItem);
-        });
+    let active = true;
+
+    fetch('/api/orders', {
+      method: 'GET',
+      cache: 'no-store',
+      headers: { 'x-admin-token': ADMIN_AUTH_TOKEN },
+    })
+      .then((res) => res.json().then((d) => ({ ok: res.ok, data: d })))
+      .then(({ ok, data }) => {
+        if (!active) return;
+        if (!ok) {
+          throw new Error(data?.error || 'Gagal memuat daftar pesanan.');
+        }
+        const rawList = Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : []);
+        const loaded = [...rawList] as OrderItem[];
         loaded.sort((a, b) => getTimestampMs(b.createdAt) - getTimestampMs(a.createdAt));
         setOrders(loaded);
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Orders Admin Error:', error);
-        showToast(error?.message || 'Gagal memuat order dari Firestore.', 'error');
-        setLoading(false);
-      }
-    );
-    return () => unsub();
+      })
+      .catch((error: any) => {
+        if (active) {
+          showToast(error?.message || 'Gagal memuat daftar pesanan.', 'error');
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleDelete = (order: OrderItem) => {
@@ -71,14 +83,27 @@ export default function StoreAdmin() {
     const id = String(orderToDelete.id);
 
     try {
-      await deleteDoc(doc(db, 'orders', id));
+      const res = await fetch(`/api/orders?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': ADMIN_AUTH_TOKEN,
+        },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || `Gagal menghapus pesanan (HTTP ${res.status})`);
+      }
+
       setOrders(prev => prev.filter(o => String(o.id) !== id));
       if (selectedOrder?.id === id) setSelectedOrder(null);
       showToast(`Order dari ${orderToDelete.nama || 'Pelanggan'} berhasil dihapus.`);
       setOrderToDelete(null);
     } catch (e: any) {
-      console.error("Delete order error:", e);
-      showToast(e?.message || 'Gagal menghapus order dari Firestore.', 'error');
+      console.error('Delete order error:', e);
+      showToast(e?.message || 'Gagal menghapus order.', 'error');
     } finally {
       setIsDeleting(false);
     }
@@ -86,11 +111,20 @@ export default function StoreAdmin() {
 
   const handleUpdateStatus = async (id: string, status: 'pending' | 'proses' | 'selesai') => {
     try {
-      await updateDoc(doc(db, 'orders', id), {
-        status,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
+      const res = await fetch(`/api/orders?id=${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-token': ADMIN_AUTH_TOKEN,
+        },
+        body: JSON.stringify({ id, status }),
       });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || `Gagal memperbarui status order (HTTP ${res.status})`);
+      }
+
       setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
       if (selectedOrder && selectedOrder.id === id) {
         setSelectedOrder({ ...selectedOrder, status });
@@ -98,7 +132,7 @@ export default function StoreAdmin() {
       showToast(`Status order diperbarui menjadi ${status}.`);
     } catch (e: any) {
       console.error('Update order status error:', e);
-      showToast(e?.message || 'Gagal memperbarui status order di Firestore.', 'error');
+      showToast(e?.message || 'Gagal memperbarui status order.', 'error');
     }
   };
 

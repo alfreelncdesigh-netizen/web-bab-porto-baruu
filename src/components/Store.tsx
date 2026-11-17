@@ -1,17 +1,14 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { User, Phone, Instagram, LayoutTemplate, PenTool, Layers, Maximize, Hash, Calendar, DollarSign, ArrowRight, ArrowLeft, Send, CheckCircle2, FileText, UploadCloud, Info, Wallet, FileEdit, X, ChevronDown, CreditCard, ShieldCheck, Sparkles, ExternalLink, Tag, ShoppingBag, Download } from 'lucide-react';
 import { FastInput, FastTextarea } from './FastInput';
 import { ServiceSelectModal, servicesList } from './ServiceSelectModal';
 import { getStoredSettings, subscribeSettingsRealtime } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
-import { defaultPromoPosters, PromoPosterItem } from '../data/settings';
+import { defaultPromoPosters, PromoPosterItem } from '../types/site';
 import { PAYMENT_METHODS, BriLogo, BrimoLogo, DanaLogo, GopayLogo, OvoLogo, ShopeePayLogo, LinkAjaLogo } from './PaymentLogos';
 import { getCookie, setCookie, deleteCookie } from '../lib/cookies';
 import { compressAndUpload } from '../lib/storageUploader';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface StoreProps {
@@ -313,7 +310,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
     const { total, breakdown } = getPriceBreakdown();
     const breakdownText = breakdown.map(b => `  - ${b.label}: ${formatIDR(b.price)}`).join('\n');
 
-    // Simpan data order langsung ke Cloud Firestore
+    // Simpan data order via API /api/orders (Vercel Blob JSON / local fallback)
     const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const orderRecord = {
       id: orderId,
@@ -336,13 +333,18 @@ export default function Store({ isOrderView = false }: StoreProps) {
     };
 
     try {
-      await setDoc(doc(db, 'orders', orderId), {
-        ...orderRecord,
-        createdAt: serverTimestamp(),
-      }, { merge: true });
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(orderRecord),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || `Gagal menyimpan pesanan (HTTP ${res.status})`);
+      }
     } catch (error: any) {
-      logFirestoreError(error, OperationType.CREATE, `orders/${orderId}`);
-      showToast(`Gagal menyimpan pesanan ke Cloud Firestore: ${error?.message || 'Coba lagi.'}`);
+      showToast(error?.message || 'Gagal menyimpan pesanan. Coba lagi.');
       return;
     }
     

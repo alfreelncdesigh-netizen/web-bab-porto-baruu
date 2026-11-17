@@ -33,8 +33,19 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Project } from '../data/projects';
-import { cleanProjects } from '../lib/contentStorage';
+import { Project } from '../types/project';
+import {
+  cleanProjects,
+  fetchProjectsFromBlob,
+  fetchExperiencesFromBlob,
+  fetchBlogsFromBlob,
+  patchProjectInBlob,
+  deleteProjectFromBlob,
+  patchExperienceInBlob,
+  deleteExperienceFromBlob,
+  patchBlogInBlob,
+  deleteBlogFromBlob,
+} from '../lib/contentStorage';
 import { resolveImageUrl } from '../lib/imageResolver';
 import ConfirmModal from './ConfirmModal';
 
@@ -137,68 +148,67 @@ export default function ArchiveAdmin() {
     }
   }, [selectedFolder]);
 
-  // Load available unarchived projects strictly from Cloud Firestore
+  // Load available unarchived projects from Vercel Blob (data/portfolio.json)
   const loadAvailableProjects = async () => {
     try {
-      const snap = await getDocs(collection(db, 'projects'));
-      const cloudProjs: Project[] = [];
-      snap.forEach((docSnap) => {
-        const data = docSnap.data() as any;
-        if (!data.isArchived && data.isDeleted !== true) {
-          cloudProjs.push({ id: docSnap.id, ...data } as Project);
-        }
-      });
-      setAvailableProjects(cleanProjects(cloudProjs));
+      const activeProjs = await fetchProjectsFromBlob({ includeArchived: false });
+      setAvailableProjects(cleanProjects(activeProjs));
     } catch (err: any) {
       console.error("Failed to load available projects:", err);
-      showToast(err?.message || "Gagal memuat daftar karya aktif dari Firestore.", "error");
+      showToast(err?.message || "Gagal memuat daftar karya aktif dari Vercel Blob.", "error");
     }
   };
 
-  // Load items inside a folder strictly from Cloud Firestore
+  // Load items inside a folder from Vercel Blob (projects & experiences) + Firestore (blogPosts)
   const loadItems = async (folderId: string) => {
     setLoading(true);
     try {
+      const [allProjects, allExps, allBlogs] = await Promise.all([
+        fetchProjectsFromBlob({ includeArchived: true }),
+        fetchExperiencesFromBlob({ includeArchived: true }),
+        fetchBlogsFromBlob({ includeArchived: true }),
+      ]);
+
       const loadedItems: ArchivedItem[] = [];
 
-      const pSnap = await getDocs(query(collection(db, 'projects'), where('archiveFolderId', '==', folderId)));
-      pSnap.forEach(d => {
-        const data = d.data();
-        loadedItems.push({
-          id: d.id,
-          title: data.title || 'Tanpa Judul',
-          type: 'projects',
-          image: data.image,
-          category: data.category
+      allProjects
+        .filter((p: any) => p && p.archiveFolderId === folderId)
+        .forEach((data: any) => {
+          loadedItems.push({
+            id: String(data.id),
+            title: data.title || 'Tanpa Judul',
+            type: 'projects',
+            image: data.image,
+            category: data.category,
+          });
         });
-      });
 
-      const bSnap = await getDocs(query(collection(db, 'blogPosts'), where('archiveFolderId', '==', folderId)));
-      bSnap.forEach(d => {
-        const data = d.data();
-        loadedItems.push({
-          id: d.id,
-          title: data.title || 'Tanpa Judul',
-          type: 'blogPosts',
-          image: data.image
+      allBlogs
+        .filter((b: any) => b && b.archiveFolderId === folderId)
+        .forEach((data: any) => {
+          loadedItems.push({
+            id: String(data.id),
+            title: data.title || 'Tanpa Judul',
+            type: 'blogPosts',
+            image: data.image,
+          });
         });
-      });
 
-      const eSnap = await getDocs(query(collection(db, 'experiences'), where('archiveFolderId', '==', folderId)));
-      eSnap.forEach(d => {
-        const data = d.data();
-        loadedItems.push({
-          id: d.id,
-          title: `${data.header || data.role || ''} at ${data.company || ''}`,
-          type: 'experiences',
-          image: (data.images && data.images.length > 0) ? data.images[0] : undefined
+      allExps
+        .filter((e: any) => e && e.archiveFolderId === folderId)
+        .forEach((data: any) => {
+          loadedItems.push({
+            id: String(data.id),
+            title: `${data.header || data.role || ''}${data.company ? ` at ${data.company}` : ''}`,
+            type: 'experiences',
+            image: (Array.isArray(data.images) && data.images.length > 0) ? data.images[0] : data.image,
+          });
         });
-      });
 
       setItems(loadedItems);
     } catch (e: any) {
       console.error("Error loading archived items:", e);
-      showToast(e?.message || "Gagal memuat isi folder arsip dari Firestore.", "error");
+      showToast(e?.message || "Gagal memuat isi folder arsip.", "error");
     } finally {
       setLoading(false);
     }
@@ -210,7 +220,6 @@ export default function ArchiveAdmin() {
     if (!newFolderName.trim() || isProcessing) return;
     setIsProcessing(true);
     const trimmedName = newFolderName.trim();
-    const nowIso = new Date().toISOString();
 
     try {
       // 1. Create Archive Folder in Firestore
@@ -220,19 +229,15 @@ export default function ArchiveAdmin() {
       });
       const newFolder: ArchiveFolder = { id: folderRef.id, name: trimmedName };
 
-      // 2. If user selected projects to include in this archive
+      // 2. If user selected projects to include in this archive, update via Vercel Blob
       if (selectedProjectIdsForNewArchive.length > 0) {
-        const batch = writeBatch(db);
-        for (const projId of selectedProjectIdsForNewArchive) {
-          batch.set(doc(db, 'projects', projId), {
+        await patchProjectInBlob({
+          ids: selectedProjectIdsForNewArchive,
+          updates: {
             isArchived: true,
             archiveFolderId: folderRef.id,
-            updatedAt: nowIso,
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true
-          }, { merge: true });
-        }
-        await batch.commit();
+          },
+        });
 
         setAvailableProjects(prev => prev.filter(p => !selectedProjectIdsForNewArchive.includes(p.id.toString())));
       }
@@ -249,7 +254,7 @@ export default function ArchiveAdmin() {
       setSelectedFolder(newFolder);
     } catch (err: any) {
       console.error("Failed to create archive:", err);
-      showToast(err?.message || "Gagal membuat arsip di Firestore. Silakan coba lagi.", "error");
+      showToast(err?.message || "Gagal membuat arsip. Silakan coba lagi.", "error");
     } finally {
       setIsProcessing(false);
     }
@@ -259,22 +264,17 @@ export default function ArchiveAdmin() {
   const handleAddProjectsToCurrentFolder = async () => {
     if (!selectedFolder || selectedProjectIdsForExisting.length === 0 || isProcessing) return;
     setIsProcessing(true);
-    const nowIso = new Date().toISOString();
 
     try {
       const newlyArchived = availableProjects.filter(p => selectedProjectIdsForExisting.includes(p.id.toString()));
 
-      const batch = writeBatch(db);
-      for (const projId of selectedProjectIdsForExisting) {
-        batch.set(doc(db, 'projects', projId), {
+      await patchProjectInBlob({
+        ids: selectedProjectIdsForExisting,
+        updates: {
           isArchived: true,
           archiveFolderId: selectedFolder.id,
-          updatedAt: nowIso,
-          _adminAuth: 'alfreelnc_admin_auth_verified',
-          updatedByAdmin: true
-        }, { merge: true });
-      }
-      await batch.commit();
+        },
+      });
 
       setAvailableProjects(prev => prev.filter(p => !selectedProjectIdsForExisting.includes(p.id.toString())));
 
@@ -295,7 +295,7 @@ export default function ArchiveAdmin() {
       setIsAddItemsModalOpen(false);
     } catch (err: any) {
       console.error("Failed to add projects to folder:", err);
-      showToast(err?.message || "Gagal memasukkan karya ke arsip Firestore.", "error");
+      showToast(err?.message || "Gagal memasukkan karya ke arsip Vercel Blob.", "error");
     } finally {
       setIsProcessing(false);
     }
@@ -339,39 +339,48 @@ export default function ArchiveAdmin() {
 
   const executeDeleteFolder = async (folderId: string, mode: 'restore_items' | 'delete_all') => {
     setIsProcessing(true);
-    const nowIso = new Date().toISOString();
     try {
-      const batch = writeBatch(db);
+      const [allProjects, allExps, allBlogs] = await Promise.all([
+        fetchProjectsFromBlob({ includeArchived: true }),
+        fetchExperiencesFromBlob({ includeArchived: true }),
+        fetchBlogsFromBlob({ includeArchived: true }),
+      ]);
 
-      const pSnap = await getDocs(query(collection(db, 'projects'), where('archiveFolderId', '==', folderId)));
-      pSnap.forEach(d => {
+      const projIds = allProjects
+        .filter((p: any) => p && p.archiveFolderId === folderId)
+        .map((p: any) => String(p.id));
+      const expIds = allExps
+        .filter((e: any) => e && e.archiveFolderId === folderId)
+        .map((e: any) => String(e.id));
+      const blogIds = allBlogs
+        .filter((b: any) => b && b.archiveFolderId === folderId)
+        .map((b: any) => String(b.id));
+
+      if (projIds.length > 0) {
         if (mode === 'restore_items') {
-          batch.set(doc(db, 'projects', d.id), { isArchived: false, archiveFolderId: null, updatedAt: nowIso }, { merge: true });
+          await patchProjectInBlob({ ids: projIds, updates: { isArchived: false, archiveFolderId: null } });
         } else {
-          batch.delete(doc(db, 'projects', d.id));
+          await deleteProjectFromBlob(projIds);
         }
-      });
+      }
 
-      const bSnap = await getDocs(query(collection(db, 'blogPosts'), where('archiveFolderId', '==', folderId)));
-      bSnap.forEach(d => {
+      if (expIds.length > 0) {
         if (mode === 'restore_items') {
-          batch.set(doc(db, 'blogPosts', d.id), { isArchived: false, archiveFolderId: null, updatedAt: nowIso }, { merge: true });
+          await patchExperienceInBlob({ ids: expIds, updates: { isArchived: false, archiveFolderId: null } });
         } else {
-          batch.delete(doc(db, 'blogPosts', d.id));
+          await deleteExperienceFromBlob(expIds);
         }
-      });
+      }
 
-      const eSnap = await getDocs(query(collection(db, 'experiences'), where('archiveFolderId', '==', folderId)));
-      eSnap.forEach(d => {
+      if (blogIds.length > 0) {
         if (mode === 'restore_items') {
-          batch.set(doc(db, 'experiences', d.id), { isArchived: false, archiveFolderId: null, updatedAt: nowIso }, { merge: true });
+          await patchBlogInBlob({ ids: blogIds, updates: { isArchived: false, archiveFolderId: null } });
         } else {
-          batch.delete(doc(db, 'experiences', d.id));
+          await deleteBlogFromBlob(blogIds);
         }
-      });
+      }
 
-      batch.delete(doc(db, 'archiveFolders', folderId));
-      await batch.commit();
+      await deleteDoc(doc(db, 'archiveFolders', folderId));
 
       if (mode === 'restore_items') {
         showToast("Folder berhasil dihapus & karyanya kembali tampil di web!");
@@ -385,7 +394,7 @@ export default function ArchiveAdmin() {
       await loadAvailableProjects();
     } catch (err: any) {
       console.error("Failed to delete folder:", err);
-      showToast(err?.message || "Gagal menghapus folder di Firestore. Silakan coba lagi.", "error");
+      showToast(err?.message || "Gagal menghapus folder arsip. Silakan coba lagi.", "error");
     } finally {
       setIsProcessing(false);
     }
@@ -394,15 +403,14 @@ export default function ArchiveAdmin() {
   // Restore single item back to public
   const handleRestore = async (item: ArchivedItem) => {
     setIsProcessing(true);
-    const nowIso = new Date().toISOString();
     try {
-      await setDoc(doc(db, item.type, item.id), {
-        isArchived: false,
-        archiveFolderId: null,
-        updatedAt: nowIso,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
-      }, { merge: true });
+      if (item.type === 'projects') {
+        await patchProjectInBlob({ id: item.id, updates: { isArchived: false, archiveFolderId: null } });
+      } else if (item.type === 'experiences') {
+        await patchExperienceInBlob({ id: item.id, updates: { isArchived: false, archiveFolderId: null } });
+      } else {
+        await patchBlogInBlob({ id: item.id, updates: { isArchived: false, archiveFolderId: null } });
+      }
 
       setItems(prev => prev.filter(i => i.id !== item.id));
       if (item.type === 'projects') {
@@ -411,7 +419,7 @@ export default function ArchiveAdmin() {
       showToast(`"${item.title}" berhasil dikeluarkan dan kembali tampil di web!`);
     } catch (e: any) {
       console.error("Failed to restore item:", e);
-      showToast(e?.message || "Gagal mengeluarkan karya dari arsip Firestore.", "error");
+      showToast(e?.message || "Gagal mengeluarkan karya dari arsip.", "error");
     } finally {
       setIsProcessing(false);
     }
@@ -423,20 +431,26 @@ export default function ArchiveAdmin() {
     setConfirmModal({
       isOpen: true,
       title: 'Hapus Konten Permanen?',
-      message: `HAPUS PERMANEN "${item.title}"? Konten ini akan dihapus selamanya dari arsip dan cloud database. Tindakan ini tidak dapat dibatalkan.`,
+      message: `HAPUS PERMANEN "${item.title}"? Konten ini akan dihapus selamanya dari arsip dan penyimpanan cloud. Tindakan ini tidak dapat dibatalkan.`,
       confirmText: 'Hapus Permanen',
       cancelText: 'Batal',
       variant: 'danger',
       onConfirm: async () => {
         setIsProcessing(true);
         try {
-          await deleteDoc(doc(db, item.type, item.id));
+          if (item.type === 'projects') {
+            await deleteProjectFromBlob(item.id);
+          } else if (item.type === 'experiences') {
+            await deleteExperienceFromBlob(item.id);
+          } else {
+            await deleteBlogFromBlob(item.id);
+          }
           setItems(prev => prev.filter(i => i.id !== item.id));
-          showToast(`"${item.title}" berhasil dihapus permanen dari Firestore.`);
+          showToast(`"${item.title}" berhasil dihapus permanen.`);
           setConfirmModal(prev => ({ ...prev, isOpen: false }));
         } catch (err: any) {
           console.error("Failed to delete item:", err);
-          showToast(err?.message || "Gagal menghapus konten dari Firestore.", "error");
+          showToast(err?.message || "Gagal menghapus konten.", "error");
         } finally {
           setIsProcessing(false);
         }
@@ -477,17 +491,29 @@ export default function ArchiveAdmin() {
         const nowIso = new Date().toISOString();
         try {
           const selectedItems = items.filter(i => selectedItemsForBulk.includes(i.id));
-          const batch = writeBatch(db);
-          for (const item of selectedItems) {
-            batch.set(doc(db, item.type, item.id), {
-              isArchived: false,
-              archiveFolderId: null,
-              updatedAt: nowIso,
-              _adminAuth: 'alfreelnc_admin_auth_verified',
-              updatedByAdmin: true
-            }, { merge: true });
+          const projIds = selectedItems.filter(i => i.type === 'projects').map(i => i.id);
+          const expIds = selectedItems.filter(i => i.type === 'experiences').map(i => i.id);
+          const blogItems = selectedItems.filter(i => i.type === 'blogPosts');
+
+          if (projIds.length > 0) {
+            await patchProjectInBlob({ ids: projIds, updates: { isArchived: false, archiveFolderId: null } });
           }
-          await batch.commit();
+          if (expIds.length > 0) {
+            await patchExperienceInBlob({ ids: expIds, updates: { isArchived: false, archiveFolderId: null } });
+          }
+          if (blogItems.length > 0) {
+            const batch = writeBatch(db);
+            for (const item of blogItems) {
+              batch.set(doc(db, 'blogPosts', item.id), {
+                isArchived: false,
+                archiveFolderId: null,
+                updatedAt: nowIso,
+                _adminAuth: 'alfreelnc_admin_auth_verified',
+                updatedByAdmin: true
+              }, { merge: true });
+            }
+            await batch.commit();
+          }
 
           setItems(prev => prev.filter(i => !selectedItemsForBulk.includes(i.id)));
           showToast(`${selectedItemsForBulk.length} karya berhasil dikembalikan ke website publik!`);
@@ -496,7 +522,7 @@ export default function ArchiveAdmin() {
           await loadAvailableProjects();
         } catch (e: any) {
           console.error("Failed to bulk restore:", e);
-          showToast(e?.message || "Gagal memproses pengembalian karya di Firestore.", "error");
+          showToast(e?.message || "Gagal memproses pengembalian karya.", "error");
         } finally {
           setIsProcessing(false);
           setLoading(false);
@@ -510,7 +536,7 @@ export default function ArchiveAdmin() {
     setConfirmModal({
       isOpen: true,
       title: `HAPUS PERMANEN ${selectedItemsForBulk.length} Karya?`,
-      message: `Tindakan ini tidak bisa dibatalkan! ${selectedItemsForBulk.length} karya terpilih akan dihapus selamanya dari arsip dan cloud database.`,
+      message: `Tindakan ini tidak bisa dibatalkan! ${selectedItemsForBulk.length} karya terpilih akan dihapus selamanya dari arsip dan penyimpanan cloud.`,
       confirmText: 'Hapus Semua Terpilih',
       cancelText: 'Batal',
       variant: 'danger',
@@ -519,19 +545,31 @@ export default function ArchiveAdmin() {
         setLoading(true);
         try {
           const selectedItems = items.filter(i => selectedItemsForBulk.includes(i.id));
-          const batch = writeBatch(db);
-          for (const item of selectedItems) {
-            batch.delete(doc(db, item.type, item.id));
+          const projIds = selectedItems.filter(i => i.type === 'projects').map(i => i.id);
+          const expIds = selectedItems.filter(i => i.type === 'experiences').map(i => i.id);
+          const blogItems = selectedItems.filter(i => i.type === 'blogPosts');
+
+          if (projIds.length > 0) {
+            await deleteProjectFromBlob(projIds);
           }
-          await batch.commit();
+          if (expIds.length > 0) {
+            await deleteExperienceFromBlob(expIds);
+          }
+          if (blogItems.length > 0) {
+            const batch = writeBatch(db);
+            for (const item of blogItems) {
+              batch.delete(doc(db, 'blogPosts', item.id));
+            }
+            await batch.commit();
+          }
 
           setItems(prev => prev.filter(i => !selectedItemsForBulk.includes(i.id)));
           setSelectedItemsForBulk([]);
-          showToast(`${selectedItemsForBulk.length} karya berhasil dihapus permanen dari Firestore.`);
+          showToast(`${selectedItemsForBulk.length} karya berhasil dihapus permanen.`);
           setConfirmModal(prev => ({ ...prev, isOpen: false }));
         } catch (e: any) {
           console.error("Failed to bulk delete:", e);
-          showToast(e?.message || "Gagal memproses penghapusan di Firestore.", "error");
+          showToast(e?.message || "Gagal memproses penghapusan.", "error");
         } finally {
           setIsProcessing(false);
           setLoading(false);

@@ -18,12 +18,10 @@ import CookieBanner from './components/CookieBanner';
 declare global { interface Window { hasRecordedView?: boolean; } }
 import { ThemeProvider } from './contexts/ThemeContext';
 import { LanguageProvider } from './contexts/LanguageContext';
-import { ArrowLeft } from 'lucide-react';
-import { db } from './lib/firebase';
-import { doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
-import { isQuotaError, markQuotaExhausted, isConnectivityError, markBackendUnreachable } from './lib/firestoreErrorHandler';
+import { ArrowLeft, AlertTriangle, RefreshCw, X } from 'lucide-react';
 import { 
-  getStoredSettings, subscribeSettingsRealtime, subscribeProjectsRealtime
+  getStoredSettings, subscribeSettingsRealtime, subscribeProjectsRealtime,
+  subscribeContentBlobErrors, fetchSettingsFromBlob
 } from './lib/contentStorage';
 import { resolveImageUrl } from './lib/imageResolver';
 import { preloadPortfolioImagesFast, markImageLoaded } from './lib/imageLoadCache';
@@ -244,6 +242,15 @@ export default function App() {
   const [isAppLoading, setIsAppLoading] = useState(true);
   const [showIntro, setShowIntro] = useState<boolean>(true);
   const [isSecondHalfLoaded, setIsSecondHalfLoaded] = useState(false);
+  const [settingsBlobError, setSettingsBlobError] = useState<string | null>(null);
+  const [dismissedSettingsError, setDismissedSettingsError] = useState(false);
+
+  useEffect(() => {
+    return subscribeContentBlobErrors((errs) => {
+      setSettingsBlobError(errs.settings);
+      if (!errs.settings) setDismissedSettingsError(false);
+    });
+  }, []);
 
   const handleIntroComplete = useCallback(() => {
     if (typeof document !== 'undefined') {
@@ -485,19 +492,17 @@ export default function App() {
       }
 
       try {
-        const statsRef = doc(db, 'stats', 'views');
-        const snap = await getDoc(statsRef);
-        if (snap.exists()) {
-          await updateDoc(statsRef, { count: increment(1) });
-        } else {
-          await setDoc(statsRef, { count: 1 });
+        const res = await fetch('/api/stats', {
+          method: 'POST',
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('app_stats_updated', { detail: data }));
+          }
         }
       } catch (e: any) {
-        if (isQuotaError(e)) {
-          markQuotaExhausted();
-        } else if (isConnectivityError(e)) {
-          markBackendUnreachable();
-        }
         console.warn("Notice: Stats view recording handled safely:", e?.message || e);
       }
     };
@@ -637,6 +642,34 @@ export default function App() {
                 <ArrowLeft className="w-4 h-4 transition-transform duration-200 group-hover:-translate-x-0.5" />
                 <span>Kembali ke Beranda</span>
               </button>
+            </div>
+          )}
+
+          {settingsBlobError && !dismissedSettingsError && (
+            <div className="w-full max-w-[1440px] mx-auto px-6 sm:px-8 md:px-10 lg:px-14 xl:px-18 pt-2">
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-red-500/10 border border-red-500/25 text-red-700 dark:text-red-300 text-xs sm:text-sm flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span className="truncate sm:whitespace-normal">{settingsBlobError}</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => fetchSettingsFromBlob().catch(() => {})}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-red-600 text-white text-[11px] font-semibold hover:bg-red-700 transition-colors cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Coba Lagi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDismissedSettingsError(true)}
+                    className="p-1 rounded-full hover:bg-red-500/15 transition-colors cursor-pointer"
+                    aria-label="Tutup pesan error"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 

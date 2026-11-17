@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, getDocs, addDoc, doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { patchProjectInBlob, patchExperienceInBlob, patchBlogInBlob } from '../lib/contentStorage';
 import { X, Folder, Plus, FolderDown, AlertCircle } from 'lucide-react';
 
 interface ArchiveFolder {
@@ -90,19 +91,36 @@ export default function ArchiveMoveModal({
     const nowIso = new Date().toISOString();
 
     try {
-      await setDoc(doc(db, itemType, itemId), {
-        isArchived: true,
-        archiveFolderId: folderId,
-        updatedAt: nowIso,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
-      }, { merge: true });
+      if (itemType === 'projects') {
+        await patchProjectInBlob({
+          id: itemId,
+          updates: { isArchived: true, archiveFolderId: folderId },
+        });
+      } else if (itemType === 'experiences') {
+        await patchExperienceInBlob({
+          id: itemId,
+          updates: { isArchived: true, archiveFolderId: folderId },
+        });
+      } else if (itemType === 'blogPosts') {
+        await patchBlogInBlob({
+          id: itemId,
+          updates: { isArchived: true, archiveFolderId: folderId },
+        });
+      } else {
+        await setDoc(doc(db, itemType, itemId), {
+          isArchived: true,
+          archiveFolderId: folderId,
+          updatedAt: nowIso,
+          _adminAuth: 'alfreelnc_admin_auth_verified',
+          updatedByAdmin: true
+        }, { merge: true });
+      }
 
       onSuccess(folderId);
       onClose();
     } catch (e: any) {
       console.error("Move to archive error:", e);
-      setErrorMsg(e?.message || "Gagal memindahkan konten ke arsip Firestore.");
+      setErrorMsg(e?.message || "Gagal memindahkan konten ke arsip.");
     } finally {
       setLoading(false);
     }

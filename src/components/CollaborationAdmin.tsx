@@ -6,12 +6,12 @@ import {
   Handshake, Key, Plus, Lock, UserCheck, Activity, Clock, Search,
   Filter, Smartphone, Laptop, Calendar, History, Shield, Globe, LogOut
 } from 'lucide-react';
-import { SiteSettings, CollaborationConfig, CollaboratorAccount, defaultSettings } from '../data/settings';
-import { getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { SiteSettings, CollaborationConfig, CollaboratorAccount, defaultSettings } from '../types/site';
+import { getStoredSettings, saveStoredSettings, fetchSettingsFromBlob } from '../lib/contentStorage';
 import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { db } from '../lib/firebase';
-import { doc, setDoc, getDoc, getDocs, deleteDoc, collection, onSnapshot, query, orderBy, limit, where } from 'firebase/firestore';
+import { doc, setDoc, getDocs, deleteDoc, collection, onSnapshot, query, orderBy, limit, where } from 'firebase/firestore';
 import { 
   CollaboratorActivityLog, 
   getStoredCollaboratorLogs, 
@@ -91,13 +91,14 @@ export default function CollaborationAdmin() {
       try {
         let remoteAccounts: CollaboratorAccount[] = [];
 
-        // 1. Ambil dari dokumen settings/global
-        const globalSnap = await getDoc(doc(db, 'settings', 'global'));
-        if (globalSnap.exists()) {
-          const globalData = globalSnap.data();
+        // 1. Ambil dari Vercel Blob (data/site-settings.json)
+        try {
+          const globalData = await fetchSettingsFromBlob();
           if (globalData?.collaboration?.collaboratorAccounts && Array.isArray(globalData.collaboration.collaboratorAccounts)) {
             remoteAccounts = globalData.collaboration.collaboratorAccounts;
           }
+        } catch (blobErr) {
+          console.warn("Notice checking collaboratorAccounts from Vercel Blob:", blobErr);
         }
 
         // 2. Ambil dari koleksi collaboratorAccounts jika ada
@@ -327,7 +328,7 @@ export default function CollaborationAdmin() {
       savedAt: Date.now()
     };
 
-    // 1. Simpan ke Cloud Firestore (settings/global, settings/hero, settings/cv, settings/promoPosters)
+    // 1. Simpan pengaturan kolaborasi ke Vercel Blob (data/site-settings.json)
     await saveStoredSettings(updatedSettings);
     setSettings(updatedSettings);
 
@@ -388,11 +389,10 @@ export default function CollaborationAdmin() {
       const savedCollab = await syncCollaboratorAccountsToStorageAndCloud(accounts);
       setCollab(savedCollab);
       markSaved(savedCollab);
-      showToast("Pengaturan kolaborasi & seluruh akun kolaborator berhasil disimpan ke Cloud Firestore!");
+      showToast("Pengaturan kolaborasi & seluruh akun kolaborator berhasil disimpan!");
     } catch (err: any) {
       console.error("Failed saving collaboration settings:", err);
-      logFirestoreError(err, OperationType.WRITE, 'settings/global');
-      showToast(err?.message || "Gagal menyimpan pengaturan kolaborasi ke Cloud Firestore.", "error");
+      showToast(err?.message || "Gagal menyimpan pengaturan kolaborasi ke Vercel Blob.", "error");
     } finally {
       setSaving(false);
     }

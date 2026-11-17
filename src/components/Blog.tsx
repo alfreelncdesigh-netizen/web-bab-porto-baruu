@@ -3,11 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BlogPost } from '../types/blog';
 import { X, ArrowRight, BookOpen, Sparkles, Handshake, MessageSquare, Send, Clock } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, addDoc } from 'firebase/firestore';
 import { getStoredBlogs, cleanBlogs, sortBlogsByRecency, subscribeBlogsRealtime } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import { 
   sectionStaggerContainer, 
@@ -109,7 +106,7 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
     }
   }, [selectedPost?.id]);
 
-  // Listener Komentar Real-time langsung dari Cloud Firestore
+  // Listener Komentar melalui API /api/blog-comments (bebas kuota Firestore)
   useEffect(() => {
     if (!selectedPost || !selectedPost.id) {
       setComments([]);
@@ -120,41 +117,25 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
     setLoadingComments(true);
     let isMounted = true;
 
-    const timeoutTimer = setTimeout(() => {
-      if (isMounted) setLoadingComments(false);
-    }, 2000);
-
-    let unsub = () => {};
-    try {
-      unsub = onSnapshot(
-        collection(db, 'blogPosts', blogId, 'comments'),
-        (snapshot) => {
-          if (!isMounted) return;
-          const loaded: any[] = [];
-          snapshot.forEach((d) => {
-            loaded.push({ id: d.id, ...d.data() });
-          });
-          loaded.sort((a, b) => {
-            const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-            const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-            return timeB - timeA;
-          });
-          setComments(loaded);
-          setLoadingComments(false);
-        },
-        (error) => {
-          logFirestoreError(error, OperationType.LIST, `blogPosts/${blogId}/comments`);
-          if (isMounted) setLoadingComments(false);
-        }
-      );
-    } catch {
-      if (isMounted) setLoadingComments(false);
-    }
+    fetch(`/api/blog-comments?blogId=${encodeURIComponent(blogId)}`, { method: 'GET', cache: 'no-store' })
+      .then((res) => res.json().then((d) => ({ ok: res.ok, data: d })))
+      .then(({ ok, data }) => {
+        if (!isMounted) return;
+        const raw = ok ? (Array.isArray(data) ? data : (Array.isArray(data?.items) ? data.items : [])) : [];
+        raw.sort((a: any, b: any) => {
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return timeB - timeA;
+        });
+        setComments(raw);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (isMounted) setLoadingComments(false);
+      });
 
     return () => {
       isMounted = false;
-      clearTimeout(timeoutTimer);
-      unsub();
     };
   }, [selectedPost?.id]);
 
@@ -175,12 +156,22 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
     };
 
     try {
-      await addDoc(collection(db, 'blogPosts', blogId, 'comments'), newComment);
+      const res = await fetch(`/api/blog-comments?blogId=${encodeURIComponent(blogId)}`, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newComment),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || `Gagal mengirim komentar (HTTP ${res.status})`);
+      }
+      const nextList = Array.isArray(data?.items) ? data.items : [data?.comment || newComment, ...comments];
+      setComments(nextList);
       setCommentForm({ name: '', message: '' });
-      showCommentToast("Komentar Anda berhasil dikirim!");
+      showCommentToast('Komentar Anda berhasil dikirim!');
     } catch (err: any) {
-      logFirestoreError(err, OperationType.CREATE, `blogPosts/${blogId}/comments`);
-      showCommentToast(`Gagal mengirim komentar ke Cloud Firestore: ${err?.message || 'Coba lagi nanti.'}`, 'error');
+      showCommentToast(err?.message || 'Gagal mengirim komentar. Coba lagi nanti.', 'error');
     } finally {
       setIsSubmittingComment(false);
     }

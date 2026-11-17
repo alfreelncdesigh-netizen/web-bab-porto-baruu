@@ -14,14 +14,11 @@ import {
   Trash2,
   Link as LinkIcon
 } from 'lucide-react';
-import { SiteSettings, defaultSettings, PromoPosterItem } from '../data/settings';
-import { getStoredSettings, saveStoredSettings, cleanForFirestore, mergeSettingsByTimestamp } from '../lib/contentStorage';
+import { SiteSettings, defaultSettings, PromoPosterItem } from '../types/site';
+import { getStoredSettings, saveStoredSettings, fetchSettingsFromBlob } from '../lib/contentStorage';
 import { NAMA_COOKIE_RIWAYAT, setCookie, deleteCookie, getCookie } from './PromoPosterWidget';
 import { uploadImageToStorage, base64ToBlob, recordMediaPermanently, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
-import { db } from '../lib/firebase';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 const createDefaultSlots = (): PromoPosterItem[] => [
@@ -80,42 +77,35 @@ export default function PromoAdmin() {
 
   useEffect(() => {
     refreshCookieStatus();
+    let isMounted = true;
 
-    // 1. Dengarkan doc settings/promoPosters secara realtime
-    const unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        if (Array.isArray(data.posters) && data.posters.length > 0) {
-          setPosters(normalizeSlots(data.posters));
-        }
-        if (data.active !== undefined) {
-          setIsGlobalActive(data.active !== false);
-        }
+    const applySettings = (next: SiteSettings) => {
+      if (!isMounted) return;
+      setSettings(next);
+      if (Array.isArray(next.promoPosters) && next.promoPosters.length > 0) {
+        setPosters(normalizeSlots(next.promoPosters));
       }
-    }, (err) => {
-      logFirestoreError(err, OperationType.GET, 'settings/promoPosters');
-    });
+      if (next.promoWidgetActive !== undefined) {
+        setIsGlobalActive(next.promoWidgetActive !== false);
+      }
+    };
 
-    // 2. Dengarkan doc settings/global secara realtime
-    const unsubGlobal = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data() as SiteSettings;
-        const merged = mergeSettingsByTimestamp(getStoredSettings(), data);
-        setSettings(merged);
-        if (Array.isArray(merged.promoPosters) && merged.promoPosters.length > 0) {
-          setPosters(normalizeSlots(merged.promoPosters));
+    fetchSettingsFromBlob()
+      .then(applySettings)
+      .catch((err: any) => {
+        if (isMounted) {
+          showNotification(err?.message || 'Gagal memuat pengaturan poster promosi dari Vercel Blob.', 'error');
         }
-        if (merged.promoWidgetActive !== undefined) {
-          setIsGlobalActive(merged.promoWidgetActive !== false);
-        }
-      }
-    }, (err) => {
-      logFirestoreError(err, OperationType.GET, 'settings/global');
-    });
+      });
+
+    const handleSettingsUpdate = (e: any) => {
+      if (e?.detail) applySettings(e.detail as SiteSettings);
+    };
+    window.addEventListener('app_settings_updated', handleSettingsUpdate);
 
     return () => {
-      unsubPromo();
-      unsubGlobal();
+      isMounted = false;
+      window.removeEventListener('app_settings_updated', handleSettingsUpdate);
     };
   }, []);
 
@@ -215,10 +205,10 @@ export default function PromoAdmin() {
       setSettings(updatedSettings);
       markSaved({ isGlobalActive, posters: updated });
 
-      // 4. Catat media secara permanen di Firestore uploadedMedia
+      // 4. Catat media secara permanen
       recordMediaPermanently(uploadedUrl, cleanFileName, blob.size, 'posters').catch(() => {});
 
-      showNotification(`Poster #${index + 1} berhasil diunggah ke Vercel Blob & disimpan ke Cloud Firestore!`);
+      showNotification(`Poster #${index + 1} berhasil diunggah & disimpan ke Vercel Blob!`);
     } catch (err: any) {
       console.error("Upload poster error:", err);
       showNotification(err?.message || "Gagal mengunggah atau menyimpan gambar poster.", "error");
@@ -262,30 +252,11 @@ export default function PromoAdmin() {
       await saveStoredSettings(updatedSettings);
       setSettings(updatedSettings);
 
-      const lightweightPosters = posters.map(p => ({
-        id: p.id,
-        title: p.title || '',
-        image: p.image || '',
-        ctaText: p.ctaText || 'Ambil Diskon',
-        link: p.link || '#store',
-        active: p.active !== false
-      }));
-
-      await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
-        posters: lightweightPosters,
-        active: isGlobalActive,
-        updatedAt: new Date().toISOString(),
-        savedAt: Date.now(),
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
-      }), { merge: true });
-
       markSaved({ isGlobalActive, posters });
-      showNotification('Semua pengaturan 3 poster promosi berhasil disimpan ke Cloud Firestore & aktif!');
+      showNotification('Semua pengaturan 3 poster promosi berhasil disimpan ke Vercel Blob & aktif!');
     } catch (err: any) {
       console.error("Save promo settings error:", err);
-      logFirestoreError(err, OperationType.WRITE, 'settings/promoPosters');
-      showNotification(err?.message || 'Gagal menyimpan pengaturan poster promosi ke Cloud Firestore.', 'error');
+      showNotification(err?.message || 'Gagal menyimpan pengaturan poster promosi ke Vercel Blob.', 'error');
     } finally {
       setSaving(false);
     }

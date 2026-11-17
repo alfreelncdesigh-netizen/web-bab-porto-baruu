@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { db } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import { Loader2, Check, Upload, FileText, X, Plus, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
-import { defaultSettings, defaultCvSections } from '../data/settings';
-import { getStoredSettings, saveStoredSettings, fetchSettingsFromFirestore } from '../lib/contentStorage';
+import { defaultSettings, defaultCvSections } from '../types/site';
+import { getStoredSettings, saveStoredSettings, fetchSettingsFromBlob } from '../lib/contentStorage';
 import { compressImageToWebP } from '../lib/imageCompressor';
 import { uploadImageToStorage, ensurePersistedAssetUrl } from '../lib/storageUploader';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import ConfirmModal from './ConfirmModal';
 import { FastInput, FastTextarea } from './FastInput';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
@@ -40,7 +37,7 @@ export default function CvAdmin() {
     const loadFromCloud = async () => {
       setLoading(true);
       try {
-        const fetched = await fetchSettingsFromFirestore();
+        const fetched = await fetchSettingsFromBlob();
         if (!isMounted) return;
         const rawSections = fetched.cvSections && fetched.cvSections.length > 0 ? fetched.cvSections : defaultCvSections;
         const normalizedSections = rawSections.map((s: any) => ({
@@ -58,9 +55,8 @@ export default function CvAdmin() {
           cvSections: normalizedSections
         });
       } catch (err: any) {
-        logFirestoreError(err, OperationType.GET, 'settings/cv');
         if (isMounted) {
-          showToast(err?.message || 'Gagal memuat data CV dari Cloud Firestore.', 'error');
+          showToast(err?.message || 'Gagal memuat data CV dari Vercel Blob.', 'error');
         }
       } finally {
         if (isMounted) setLoading(false);
@@ -96,7 +92,7 @@ export default function CvAdmin() {
       await saveStoredSettings(nextSettings);
       setSettings(nextSettings);
       markSaved(nextSettings);
-      showToast(isPng ? "File CV (PNG) berhasil diunggah ke Vercel Blob & disimpan ke Cloud Firestore!" : "File CV (PDF) berhasil diunggah ke Vercel Blob & disimpan ke Cloud Firestore!");
+      showToast(isPng ? "File CV (PNG) berhasil diunggah & disimpan ke Vercel Blob!" : "File CV (PDF) berhasil diunggah & disimpan ke Vercel Blob!");
     } catch (err: any) {
       showToast(err?.message || "Gagal mengunggah atau menyimpan file CV.", "error");
     } finally {
@@ -161,7 +157,7 @@ export default function CvAdmin() {
         );
       }
 
-      setSaveProgressText('Menyimpan ke Cloud Firestore...');
+      setSaveProgressText('Menyimpan ke Vercel Blob...');
 
       const persistedPdf = settings.cvPdfFile ? await ensurePersistedAssetUrl(settings.cvPdfFile, 'cv') : '';
       const settingsToSave = {
@@ -174,10 +170,10 @@ export default function CvAdmin() {
       await saveStoredSettings(settingsToSave);
       setSettings(settingsToSave);
       markSaved(settingsToSave);
-      showToast('Data CV & Foto berhasil disimpan ke Cloud Firestore & Sinkron Real-time!', 'success');
+      showToast('Data CV & Foto berhasil disimpan ke Vercel Blob!', 'success');
     } catch (err: any) {
       console.error("Gagal menyimpan CV:", err);
-      showToast(err?.message || 'Gagal menyimpan perubahan CV ke Cloud Firestore.', 'error');
+      showToast(err?.message || 'Gagal menyimpan perubahan CV ke Vercel Blob.', 'error');
     } finally {
       setIsSaving(false);
       setSaveProgressText('');
@@ -269,7 +265,7 @@ export default function CvAdmin() {
       const validUrls = uploadedUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0 && !u.startsWith('blob:'));
 
       if (validUrls.length > 0) {
-        setUploadStatusText("Menyimpan ke Cloud Firestore...");
+        setUploadStatusText("Menyimpan ke Vercel Blob...");
 
         const newSections = Array.isArray(settings.cvSections)
           ? settings.cvSections.map((sec: any) => ({
@@ -297,7 +293,7 @@ export default function CvAdmin() {
         await saveStoredSettings(updatedSettings);
         setSettings(updatedSettings);
         markSaved(updatedSettings);
-        showToast(`${validUrls.length} foto berhasil diunggah ke Vercel Blob & disimpan ke Cloud Firestore!`, "success");
+        showToast(`${validUrls.length} foto berhasil diunggah & disimpan ke Vercel Blob!`, "success");
       } else {
         throw new Error("Gagal memperoleh URL foto dari Vercel Blob.");
       }
@@ -333,9 +329,9 @@ export default function CvAdmin() {
       await saveStoredSettings(updatedSettings);
       setSettings(updatedSettings);
       markSaved(updatedSettings);
-      showToast(`Urutan foto diperbarui & disimpan ke Cloud Firestore`);
+      showToast(`Urutan foto diperbarui & disimpan ke Vercel Blob`);
     } catch (err: any) {
-      showToast(err?.message || "Gagal menyimpan urutan foto ke Cloud Firestore.", "error");
+      showToast(err?.message || "Gagal menyimpan urutan foto ke Vercel Blob.", "error");
     }
   };
 
@@ -353,9 +349,9 @@ export default function CvAdmin() {
       await saveStoredSettings(updatedSettings);
       setSettings(updatedSettings);
       markSaved(updatedSettings);
-      showToast("Foto dihapus & disimpan ke Cloud Firestore");
+      showToast("Foto dihapus & disimpan ke Vercel Blob");
     } catch (err: any) {
-      showToast(err?.message || "Gagal menghapus foto dari Cloud Firestore.", "error");
+      showToast(err?.message || "Gagal menghapus foto dari Vercel Blob.", "error");
     }
   };
 
@@ -376,9 +372,9 @@ export default function CvAdmin() {
       await saveStoredSettings(updatedSettings);
       setSettings(updatedSettings);
       markSaved(updatedSettings);
-      showToast("Semua foto di blok ini telah dihapus & disimpan ke Cloud Firestore");
+      showToast("Semua foto di blok ini telah dihapus & disimpan ke Vercel Blob");
     } catch (err: any) {
-      showToast(err?.message || "Gagal menghapus semua foto di Cloud Firestore.", "error");
+      showToast(err?.message || "Gagal menghapus semua foto di Vercel Blob.", "error");
     }
   };
 

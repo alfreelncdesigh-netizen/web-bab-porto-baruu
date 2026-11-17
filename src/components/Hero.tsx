@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
-import { SiteSettings } from '../data/settings';
+import { SiteSettings } from '../types/site';
 import { getStoredSettings, subscribeSettingsRealtime } from '../lib/contentStorage';
 import HeroBannerCarousel from './HeroBannerCarousel';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';

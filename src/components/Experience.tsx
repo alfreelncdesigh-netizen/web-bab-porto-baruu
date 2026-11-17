@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getStoredExperiences, cleanExperiences, sortExperiencesByRecency, subscribeExperiencesRealtime } from '../lib/contentStorage';
+import { getStoredExperiences, cleanExperiences, sortExperiencesByRecency, subscribeExperiencesRealtime, subscribeContentBlobErrors, fetchExperiencesFromBlob } from '../lib/contentStorage';
 import { 
   Briefcase, 
   ArrowRight, 
@@ -13,7 +13,9 @@ import {
   Layers, 
   Check,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -34,6 +36,7 @@ export default function Experience() {
   const [isFullscreenLightbox, setIsFullscreenLightbox] = useState(false);
   const [isCloseButtonVisible, setIsCloseButtonVisible] = useState(true);
   const [shareToast, setShareToast] = useState<string | null>(null);
+  const [expError, setExpError] = useState<string | null>(null);
 
   const closeButtonTimerRef = useRef<NodeJS.Timeout | null>(null);
   const modalRootRef = useRef<HTMLDivElement | null>(null);
@@ -194,10 +197,18 @@ export default function Experience() {
     };
     window.addEventListener('user_experiences_updated', handleUpdate);
 
-    // Real-time langsung dari Cloud Firestore melalui singleton shared subscription
+    // Ambil data pengalaman dari Vercel Blob (data/experience.json)
     const unsub = subscribeExperiencesRealtime((sorted) => {
       if (isMounted) {
         setExperiences(sorted);
+        setLoading(false);
+      }
+    });
+
+    const unsubErrors = subscribeContentBlobErrors((errs) => {
+      if (!isMounted) return;
+      setExpError(errs.experiences);
+      if (errs.experiences) {
         setLoading(false);
       }
     });
@@ -210,6 +221,7 @@ export default function Experience() {
       isMounted = false;
       clearTimeout(timer);
       unsub();
+      unsubErrors();
       window.removeEventListener('user_experiences_updated', handleUpdate);
     };
   }, []);
@@ -236,6 +248,22 @@ export default function Experience() {
         </p>
       </motion.div>
 
+      {expError && (
+        <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/25 text-red-700 dark:text-red-300 text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
+            <span>{expError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => fetchExperiencesFromBlob().catch(() => {})}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0 w-fit cursor-pointer"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Muat Ulang
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="space-y-8">
           {[1, 2].map((i) => (
@@ -244,7 +272,9 @@ export default function Experience() {
         </div>
       ) : experiences.length === 0 ? (
         <div className="py-12 text-center bg-zinc-50 dark:bg-[#111111] rounded-2xl border border-zinc-200/50 dark:border-zinc-800/50">
-          <p className="text-black dark:text-zinc-400 text-xs md:text-sm font-medium">Belum ada riwayat pengalaman yang ditampilkan saat ini.</p>
+          <p className="text-black dark:text-zinc-400 text-xs md:text-sm font-medium">
+            {expError ? 'Data pengalaman gagal dimuat dari Vercel Blob.' : 'Belum ada riwayat pengalaman yang ditampilkan saat ini.'}
+          </p>
         </div>
       ) : (
         <motion.div variants={childGridContainer} className="space-y-4 sm:space-y-6 md:space-y-8 flex flex-col items-center w-full">

@@ -1,15 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
 import ArchiveMoveModal from './ArchiveMoveModal';
 import ConfirmModal from './ConfirmModal';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, doc, setDoc, updateDoc, arrayUnion, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { getStoredExperiences, saveStoredExperiences, cleanExperiences, sortExperiencesByRecency, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
-import { SiteSettings } from '../data/settings';
+import { 
+  getStoredExperiences, 
+  saveStoredExperiences, 
+  cleanExperiences, 
+  sortExperiencesByRecency, 
+  getStoredSettings, 
+  saveStoredSettings,
+  fetchExperiencesFromBlob,
+  saveExperienceToBlob,
+  patchExperienceInBlob,
+  deleteExperienceFromBlob
+} from '../lib/contentStorage';
+import { SiteSettings } from '../types/site';
 import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake, Upload, ChevronLeft, ChevronRight, Star, Link as LinkIcon } from 'lucide-react';
 import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function ExperienceAdmin() {
@@ -40,29 +48,18 @@ export default function ExperienceAdmin() {
     };
     window.addEventListener('user_experiences_updated', handleUpdate);
 
-    const unsub = onSnapshot(
-      collection(db, 'experiences'),
-      (snap) => {
-        if (!isMounted) return;
-        const data: any[] = [];
-        snap.forEach(d => {
-          data.push({ id: d.id, ...d.data() });
-        });
-        const sorted = sortExperiencesByRecency(cleanExperiences(data));
-        setExperiences(sorted);
-        saveStoredExperiences(sorted);
-      },
-      (error) => {
-        logFirestoreError(error, OperationType.LIST, 'experiences');
+    fetchExperiencesFromBlob({ includeArchived: false })
+      .then((sorted) => {
+        if (isMounted) setExperiences(sorted);
+      })
+      .catch((error: any) => {
         if (isMounted) {
-          showToast(error?.message || 'Gagal memuat data pengalaman dari Cloud Firestore.', 'error');
+          showToast(error?.message || 'Gagal memuat data pengalaman dari Vercel Blob.', 'error');
         }
-      }
-    );
+      });
 
     return () => {
       isMounted = false;
-      unsub();
       window.removeEventListener('user_experiences_updated', handleUpdate);
     };
   }, []);
@@ -130,11 +127,9 @@ export default function ExperienceAdmin() {
     const id = itemToDelete.id.toString();
 
     try {
-      await deleteDoc(doc(db, 'experiences', id));
-      const updated = experiences.filter(e => e.id.toString() !== id);
+      const updated = await deleteExperienceFromBlob(id);
       setExperiences(updated);
-      await saveStoredExperiences(updated);
-      showToast(`Pengalaman "${itemToDelete.header || ''}" berhasil dihapus permanen dari Cloud Firestore.`);
+      showToast(`Pengalaman "${itemToDelete.header || ''}" berhasil dihapus permanen dari Vercel Blob.`);
 
       try {
         const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
@@ -149,8 +144,7 @@ export default function ExperienceAdmin() {
 
       setItemToDelete(null);
     } catch (err: any) {
-      logFirestoreError(err, OperationType.DELETE, `experiences/${id}`);
-      showToast(err?.message || `Gagal menghapus pengalaman dari Cloud Firestore.`, "error");
+      showToast(err?.message || `Gagal menghapus pengalaman dari Vercel Blob.`, "error");
     } finally {
       setIsDeleting(false);
     }
@@ -199,18 +193,8 @@ export default function ExperienceAdmin() {
         archiveFolderId: null,
       };
 
-      const toFirestore: Record<string, any> = {
-        ...toSave,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true,
-        updatedAt: new Date(nowMs).toISOString()
-      };
-
-      if (isNew) {
-        toFirestore.dateAdded = serverTimestamp();
-      }
-
-      await setDoc(doc(db, 'experiences', docId), toFirestore, { merge: true });
+      const savedResult = await saveExperienceToBlob(toSave);
+      setExperiences(savedResult.items);
 
       if (toSave.isCollaboration) {
         const siteSettings = getStoredSettings();
@@ -233,12 +217,6 @@ export default function ExperienceAdmin() {
         await saveStoredSettings(updatedSettings);
       }
 
-      const sortedUpdated = sortExperiencesByRecency(
-        cleanExperiences([toSave, ...experiences.filter(ex => ex.id.toString() !== docId)])
-      );
-      setExperiences(sortedUpdated);
-      await saveStoredExperiences(sortedUpdated);
-
       try {
         const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
         if (u.role === 'collaborator') {
@@ -251,15 +229,14 @@ export default function ExperienceAdmin() {
       } catch {}
 
       const savedItemState = {
-        ...toSave,
+        ...(savedResult.item || toSave),
         isNew: false
       };
       setEditingItem(savedItemState);
       markSaved(savedItemState);
-      showToast("Pengalaman & foto dokumentasi berhasil disimpan ke Cloud Firestore!");
+      showToast("Pengalaman & foto dokumentasi berhasil disimpan ke Vercel Blob!");
     } catch (err: any) {
-      logFirestoreError(err, OperationType.WRITE, `experiences/${docId}`);
-      showToast(err?.message || "Gagal menyimpan pengalaman ke Cloud Firestore.", "error");
+      showToast(err?.message || "Gagal menyimpan pengalaman ke Vercel Blob.", "error");
     } finally {
       setSaving(false);
     }
@@ -300,11 +277,9 @@ export default function ExperienceAdmin() {
       if (newUrls.length > 0) {
         const persistableCloudUrls = newUrls.filter(u => !u.startsWith('data:'));
         if (!editingItem.isNew && editingItem.id && persistableCloudUrls.length > 0) {
-          const docRef = doc(db, 'experiences', editingItem.id.toString());
-          await updateDoc(docRef, {
-            images: arrayUnion(...persistableCloudUrls),
-            image: editingItem.image || persistableCloudUrls[0],
-            updatedAt: new Date().toISOString()
+          await patchExperienceInBlob({
+            id: editingItem.id.toString(),
+            updates: { appendImages: persistableCloudUrls },
           });
         }
 
@@ -325,7 +300,7 @@ export default function ExperienceAdmin() {
         showToast(lastErrorMsg || "Gagal mengunggah gambar ke Vercel Blob.", "error");
       }
     } catch (syncErr: any) {
-      showToast(syncErr?.message || "Gagal memperbarui foto pengalaman di Cloud Firestore.", "error");
+      showToast(syncErr?.message || "Gagal memperbarui foto pengalaman di Vercel Blob.", "error");
     } finally {
       setUploading(false);
       setUploadProgressText('');
@@ -342,10 +317,9 @@ export default function ExperienceAdmin() {
       const finalUrl = persistedUrl && !persistedUrl.startsWith('blob:') ? persistedUrl : rawUrl;
 
       if (!editingItem.isNew && editingItem.id && !finalUrl.startsWith('data:')) {
-        const docRef = doc(db, 'experiences', editingItem.id.toString());
-        await updateDoc(docRef, {
-          images: arrayUnion(finalUrl),
-          updatedAt: new Date().toISOString()
+        await patchExperienceInBlob({
+          id: editingItem.id.toString(),
+          updates: { appendImages: [finalUrl] },
         });
       }
 

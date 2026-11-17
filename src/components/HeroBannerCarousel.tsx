@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight, ExternalLink, ArrowRight } from 'lucide-react';
-import { HeroBanner } from '../data/settings';
+import { HeroBanner } from '../types/site';
 import { getOptimizedImageUrl } from '../lib/cloudinary';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import ImageWithSkeleton from './ImageWithSkeleton';

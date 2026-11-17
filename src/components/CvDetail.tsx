@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { defaultCvSections, SiteSettings, CvSectionItem } from '../data/settings';
-import { getStoredSettings, subscribeCvRealtime } from '../lib/contentStorage';
-import { Download, Mail, Phone, MapPin, Link as LinkIcon, Copy, Check, X, ChevronLeft, ChevronRight, Maximize2, ImageOff, Image as ImageIcon } from 'lucide-react';
+import { defaultCvSections, SiteSettings, CvSectionItem } from '../types/site';
+import { getStoredSettings, subscribeCvRealtime, subscribeContentBlobErrors, fetchSettingsFromBlob } from '../lib/contentStorage';
+import { Download, Mail, Phone, MapPin, Link as LinkIcon, Copy, Check, X, ChevronLeft, ChevronRight, Maximize2, ImageOff, Image as ImageIcon, AlertTriangle, RefreshCw } from 'lucide-react';
 
 import { resolveImageUrl, handleImageError as globalHandleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
 
@@ -145,6 +145,7 @@ export default function CvDetail() {
     return stored;
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [cvError, setCvError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   // Lightbox state
@@ -174,6 +175,12 @@ export default function CvDetail() {
       setIsLoading(false);
     });
 
+    const unsubscribeErrors = subscribeContentBlobErrors((errs) => {
+      const err = errs.cv || errs.settings;
+      setCvError(err);
+      if (err) setIsLoading(false);
+    });
+
     const safetyTimer = setTimeout(() => {
       setIsLoading(false);
     }, 1500);
@@ -181,6 +188,7 @@ export default function CvDetail() {
     return () => {
       clearTimeout(safetyTimer);
       unsubscribeCv();
+      unsubscribeErrors();
       window.removeEventListener('app_settings_updated', handleUpdate);
     };
   }, []);
@@ -306,6 +314,22 @@ export default function CvDetail() {
             <span>Unduh CV</span>
           </a>
         </motion.div>
+
+        {cvError && (
+          <div className="mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/25 text-red-700 dark:text-red-300 text-xs sm:text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 sm:mt-0" />
+              <span>{cvError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchSettingsFromBlob().catch(() => {})}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-red-600 text-white text-xs font-semibold hover:bg-red-700 transition-colors shrink-0 w-fit cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Muat Ulang
+            </button>
+          </div>
+        )}
 
         {/* Integrated Contact Card (Single Container: #f8f9fa, border-radius 16px, padding 16px) */}
         <motion.div 

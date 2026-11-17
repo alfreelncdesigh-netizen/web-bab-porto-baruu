@@ -32,6 +32,7 @@ import {
   type StoredMediaRecord
 } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
+import { fetchSettingsFromBlob, getStoredSettings } from '../lib/contentStorage';
 
 type AdminUploadFolder = 'works' | 'experiences' | 'blogs' | 'promos' | 'about' | 'cv' | 'settings';
 
@@ -193,31 +194,28 @@ export default function AdminDashboard() {
         return;
       }
 
-      // 2. Cek Kredensial Khusus Kolaborator langsung dari Cloud Firestore (settings/global)
+      // 2. Cek Kredensial Khusus Kolaborator dari Vercel Blob (data/site-settings.json)
       let collabCfg: any = undefined;
       let accounts: any[] = [];
       let matchedAccount: any = undefined;
       let isDirectCollabMatch = cleanUser === 'kolaborator' && cleanPass === 'kolaborasi123';
 
       try {
-        const globalDocSnap = await getDoc(doc(db, 'settings', 'global'));
-        if (globalDocSnap.exists()) {
-          const remoteSettings = globalDocSnap.data();
-          if (remoteSettings?.collaboration) {
-            collabCfg = remoteSettings.collaboration;
-            accounts = collabCfg.collaboratorAccounts || [];
-            matchedAccount = accounts.find(
-              (a: any) => a.username?.toLowerCase().trim() === cleanUser && a.password?.trim() === cleanPass
+        const remoteSettings = await fetchSettingsFromBlob().catch(() => getStoredSettings());
+        if (remoteSettings?.collaboration) {
+          collabCfg = remoteSettings.collaboration;
+          accounts = collabCfg.collaboratorAccounts || [];
+          matchedAccount = accounts.find(
+            (a: any) => a.username?.toLowerCase().trim() === cleanUser && a.password?.trim() === cleanPass
+          );
+          isDirectCollabMatch =
+            isDirectCollabMatch ||
+            Boolean(
+              collabCfg?.collaboratorUsername &&
+              collabCfg.collaboratorUsername.toLowerCase().trim() === cleanUser &&
+              collabCfg?.collaboratorPassword &&
+              collabCfg.collaboratorPassword.trim() === cleanPass
             );
-            isDirectCollabMatch =
-              isDirectCollabMatch ||
-              Boolean(
-                collabCfg?.collaboratorUsername &&
-                collabCfg.collaboratorUsername.toLowerCase().trim() === cleanUser &&
-                collabCfg?.collaboratorPassword &&
-                collabCfg.collaboratorPassword.trim() === cleanPass
-              );
-          }
         }
       } catch (fetchErr) {
         console.warn("Notice: Remote settings check error:", fetchErr);

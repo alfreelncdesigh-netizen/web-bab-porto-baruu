@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db } from '../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
 import { Loader2, Check, Upload, Image as ImageIcon } from 'lucide-react';
-import { defaultSettings } from '../data/settings';
-import { getStoredSettings, saveStoredSettings, fetchSettingsFromFirestore, cleanSettings } from '../lib/contentStorage';
+import { defaultSettings } from '../types/site';
+import { getStoredSettings, saveStoredSettings, fetchSettingsFromBlob } from '../lib/contentStorage';
 import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl } from '../lib/imageResolver';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function AboutAdmin() {
@@ -21,11 +18,10 @@ export default function AboutAdmin() {
  useEffect(() => {
   const fetchSettings = async () => {
    try {
-    const fresh = await fetchSettingsFromFirestore();
+    const fresh = await fetchSettingsFromBlob();
     setSettings(fresh);
    } catch (err: any) {
-    logFirestoreError(err, OperationType.GET, 'settings/global');
-    setToast({ msg: `Gagal memuat pengaturan dari Firestore: ${err?.message || 'Periksa koneksi.'}`, type: 'error' });
+    setToast({ msg: `Gagal memuat pengaturan dari Vercel Blob: ${err?.message || 'Periksa koneksi.'}`, type: 'error' });
    } finally {
     setLoading(false);
    }
@@ -84,11 +80,11 @@ export default function AboutAdmin() {
      savedAt: Date.now()
    };
 
-   // Simpan ke Cloud Firestore & tunggu hingga benar-benar selesai
+   // Simpan ke Vercel Blob & tunggu hingga benar-benar selesai
    await saveStoredSettings(updated);
    setSettings(updated);
    markSaved(updated);
-   showToast('Foto profil berhasil diunggah ke Vercel Blob & disimpan ke Cloud Firestore!');
+   showToast('Foto profil berhasil diunggah & disimpan ke Vercel Blob!');
   } catch (err: any) {
    console.error("Upload profile image failed:", err);
    setSettings(prev => ({ ...prev, aboutImage: previousImage }));
@@ -105,10 +101,10 @@ export default function AboutAdmin() {
   try {
    await saveStoredSettings(settings);
    markSaved(settings);
-   showToast('Profil Tentang Saya berhasil disimpan ke Cloud Firestore!');
+   showToast('Profil Tentang Saya berhasil disimpan ke Vercel Blob!');
   } catch (err: any) {
    console.warn("Save error:", err);
-   showToast(err?.message || 'Gagal menyimpan profil ke Cloud Firestore', 'error');
+   showToast(err?.message || 'Gagal menyimpan profil ke Vercel Blob', 'error');
   } finally {
    setIsSaving(false);
   }

@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { SiteSettings, defaultSettings, HeroBanner } from '../data/settings';
-import { getStoredSettings, saveStoredSettings, fetchSettingsFromFirestore } from '../lib/contentStorage';
+import { SiteSettings, defaultSettings, HeroBanner } from '../types/site';
+import { getStoredSettings, saveStoredSettings, fetchSettingsFromBlob } from '../lib/contentStorage';
 import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { renderPdfFirstPageToImage } from '../lib/pdfHelper';
 import { Loader2, Check, Upload, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { resolveImageUrl } from '../lib/imageResolver';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function SettingsAdmin() {
@@ -22,14 +21,13 @@ export default function SettingsAdmin() {
   const loadSettings = async () => {
    setLoading(true);
    try {
-    const cloudSettings = await fetchSettingsFromFirestore();
+    const cloudSettings = await fetchSettingsFromBlob();
     if (isMounted) {
      setSettings(cloudSettings);
     }
    } catch (e: any) {
-    logFirestoreError(e, OperationType.GET, 'settings/global');
     if (isMounted) {
-     showToast(e?.message || 'Gagal memuat pengaturan dari Cloud Firestore.', 'error');
+     showToast(e?.message || 'Gagal memuat pengaturan dari Vercel Blob.', 'error');
     }
    } finally {
     if (isMounted) setLoading(false);
@@ -51,10 +49,10 @@ export default function SettingsAdmin() {
   try {
    await saveStoredSettings(settings);
    markSaved(settings);
-   showToast('Perubahan berhasil disimpan ke Cloud Firestore & langsung tampil di website!');
+   showToast('Perubahan berhasil disimpan ke Vercel Blob & langsung tampil di website!');
   } catch (err: any) {
    console.error("Save error:", err);
-   showToast(err?.message || 'Gagal menyimpan perubahan ke Cloud Firestore.', 'error');
+   showToast(err?.message || 'Gagal menyimpan perubahan ke Vercel Blob.', 'error');
   } finally {
    setSaving(false);
   }
@@ -139,11 +137,11 @@ export default function SettingsAdmin() {
       setSettings(updated);
       markSaved(updated);
 
-      showToast(field === 'aboutImage' ? "Gambar profil berhasil diunggah ke Vercel Blob & tersimpan di Cloud Firestore!" : "Foto berhasil diunggah ke Vercel Blob & tersimpan di Cloud Firestore!");
+      showToast(field === 'aboutImage' ? "Gambar profil berhasil diunggah & disimpan ke Vercel Blob!" : "Foto berhasil diunggah & disimpan ke Vercel Blob!");
     } catch (err: any) {
       console.error("Upload settings image failed:", err);
       setSettings(prev => ({ ...prev, [field]: previousValue }));
-      showToast(err?.message || "Gagal mengunggah gambar ke Vercel Blob / Cloud Firestore.", "error");
+      showToast(err?.message || "Gagal mengunggah gambar ke Vercel Blob.", "error");
     } finally {
       setUploading(false);
       if (e.target) e.target.value = '';
@@ -218,9 +216,9 @@ export default function SettingsAdmin() {
     try {
       await saveStoredSettings(updated);
       setSettings(updated);
-      showToast('Banner baru ditambahkan & tersimpan di Cloud Firestore.');
+      showToast('Banner baru ditambahkan & tersimpan di Vercel Blob.');
     } catch (err: any) {
-      showToast(err?.message || 'Gagal menyimpan banner baru ke Cloud Firestore.', 'error');
+      showToast(err?.message || 'Gagal menyimpan banner baru ke Vercel Blob.', 'error');
     }
   };
 
@@ -233,7 +231,7 @@ export default function SettingsAdmin() {
     try {
       await saveStoredSettings(updated);
     } catch (err: any) {
-      showToast(err?.message || 'Gagal menyimpan pembaruan banner ke Cloud Firestore.', 'error');
+      showToast(err?.message || 'Gagal menyimpan pembaruan banner ke Vercel Blob.', 'error');
     }
   };
 
@@ -243,9 +241,9 @@ export default function SettingsAdmin() {
     try {
       await saveStoredSettings(updated);
       setSettings(updated);
-      showToast('Banner dihapus secara permanen dari Cloud Firestore.');
+      showToast('Banner dihapus secara permanen dari Vercel Blob.');
     } catch (err: any) {
-      showToast(err?.message || 'Gagal menghapus banner dari Cloud Firestore.', 'error');
+      showToast(err?.message || 'Gagal menghapus banner dari Vercel Blob.', 'error');
     }
   };
 
@@ -261,7 +259,7 @@ export default function SettingsAdmin() {
       await saveStoredSettings(updated);
       setSettings(updated);
     } catch (err: any) {
-      showToast(err?.message || 'Gagal memperbarui urutan banner di Cloud Firestore.', 'error');
+      showToast(err?.message || 'Gagal memperbarui urutan banner di Vercel Blob.', 'error');
     }
   };
 
@@ -284,7 +282,7 @@ export default function SettingsAdmin() {
       const updated = { ...settings, heroBanners: updatedBanners, savedAt: Date.now() };
       await saveStoredSettings(updated);
       setSettings(updated);
-      showToast("Gambar banner berhasil diunggah ke Vercel Blob & tersimpan di Cloud Firestore!");
+      showToast("Gambar banner berhasil diunggah & tersimpan di Vercel Blob!");
     } catch (err: any) {
       console.error("Upload banner failed:", err);
       showToast(err?.message || "Gagal mengunggah atau menyimpan gambar banner.", "error");
@@ -421,7 +419,7 @@ export default function SettingsAdmin() {
              await saveStoredSettings(updated);
              setSettings(updated);
            } catch (err: any) {
-             showToast(err?.message || 'Gagal menyimpan URL gambar utama ke Cloud Firestore.', 'error');
+             showToast(err?.message || 'Gagal menyimpan URL gambar utama ke Vercel Blob.', 'error');
            }
          }}
          placeholder="URL gambar (https://... atau hasil unggahan)" 
@@ -436,12 +434,12 @@ export default function SettingsAdmin() {
              await saveStoredSettings(updated);
              setSettings(updated);
              markSaved(updated);
-             showToast('Link gambar utama berhasil disimpan permanen ke Cloud Firestore & website!');
+             showToast('Link gambar utama berhasil disimpan permanen ke Vercel Blob & website!');
            } catch (err: any) {
-             showToast(err?.message || 'Gagal menyimpan URL gambar utama ke Cloud Firestore.', 'error');
+             showToast(err?.message || 'Gagal menyimpan URL gambar utama ke Vercel Blob.', 'error');
            }
          }}
-         title="Terapkan dan simpan permanen ke Firebase"
+         title="Terapkan dan simpan permanen ke Vercel Blob"
          className="px-3.5 py-2 text-xs font-semibold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-85 rounded-xl transition-all shrink-0 cursor-pointer flex items-center gap-1.5"
         >
          <span>Terapkan</span>
@@ -458,7 +456,7 @@ export default function SettingsAdmin() {
               markSaved(resetState);
               showToast('Foto utama beranda dikembalikan ke default bawaan.');
             } catch (err: any) {
-              showToast(err?.message || 'Gagal mereset foto utama di Cloud Firestore.', 'error');
+              showToast(err?.message || 'Gagal mereset foto utama di Vercel Blob.', 'error');
             }
           }}
           title="Reset gambar ke default bawaan"

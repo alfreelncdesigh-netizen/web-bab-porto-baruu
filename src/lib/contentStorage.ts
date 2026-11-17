@@ -1,10 +1,7 @@
-import { SiteSettings, defaultSettings, defaultCvSections } from '../data/settings';
-import { Project } from '../data/projects';
+import { SiteSettings, defaultSettings, defaultCvSections } from '../types/site';
+import { Project } from '../types/project';
 import { BlogPost } from '../types/blog';
-import { TemplateProduct } from '../data/templates';
-import { db } from './firebase';
-import { collection, doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
-import { logFirestoreError, OperationType } from './firestoreErrorHandler';
+import { TemplateProduct } from '../types/store';
 
 const DUMMY_PROJECT_IDS = new Set([
   'poster-lks-smkn1-sinjai',
@@ -66,12 +63,99 @@ const ID_MONTH_MAP: Record<string, number> = {
   desember: 11, des: 11, dec: 11, december: 11,
 };
 
-// In-memory runtime state hydrated exclusively from Cloud Firestore (never from localStorage or mock arrays)
+// In-memory runtime state hydrated from Vercel Blob JSON API routes (never from localStorage or Firestore for migrated features)
 let memorySettings: SiteSettings = { ...defaultSettings };
 let memoryProjects: Project[] = [];
 let memoryBlogs: BlogPost[] = [];
 let memoryExperiences: any[] = [];
 let memoryTemplates: TemplateProduct[] = [];
+
+const ADMIN_AUTH_TOKEN = 'alfreelnc_admin_auth_verified';
+const BASE64_URI_REGEX = /^data:(image|application\/pdf|video|audio)\/[a-zA-Z0-9.+_-]+;base64,/i;
+
+export interface ContentBlobErrors {
+  settings: string | null;
+  cv: string | null;
+  projects: string | null;
+  experiences: string | null;
+  blogs: string | null;
+}
+
+const contentBlobErrors: ContentBlobErrors = {
+  settings: null,
+  cv: null,
+  projects: null,
+  experiences: null,
+  blogs: null,
+};
+
+const contentErrorCallbacks = new Set<(errors: ContentBlobErrors) => void>();
+
+export function getContentBlobErrors(): ContentBlobErrors {
+  return { ...contentBlobErrors };
+}
+
+export function subscribeContentBlobErrors(cb: (errors: ContentBlobErrors) => void): () => void {
+  contentErrorCallbacks.add(cb);
+  try {
+    cb({ ...contentBlobErrors });
+  } catch {}
+  return () => {
+    contentErrorCallbacks.delete(cb);
+  };
+}
+
+function setContentBlobError(key: keyof ContentBlobErrors, msg: string | null): void {
+  if (contentBlobErrors[key] === msg) return;
+  contentBlobErrors[key] = msg;
+  const snapshot = { ...contentBlobErrors };
+  contentErrorCallbacks.forEach((cb) => {
+    try {
+      cb(snapshot);
+    } catch {}
+  });
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('content_blob_errors_updated', { detail: snapshot }));
+  }
+}
+
+function assertNoBase64Payload(value: unknown, path = 'payload'): void {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (BASE64_URI_REGEX.test(trimmed)) {
+      throw new Error(`Data base64 tidak diizinkan pada "${path}". Silakan unggah file ke Vercel Blob terlebih dahulu.`);
+    }
+    if (trimmed.startsWith('blob:')) {
+      throw new Error(`URL sementara "blob:" tidak dapat disimpan pada "${path}".`);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      assertNoBase64Payload(value[i], `${path}[${i}]`);
+    }
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      assertNoBase64Payload(v, `${path}.${k}`);
+    }
+  }
+}
+
+async function parseApiJson<T = any>(res: Response, fallbackMessage: string): Promise<T> {
+  let parsed: any = null;
+  try {
+    parsed = await res.json();
+  } catch {
+    parsed = null;
+  }
+  if (!res.ok) {
+    const msg = parsed?.error || `${fallbackMessage} (HTTP ${res.status})`;
+    throw new Error(msg);
+  }
+  return parsed as T;
+}
 
 export function getTimestampMs(val: any): number {
   if (val === null || val === undefined || val === '') return 0;
@@ -540,50 +624,92 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
 }
 
 let inFlightSettingsFetch: Promise<SiteSettings> | null = null;
+let inFlightProjectsFetch: Promise<Project[]> | null = null;
+let inFlightExperiencesFetch: Promise<any[]> | null = null;
 
 /**
- * Mengambil seluruh dokumen settings langsung dari Cloud Firestore (settings/global, settings/cv, settings/hero, settings/promoPosters)
+ * Mengambil pengaturan situs dari Vercel Blob (data/site-settings.json)
+ */
+export async function fetchSiteSettingsFromBlob(): Promise<Partial<SiteSettings>> {
+  const res = await fetch('/api/site-settings', {
+    method: 'GET',
+    cache: 'no-store',
+  });
+  const data = await parseApiJson<{ settings?: Partial<SiteSettings> }>(
+    res,
+    'Gagal memuat pengaturan situs dari Vercel Blob'
+  );
+  setContentBlobError('settings', null);
+  return data?.settings || {};
+}
+
+/**
+ * Mengambil data CV dari Vercel Blob (data/cv.json)
+ */
+export async function fetchCvFromBlob(): Promise<{ cvRole?: string; cvPdfFile?: string; cvSections?: any[]; updatedAt?: string }> {
+  const res = await fetch('/api/cv', {
+    method: 'GET',
+    cache: 'no-store',
+  });
+  const data = await parseApiJson<{ cv?: { cvRole?: string; cvPdfFile?: string; cvSections?: any[]; updatedAt?: string } }>(
+    res,
+    'Gagal memuat data CV dari Vercel Blob'
+  );
+  setContentBlobError('cv', null);
+  return data?.cv || {};
+}
+
+/**
+ * Mengambil gabungan pengaturan situs (data/site-settings.json) dan CV (data/cv.json) dari Vercel Blob
  * dengan deduplikasi request bersamaan.
  */
-export async function fetchSettingsFromFirestore(): Promise<SiteSettings> {
+export async function fetchSettingsFromBlob(): Promise<SiteSettings> {
   if (inFlightSettingsFetch) {
     return inFlightSettingsFetch;
   }
 
   inFlightSettingsFetch = (async () => {
     try {
-      const [snapGlobal, snapCv, snapHero, snapPromo] = await Promise.all([
-        getDoc(doc(db, 'settings', 'global')),
-        getDoc(doc(db, 'settings', 'cv')).catch(() => null),
-        getDoc(doc(db, 'settings', 'hero')).catch(() => null),
-        getDoc(doc(db, 'settings', 'promoPosters')).catch(() => null),
+      const [siteRes, cvRes] = await Promise.allSettled([
+        fetchSiteSettingsFromBlob(),
+        fetchCvFromBlob(),
       ]);
 
-      const globalData = snapGlobal.exists() ? (snapGlobal.data() as Record<string, any>) : {};
-      const cvData = snapCv && snapCv.exists() ? (snapCv.data() as Record<string, any>) : null;
-      const heroData = snapHero && snapHero.exists() ? (snapHero.data() as Record<string, any>) : null;
-      const promoData = snapPromo && snapPromo.exists() ? (snapPromo.data() as Record<string, any>) : null;
+      const siteErr = siteRes.status === 'rejected'
+        ? (siteRes.reason?.message || 'Gagal membaca data/site-settings.json dari Vercel Blob.')
+        : null;
+      const cvErr = cvRes.status === 'rejected'
+        ? (cvRes.reason?.message || 'Gagal membaca data/cv.json dari Vercel Blob.')
+        : null;
+
+      setContentBlobError('settings', siteErr);
+      setContentBlobError('cv', cvErr);
+
+      if (siteRes.status === 'rejected' && cvRes.status === 'rejected') {
+        throw new Error(siteErr || cvErr || 'Gagal memuat data dari Vercel Blob.');
+      }
+
+      const siteData = siteRes.status === 'fulfilled' ? siteRes.value : {};
+      const cvData = cvRes.status === 'fulfilled' ? cvRes.value : {};
 
       const combinedRaw: Record<string, any> = {
-        ...globalData,
-        ...(cvData ? {
-          cvSections: (Array.isArray(cvData.cvSections) && cvData.cvSections.length > 0)
-            ? cvData.cvSections
-            : globalData.cvSections,
-          cvRole: cvData.cvRole || globalData.cvRole,
-          cvPdfFile: cvData.cvPdfFile !== undefined ? cvData.cvPdfFile : globalData.cvPdfFile,
-        } : {}),
-        ...(heroData?.heroImage ? { heroImage: heroData.heroImage } : {}),
-        ...(promoData ? {
-          promoPosters: Array.isArray(promoData.posters) ? promoData.posters : globalData.promoPosters,
-          promoWidgetActive: promoData.active !== undefined ? promoData.active : globalData.promoWidgetActive,
-        } : {}),
-        savedAt: Math.max(
-          getTimestampMs(globalData?.savedAt || globalData?.updatedAt),
-          getTimestampMs(cvData?.savedAt || cvData?.updatedAt),
-          getTimestampMs(heroData?.savedAt || heroData?.updatedAt),
-          getTimestampMs(promoData?.savedAt || promoData?.updatedAt)
-        ) || Date.now(),
+        ...memorySettings,
+        ...siteData,
+        ...(cvRes.status === 'fulfilled'
+          ? {
+              cvRole: cvData.cvRole || memorySettings.cvRole || defaultSettings.cvRole,
+              cvPdfFile: cvData.cvPdfFile !== undefined ? cvData.cvPdfFile : memorySettings.cvPdfFile,
+              cvSections:
+                Array.isArray(cvData.cvSections) && cvData.cvSections.length > 0
+                  ? cvData.cvSections
+                  : memorySettings.cvSections || defaultCvSections,
+            }
+          : {}),
+        savedAt:
+          Math.max(
+            getTimestampMs((siteData as any)?.savedAt || (siteData as any)?.updatedAt),
+            getTimestampMs((cvData as any)?.updatedAt)
+          ) || Date.now(),
       };
 
       const merged: SiteSettings = {
@@ -592,7 +718,12 @@ export async function fetchSettingsFromFirestore(): Promise<SiteSettings> {
       } as SiteSettings;
 
       hasHydratedSettings = true;
-      return setLocalSettings(merged);
+      if (cvRes.status === 'fulfilled') {
+        hasHydratedCv = true;
+      }
+      const next = setLocalSettings(merged);
+      notifySettingsCallbacks(next);
+      return next;
     } finally {
       inFlightSettingsFetch = null;
     }
@@ -601,7 +732,14 @@ export async function fetchSettingsFromFirestore(): Promise<SiteSettings> {
   return inFlightSettingsFetch;
 }
 
-// 1. SETTINGS (In-memory cache hydrated from Firestore + CustomEvent broadcast)
+/**
+ * Alias kompatibilitas untuk memanggil fetchSettingsFromBlob()
+ */
+export async function fetchSettingsFromFirestore(): Promise<SiteSettings> {
+  return fetchSettingsFromBlob();
+}
+
+// 1. SETTINGS (In-memory cache hydrated from Vercel Blob API + CustomEvent broadcast)
 export function getStoredSettings(): SiteSettings {
   return memorySettings;
 }
@@ -618,110 +756,116 @@ export function setLocalSettings(newSettings: Partial<SiteSettings>): SiteSettin
 }
 
 /**
- * Menyimpan pengaturan situs ke Cloud Firestore dan menunggu hingga seluruh operasi benar-benar selesai.
- * Melempar error asli jika penulisan ke Firestore gagal (tidak pernah memberi status sukses palsu).
+ * Menyimpan data CV ke Vercel Blob (data/cv.json)
  */
-export async function saveStoredSettings(newSettings: SiteSettings): Promise<boolean> {
-  const cleaned = cleanSettings(newSettings);
-  const timestamp = Date.now();
-  const merged: SiteSettings = { ...defaultSettings, ...cleaned, savedAt: timestamp };
+export async function saveCvToBlob(payload: {
+  cvRole?: string;
+  cvPdfFile?: string;
+  cvSections?: any[];
+}): Promise<any> {
+  const cleanPayload = {
+    cvRole: payload.cvRole ?? memorySettings.cvRole ?? 'Desainer Grafis',
+    cvPdfFile: payload.cvPdfFile ?? memorySettings.cvPdfFile ?? '',
+    cvSections: Array.isArray(payload.cvSections) ? payload.cvSections : memorySettings.cvSections || defaultCvSections,
+  };
+  assertNoBase64Payload(cleanPayload, 'cv');
 
-  try {
-    const firestoreTasks: Promise<any>[] = [];
+  const res = await fetch('/api/cv', {
+    method: 'PUT',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify({ cv: cleanPayload }),
+  });
 
-    // 1. settings/hero
-    const heroImageVal = (newSettings as any).heroImage === '__RESET_DEFAULT__'
-      ? defaultSettings.heroImage
-      : (merged.heroImage || defaultSettings.heroImage);
-
-    firestoreTasks.push(
-      setDoc(
-        doc(db, 'settings', 'hero'),
-        cleanForFirestore({
-          heroImage: heroImageVal,
-          savedAt: timestamp,
-          updatedAt: new Date().toISOString(),
-          _adminAuth: 'alfreelnc_admin_auth_verified',
-          updatedByAdmin: true
-        }),
-        { merge: true }
-      )
-    );
-
-    // 2. settings/cv
-    if (merged.cvSections || merged.cvPdfFile !== undefined || merged.cvRole) {
-      firestoreTasks.push(
-        setDoc(
-          doc(db, 'settings', 'cv'),
-          cleanForFirestore({
-            cvSections: merged.cvSections || [],
-            cvPdfFile: merged.cvPdfFile || '',
-            cvRole: merged.cvRole || '',
-            savedAt: timestamp,
-            updatedAt: new Date().toISOString(),
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true
-          }),
-          { merge: true }
-        )
-      );
-    }
-
-    // 3. settings/promoPosters
-    if (Array.isArray(merged.promoPosters)) {
-      const safePosters = merged.promoPosters.map((p: any) => {
-        const { dataUrl: _drop, ...rest } = p;
-        return rest;
-      });
-      firestoreTasks.push(
-        setDoc(
-          doc(db, 'settings', 'promoPosters'),
-          cleanForFirestore({
-            posters: safePosters,
-            active: merged.promoWidgetActive !== false,
-            updatedAt: new Date().toISOString(),
-            savedAt: timestamp,
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true
-          }),
-          { merge: true }
-        )
-      );
-    }
-
-    // 4. settings/global
-    const safeGlobalPayload: Record<string, any> = {
-      ...merged,
-      heroImage: heroImageVal,
-      savedAt: timestamp,
-      updatedAt: new Date().toISOString(),
-      _adminAuth: 'alfreelnc_admin_auth_verified',
-      updatedByAdmin: true
-    };
-    delete safeGlobalPayload.heroImageDataUrl;
-    if (Array.isArray(safeGlobalPayload.promoPosters)) {
-      safeGlobalPayload.promoPosters = safeGlobalPayload.promoPosters.map((p: any) => {
-        const { dataUrl: _drop, ...rest } = p;
-        return rest;
-      });
-    }
-
-    firestoreTasks.push(
-      setDoc(doc(db, 'settings', 'global'), cleanForFirestore(safeGlobalPayload), { merge: true })
-    );
-
-    await Promise.all(firestoreTasks);
-
-    // Hanya update state in-memory & broadcast setelah Firestore benar-benar selesai
-    setLocalSettings({ ...merged, heroImage: heroImageVal });
-    return true;
-  } catch (e) {
-    logFirestoreError(e, OperationType.WRITE, 'settings');
-    throw e;
-  }
+  const data = await parseApiJson<{ cv: any }>(res, 'Gagal menyimpan data CV ke Vercel Blob');
+  setContentBlobError('cv', null);
+  return data?.cv || cleanPayload;
 }
 
-// 2. PROJECTS (In-memory cache hydrated ONLY from Cloud Firestore)
+/**
+ * Menyimpan pengaturan situs ke Vercel Blob (data/site-settings.json dan data/cv.json)
+ */
+export async function saveStoredSettings(newSettings: SiteSettings): Promise<boolean> {
+  const isResetHero = (newSettings as any).heroImage === '__RESET_DEFAULT__';
+  const cleaned = cleanSettings(newSettings);
+  const timestamp = Date.now();
+  const heroImageVal = isResetHero ? '__RESET_DEFAULT__' : (cleaned.heroImage || defaultSettings.heroImage);
+  const merged: SiteSettings = { ...defaultSettings, ...cleaned, savedAt: timestamp };
+
+  const safePosters = Array.isArray(merged.promoPosters)
+    ? merged.promoPosters.map((p: any) => {
+        const { dataUrl: _drop, ...rest } = p;
+        return rest;
+      })
+    : [];
+
+  const sitePayload: Record<string, any> = {
+    ...merged,
+    heroImage: heroImageVal,
+    promoPosters: safePosters,
+    savedAt: timestamp,
+  };
+  delete sitePayload.cvRole;
+  delete sitePayload.cvPdfFile;
+  delete sitePayload.cvSections;
+  delete sitePayload.heroImageDataUrl;
+
+  assertNoBase64Payload(sitePayload, 'site-settings');
+
+  const hasCvPayload =
+    newSettings.cvSections !== undefined ||
+    newSettings.cvPdfFile !== undefined ||
+    newSettings.cvRole !== undefined;
+
+  const cvPayload = {
+    cvRole: merged.cvRole || 'Desainer Grafis',
+    cvPdfFile: merged.cvPdfFile || '',
+    cvSections: merged.cvSections || defaultCvSections,
+  };
+
+  if (hasCvPayload) {
+    assertNoBase64Payload(cvPayload, 'cv');
+  }
+
+  const tasks: Promise<any>[] = [
+    fetch('/api/site-settings', {
+      method: 'PUT',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-admin-token': ADMIN_AUTH_TOKEN,
+      },
+      body: JSON.stringify({ settings: sitePayload }),
+    }).then((r) => parseApiJson<{ settings?: Partial<SiteSettings> }>(r, 'Gagal menyimpan pengaturan situs ke Vercel Blob')),
+  ];
+
+  if (hasCvPayload) {
+    tasks.push(saveCvToBlob(cvPayload));
+  }
+
+  const [savedSiteResp, savedCvResp] = await Promise.all(tasks);
+  const finalSettings: SiteSettings = {
+    ...merged,
+    ...(savedSiteResp?.settings || {}),
+    ...(savedCvResp || {}),
+    heroImage: savedSiteResp?.settings?.heroImage || (isResetHero ? defaultSettings.heroImage : merged.heroImage),
+    savedAt: timestamp,
+  };
+
+  setContentBlobError('settings', null);
+  if (hasCvPayload) setContentBlobError('cv', null);
+
+  hasHydratedSettings = true;
+  if (hasCvPayload) hasHydratedCv = true;
+  const updated = setLocalSettings(finalSettings);
+  notifySettingsCallbacks(updated);
+  return true;
+}
+
+// 2. PROJECTS (In-memory cache hydrated from Vercel Blob data/portfolio.json)
 export function getStoredProjects(): Project[] {
   return memoryProjects;
 }
@@ -734,7 +878,140 @@ export async function saveStoredProjects(newProjects: Project[]): Promise<void> 
   }
 }
 
-// 3. BLOG POSTS (In-memory cache hydrated ONLY from Cloud Firestore)
+export async function fetchProjectsFromBlob(options?: { includeArchived?: boolean }): Promise<Project[]> {
+  const includeArchived = Boolean(options?.includeArchived);
+  if (!includeArchived && inFlightProjectsFetch) {
+    return inFlightProjectsFetch;
+  }
+
+  const run = (async () => {
+    try {
+      const url = includeArchived ? '/api/portfolio?includeArchived=true' : '/api/portfolio';
+      const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+      const data = await parseApiJson<{ items?: Project[] }>(
+        res,
+        'Gagal memuat daftar karya dari Vercel Blob'
+      );
+      setContentBlobError('projects', null);
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      if (includeArchived) {
+        return rawItems;
+      }
+      const sorted = sortProjectsByRecency(cleanProjects(rawItems));
+      hasHydratedProjects = true;
+      await saveStoredProjects(sorted);
+      projectCallbacks.forEach((fn) => {
+        try {
+          fn(sorted);
+        } catch {}
+      });
+      return sorted;
+    } catch (err: any) {
+      if (!includeArchived) {
+        setContentBlobError('projects', err?.message || 'Gagal memuat daftar karya dari Vercel Blob.');
+      }
+      throw err;
+    } finally {
+      if (!includeArchived) {
+        inFlightProjectsFetch = null;
+      }
+    }
+  })();
+
+  if (!includeArchived) {
+    inFlightProjectsFetch = run;
+  }
+  return run;
+}
+
+export async function saveProjectToBlob(project: Project): Promise<{ item: Project; items: Project[] }> {
+  assertNoBase64Payload(project, 'portfolio');
+  const res = await fetch('/api/portfolio', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify({ project }),
+  });
+  const data = await parseApiJson<{ item: Project; items?: Project[] }>(
+    res,
+    'Gagal menyimpan karya ke Vercel Blob'
+  );
+  setContentBlobError('projects', null);
+  const sorted = sortProjectsByRecency(cleanProjects(Array.isArray(data?.items) ? data.items : [data.item]));
+  hasHydratedProjects = true;
+  await saveStoredProjects(sorted);
+  projectCallbacks.forEach((fn) => {
+    try {
+      fn(sorted);
+    } catch {}
+  });
+  return { item: data.item, items: sorted };
+}
+
+export async function patchProjectInBlob(payload: {
+  id?: string;
+  ids?: string[];
+  updates: Record<string, any>;
+}): Promise<Project[]> {
+  assertNoBase64Payload(payload.updates, 'portfolio');
+  const res = await fetch('/api/portfolio', {
+    method: 'PATCH',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseApiJson<{ items?: Project[] }>(
+    res,
+    'Gagal memperbarui status karya di Vercel Blob'
+  );
+  setContentBlobError('projects', null);
+  const sorted = sortProjectsByRecency(cleanProjects(Array.isArray(data?.items) ? data.items : []));
+  hasHydratedProjects = true;
+  await saveStoredProjects(sorted);
+  projectCallbacks.forEach((fn) => {
+    try {
+      fn(sorted);
+    } catch {}
+  });
+  return sorted;
+}
+
+export async function deleteProjectFromBlob(idOrIds: string | string[]): Promise<Project[]> {
+  const payload = Array.isArray(idOrIds) ? { ids: idOrIds } : { id: idOrIds };
+  const res = await fetch('/api/portfolio', {
+    method: 'DELETE',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseApiJson<{ items?: Project[] }>(
+    res,
+    'Gagal menghapus karya dari Vercel Blob'
+  );
+  setContentBlobError('projects', null);
+  const sorted = sortProjectsByRecency(cleanProjects(Array.isArray(data?.items) ? data.items : []));
+  hasHydratedProjects = true;
+  await saveStoredProjects(sorted);
+  projectCallbacks.forEach((fn) => {
+    try {
+      fn(sorted);
+    } catch {}
+  });
+  return sorted;
+}
+
+// 3. BLOG POSTS (In-memory cache hydrated from /api/blogs Vercel Blob JSON)
+let inFlightBlogsFetch: Promise<BlogPost[]> | null = null;
+
 export function getStoredBlogs(): BlogPost[] {
   return memoryBlogs;
 }
@@ -747,7 +1024,138 @@ export async function saveStoredBlogs(newBlogs: BlogPost[]): Promise<void> {
   }
 }
 
-// 4. EXPERIENCES (In-memory cache hydrated ONLY from Cloud Firestore)
+export async function fetchBlogsFromBlob(options?: { includeArchived?: boolean }): Promise<BlogPost[]> {
+  const includeArchived = Boolean(options?.includeArchived);
+  if (!includeArchived && inFlightBlogsFetch) {
+    return inFlightBlogsFetch;
+  }
+
+  const run = (async () => {
+    try {
+      const url = includeArchived ? '/api/blogs?includeArchived=true' : '/api/blogs';
+      const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+      const data = await parseApiJson<{ items?: BlogPost[] }>(
+        res,
+        'Gagal memuat artikel blog dari Vercel Blob'
+      );
+      setContentBlobError('blogs', null);
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      if (includeArchived) {
+        return rawItems;
+      }
+      const sorted = sortBlogsByRecency(cleanBlogs(rawItems));
+      hasHydratedBlogs = true;
+      await saveStoredBlogs(sorted);
+      blogCallbacks.forEach((fn) => {
+        try {
+          fn(sorted);
+        } catch {}
+      });
+      return sorted;
+    } catch (err: any) {
+      if (!includeArchived) {
+        setContentBlobError('blogs', err?.message || 'Gagal memuat artikel blog dari Vercel Blob.');
+      }
+      throw err;
+    } finally {
+      if (!includeArchived) {
+        inFlightBlogsFetch = null;
+      }
+    }
+  })();
+
+  if (!includeArchived) {
+    inFlightBlogsFetch = run;
+  }
+  return run;
+}
+
+export async function saveBlogToBlob(post: BlogPost): Promise<{ item: BlogPost; items: BlogPost[] }> {
+  assertNoBase64Payload(post, 'blog');
+  const res = await fetch('/api/blogs', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify({ post }),
+  });
+  const data = await parseApiJson<{ item: BlogPost; items?: BlogPost[] }>(
+    res,
+    'Gagal menyimpan artikel blog ke Vercel Blob'
+  );
+  setContentBlobError('blogs', null);
+  const sorted = sortBlogsByRecency(cleanBlogs(Array.isArray(data?.items) ? data.items : [data.item]));
+  hasHydratedBlogs = true;
+  await saveStoredBlogs(sorted);
+  blogCallbacks.forEach((fn) => {
+    try {
+      fn(sorted);
+    } catch {}
+  });
+  return { item: data.item, items: sorted };
+}
+
+export async function patchBlogInBlob(payload: {
+  id?: string;
+  ids?: string[];
+  updates: Record<string, any>;
+}): Promise<BlogPost[]> {
+  assertNoBase64Payload(payload.updates, 'blog');
+  const res = await fetch('/api/blogs', {
+    method: 'PATCH',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseApiJson<{ items?: BlogPost[] }>(
+    res,
+    'Gagal memperbarui artikel blog di Vercel Blob'
+  );
+  setContentBlobError('blogs', null);
+  const sorted = sortBlogsByRecency(cleanBlogs(Array.isArray(data?.items) ? data.items : []));
+  hasHydratedBlogs = true;
+  await saveStoredBlogs(sorted);
+  blogCallbacks.forEach((fn) => {
+    try {
+      fn(sorted);
+    } catch {}
+  });
+  return sorted;
+}
+
+export async function deleteBlogFromBlob(idOrIds: string | string[]): Promise<BlogPost[]> {
+  const payload = Array.isArray(idOrIds) ? { ids: idOrIds } : { id: idOrIds };
+  const res = await fetch('/api/blogs', {
+    method: 'DELETE',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseApiJson<{ items?: BlogPost[] }>(
+    res,
+    'Gagal menghapus artikel blog dari Vercel Blob'
+  );
+  setContentBlobError('blogs', null);
+  const sorted = sortBlogsByRecency(cleanBlogs(Array.isArray(data?.items) ? data.items : []));
+  hasHydratedBlogs = true;
+  await saveStoredBlogs(sorted);
+  blogCallbacks.forEach((fn) => {
+    try {
+      fn(sorted);
+    } catch {}
+  });
+  return sorted;
+}
+
+// 4. EXPERIENCES (In-memory cache hydrated from Vercel Blob data/experience.json)
 export function getStoredExperiences(): any[] {
   return memoryExperiences;
 }
@@ -760,7 +1168,138 @@ export async function saveStoredExperiences(newExps: any[]): Promise<void> {
   }
 }
 
-// 5. TEMPLATES (In-memory cache hydrated ONLY from Cloud Firestore)
+export async function fetchExperiencesFromBlob(options?: { includeArchived?: boolean }): Promise<any[]> {
+  const includeArchived = Boolean(options?.includeArchived);
+  if (!includeArchived && inFlightExperiencesFetch) {
+    return inFlightExperiencesFetch;
+  }
+
+  const run = (async () => {
+    try {
+      const url = includeArchived ? '/api/experience?includeArchived=true' : '/api/experience';
+      const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+      const data = await parseApiJson<{ items?: any[] }>(
+        res,
+        'Gagal memuat data pengalaman dari Vercel Blob'
+      );
+      setContentBlobError('experiences', null);
+      const rawItems = Array.isArray(data?.items) ? data.items : [];
+      if (includeArchived) {
+        return rawItems;
+      }
+      const sorted = sortExperiencesByRecency(cleanExperiences(rawItems));
+      hasHydratedExperiences = true;
+      await saveStoredExperiences(sorted);
+      experienceCallbacks.forEach((fn) => {
+        try {
+          fn(sorted);
+        } catch {}
+      });
+      return sorted;
+    } catch (err: any) {
+      if (!includeArchived) {
+        setContentBlobError('experiences', err?.message || 'Gagal memuat data pengalaman dari Vercel Blob.');
+      }
+      throw err;
+    } finally {
+      if (!includeArchived) {
+        inFlightExperiencesFetch = null;
+      }
+    }
+  })();
+
+  if (!includeArchived) {
+    inFlightExperiencesFetch = run;
+  }
+  return run;
+}
+
+export async function saveExperienceToBlob(experience: any): Promise<{ item: any; items: any[] }> {
+  assertNoBase64Payload(experience, 'experience');
+  const res = await fetch('/api/experience', {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify({ experience }),
+  });
+  const data = await parseApiJson<{ item: any; items?: any[] }>(
+    res,
+    'Gagal menyimpan data pengalaman ke Vercel Blob'
+  );
+  setContentBlobError('experiences', null);
+  const sorted = sortExperiencesByRecency(cleanExperiences(Array.isArray(data?.items) ? data.items : [data.item]));
+  hasHydratedExperiences = true;
+  await saveStoredExperiences(sorted);
+  experienceCallbacks.forEach((fn) => {
+    try {
+      fn(sorted);
+    } catch {}
+  });
+  return { item: data.item, items: sorted };
+}
+
+export async function patchExperienceInBlob(payload: {
+  id?: string;
+  ids?: string[];
+  updates: Record<string, any>;
+}): Promise<any[]> {
+  assertNoBase64Payload(payload.updates, 'experience');
+  const res = await fetch('/api/experience', {
+    method: 'PATCH',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseApiJson<{ items?: any[] }>(
+    res,
+    'Gagal memperbarui data pengalaman di Vercel Blob'
+  );
+  setContentBlobError('experiences', null);
+  const sorted = sortExperiencesByRecency(cleanExperiences(Array.isArray(data?.items) ? data.items : []));
+  hasHydratedExperiences = true;
+  await saveStoredExperiences(sorted);
+  experienceCallbacks.forEach((fn) => {
+    try {
+      fn(sorted);
+    } catch {}
+  });
+  return sorted;
+}
+
+export async function deleteExperienceFromBlob(idOrIds: string | string[]): Promise<any[]> {
+  const payload = Array.isArray(idOrIds) ? { ids: idOrIds } : { id: idOrIds };
+  const res = await fetch('/api/experience', {
+    method: 'DELETE',
+    cache: 'no-store',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-token': ADMIN_AUTH_TOKEN,
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = await parseApiJson<{ items?: any[] }>(
+    res,
+    'Gagal menghapus data pengalaman dari Vercel Blob'
+  );
+  setContentBlobError('experiences', null);
+  const sorted = sortExperiencesByRecency(cleanExperiences(Array.isArray(data?.items) ? data.items : []));
+  hasHydratedExperiences = true;
+  await saveStoredExperiences(sorted);
+  experienceCallbacks.forEach((fn) => {
+    try {
+      fn(sorted);
+    } catch {}
+  });
+  return sorted;
+}
+
+// 5. TEMPLATES
 export function getStoredTemplates(): TemplateProduct[] {
   return memoryTemplates;
 }
@@ -773,7 +1312,7 @@ export async function saveStoredTemplates(newTemplates: TemplateProduct[]): Prom
   }
 }
 
-// 6. SINGLETON REAL-TIME SUBSCRIPTION HUBS (Mencegah pembacaan & onSnapshot duplikat antar komponen)
+// 6. SINGLETON SUBSCRIPTION HUBS (Terhubung ke Vercel Blob API — Bebas Pembacaan Firestore)
 let hasHydratedSettings = false;
 let settingsSubActive = false;
 const settingsCallbacks = new Set<(settings: SiteSettings) => void>();
@@ -794,12 +1333,47 @@ let hasHydratedExperiences = false;
 let experiencesSubActive = false;
 const experienceCallbacks = new Set<(exps: any[]) => void>();
 
+let lastFocusSyncAt = 0;
+let focusListenerRegistered = false;
+
+function registerCrossDeviceFocusSync(): void {
+  if (focusListenerRegistered || typeof window === 'undefined') return;
+  focusListenerRegistered = true;
+
+  const maybeRefresh = () => {
+    if (document.visibilityState && document.visibilityState !== 'visible') return;
+    const now = Date.now();
+    if (now - lastFocusSyncAt < 20000) return;
+    lastFocusSyncAt = now;
+
+    if (settingsCallbacks.size > 0 || cvCallbacks.size > 0) {
+      fetchSettingsFromBlob().catch(() => {});
+    }
+    if (projectCallbacks.size > 0) {
+      fetchProjectsFromBlob().catch(() => {});
+    }
+    if (experienceCallbacks.size > 0) {
+      fetchExperiencesFromBlob().catch(() => {});
+    }
+    if (blogCallbacks.size > 0) {
+      fetchBlogsFromBlob().catch(() => {});
+    }
+  };
+
+  window.addEventListener('focus', maybeRefresh);
+  document.addEventListener('visibilitychange', maybeRefresh);
+}
+
 function notifySettingsCallbacks(next: SiteSettings) {
-  settingsCallbacks.forEach(cb => {
-    try { cb(next); } catch {}
+  settingsCallbacks.forEach((cb) => {
+    try {
+      cb(next);
+    } catch {}
   });
-  cvCallbacks.forEach(cb => {
-    try { cb(next); } catch {}
+  cvCallbacks.forEach((cb) => {
+    try {
+      cb(next);
+    } catch {}
   });
 }
 
@@ -807,38 +1381,20 @@ export function subscribeSettingsRealtime(cb?: (settings: SiteSettings) => void)
   if (cb) {
     settingsCallbacks.add(cb);
     if (hasHydratedSettings) {
-      try { cb(memorySettings); } catch {}
+      try {
+        cb(memorySettings);
+      } catch {}
     }
   }
 
   if (!settingsSubActive && typeof window !== 'undefined') {
     settingsSubActive = true;
+    registerCrossDeviceFocusSync();
 
-    onSnapshot(
-      doc(db, 'settings', 'global'),
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const cloudData = docSnap.data() as Partial<SiteSettings>;
-          if (cloudData && Object.keys(cloudData).length > 0) {
-            const currentSaved = getTimestampMs(memorySettings?.savedAt);
-            const incomingSaved = getTimestampMs(cloudData?.savedAt || (cloudData as any)?.updatedAt);
-            const merged = (!hasHydratedSettings || incomingSaved >= currentSaved)
-              ? setLocalSettings({ ...memorySettings, ...cloudData, savedAt: incomingSaved || Date.now() })
-              : memorySettings;
-            hasHydratedSettings = true;
-            notifySettingsCallbacks(merged);
-            return;
-          }
-        }
-        hasHydratedSettings = true;
-        notifySettingsCallbacks(memorySettings);
-      },
-      (err) => {
-        logFirestoreError(err, OperationType.GET, 'settings/global');
-        hasHydratedSettings = true;
-        notifySettingsCallbacks(memorySettings);
-      }
-    );
+    fetchSettingsFromBlob().catch(() => {
+      hasHydratedSettings = true;
+      notifySettingsCallbacks(memorySettings);
+    });
   }
 
   return () => {
@@ -851,46 +1407,22 @@ export function subscribeCvRealtime(cb?: (settings: SiteSettings) => void): () =
   if (cb) {
     cvCallbacks.add(cb);
     if (hasHydratedCv || hasHydratedSettings) {
-      try { cb(memorySettings); } catch {}
+      try {
+        cb(memorySettings);
+      } catch {}
     }
   }
 
   if (!cvSubActive && typeof window !== 'undefined') {
     cvSubActive = true;
-    onSnapshot(
-      doc(db, 'settings', 'cv'),
-      (cvSnap) => {
-        if (cvSnap.exists()) {
-          const cvData = cvSnap.data();
-          const cleanedCvSections = Array.isArray(cvData.cvSections)
-            ? cvData.cvSections.map((s: any) => ({
-                title: s.title || '',
-                content: s.content || '',
-                images: Array.isArray(s.images)
-                  ? s.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0 && !img.startsWith('blob:'))
-                  : (s.image && !s.image.startsWith('blob:') ? [s.image.trim()] : [])
-              }))
-            : undefined;
-          const updated = setLocalSettings({
-            ...memorySettings,
-            cvRole: cvData.cvRole || memorySettings.cvRole,
-            cvPdfFile: cvData.cvPdfFile !== undefined ? cvData.cvPdfFile : memorySettings.cvPdfFile,
-            ...(cleanedCvSections && cleanedCvSections.length > 0 ? { cvSections: cleanedCvSections } : {}),
-            savedAt: Math.max(getTimestampMs(memorySettings.savedAt), getTimestampMs(cvData.savedAt || cvData.updatedAt)) || Date.now(),
-          });
-          hasHydratedCv = true;
-          notifySettingsCallbacks(updated);
-          return;
-        }
+    registerCrossDeviceFocusSync();
+
+    if (!hasHydratedCv && !inFlightSettingsFetch) {
+      fetchSettingsFromBlob().catch(() => {
         hasHydratedCv = true;
         notifySettingsCallbacks(memorySettings);
-      },
-      (err) => {
-        logFirestoreError(err, OperationType.GET, 'settings/cv');
-        hasHydratedCv = true;
-        notifySettingsCallbacks(memorySettings);
-      }
-    );
+      });
+    }
   }
 
   return () => {
@@ -903,34 +1435,24 @@ export function subscribeProjectsRealtime(cb?: (projects: Project[]) => void): (
   if (cb) {
     projectCallbacks.add(cb);
     if (hasHydratedProjects) {
-      try { cb(memoryProjects); } catch {}
+      try {
+        cb(memoryProjects);
+      } catch {}
     }
   }
 
   if (!projectsSubActive && typeof window !== 'undefined') {
     projectsSubActive = true;
-    onSnapshot(
-      collection(db, 'projects'),
-      (snapshot) => {
-        const projData: Project[] = [];
-        snapshot.forEach((docSnap) => {
-          projData.push({ id: docSnap.id, ...(docSnap.data() as any) });
-        });
-        const sorted = sortProjectsByRecency(cleanProjects(projData));
-        hasHydratedProjects = true;
-        saveStoredProjects(sorted);
-        projectCallbacks.forEach(fn => {
-          try { fn(sorted); } catch {}
-        });
-      },
-      (error) => {
-        logFirestoreError(error, OperationType.LIST, 'projects');
-        hasHydratedProjects = true;
-        projectCallbacks.forEach(fn => {
-          try { fn(memoryProjects); } catch {}
-        });
-      }
-    );
+    registerCrossDeviceFocusSync();
+
+    fetchProjectsFromBlob().catch(() => {
+      hasHydratedProjects = true;
+      projectCallbacks.forEach((fn) => {
+        try {
+          fn(memoryProjects);
+        } catch {}
+      });
+    });
   }
 
   return () => {
@@ -948,28 +1470,16 @@ export function subscribeBlogsRealtime(cb?: (blogs: BlogPost[]) => void): () => 
 
   if (!blogsSubActive && typeof window !== 'undefined') {
     blogsSubActive = true;
-    onSnapshot(
-      collection(db, 'blogPosts'),
-      (snapshot) => {
-        const loadedPosts: BlogPost[] = [];
-        snapshot.forEach((docSnap) => {
-          loadedPosts.push({ id: docSnap.id, ...(docSnap.data() as any) } as BlogPost);
-        });
-        const sorted = sortBlogsByRecency(cleanBlogs(loadedPosts));
-        hasHydratedBlogs = true;
-        saveStoredBlogs(sorted);
-        blogCallbacks.forEach(fn => {
-          try { fn(sorted); } catch {}
-        });
-      },
-      (error) => {
-        logFirestoreError(error, OperationType.LIST, 'blogPosts');
-        hasHydratedBlogs = true;
-        blogCallbacks.forEach(fn => {
-          try { fn(memoryBlogs); } catch {}
-        });
-      }
-    );
+    registerCrossDeviceFocusSync();
+
+    fetchBlogsFromBlob().catch(() => {
+      hasHydratedBlogs = true;
+      blogCallbacks.forEach((fn) => {
+        try {
+          fn(memoryBlogs);
+        } catch {}
+      });
+    });
   }
 
   return () => {
@@ -981,34 +1491,24 @@ export function subscribeExperiencesRealtime(cb?: (exps: any[]) => void): () => 
   if (cb) {
     experienceCallbacks.add(cb);
     if (hasHydratedExperiences) {
-      try { cb(memoryExperiences); } catch {}
+      try {
+        cb(memoryExperiences);
+      } catch {}
     }
   }
 
   if (!experiencesSubActive && typeof window !== 'undefined') {
     experiencesSubActive = true;
-    onSnapshot(
-      collection(db, 'experiences'),
-      (snapshot) => {
-        const data: any[] = [];
-        snapshot.forEach((d) => {
-          data.push({ id: d.id, ...(d.data() as any) });
-        });
-        const sorted = sortExperiencesByRecency(cleanExperiences(data));
-        hasHydratedExperiences = true;
-        saveStoredExperiences(sorted);
-        experienceCallbacks.forEach(fn => {
-          try { fn(sorted); } catch {}
-        });
-      },
-      (error) => {
-        logFirestoreError(error, OperationType.LIST, 'experiences');
-        hasHydratedExperiences = true;
-        experienceCallbacks.forEach(fn => {
-          try { fn(memoryExperiences); } catch {}
-        });
-      }
-    );
+    registerCrossDeviceFocusSync();
+
+    fetchExperiencesFromBlob().catch(() => {
+      hasHydratedExperiences = true;
+      experienceCallbacks.forEach((fn) => {
+        try {
+          fn(memoryExperiences);
+        } catch {}
+      });
+    });
   }
 
   return () => {

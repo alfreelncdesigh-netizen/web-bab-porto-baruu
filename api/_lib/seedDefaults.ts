@@ -353,3 +353,99 @@ export function createInitialCvSeed(): CvJsonData {
     version: 1,
   };
 }
+
+export interface ItemsJsonData<T = any> {
+  items: T[];
+  updatedAt: string;
+  version: number;
+}
+
+export interface BlogCommentsJsonData {
+  commentsByBlogId: Record<string, any[]>;
+  updatedAt: string;
+  version: number;
+}
+
+export function createInitialBlogsSeed(): ItemsJsonData {
+  const raw = readLocalSeedFile('blogs-storage.json');
+  const rawItems = Array.isArray(raw) ? raw : (Array.isArray(raw?.items) ? raw.items : []);
+  const items = rawItems
+    .filter((b: any) => b && (b.id !== undefined || b.title))
+    .map((b: any) => {
+      const clean = stripBase64Deep(b);
+      return {
+        ...clean,
+        id: String(clean.id),
+        published: clean.published !== false,
+        isArchived: Boolean(clean.isArchived),
+        archiveFolderId: clean.archiveFolderId || null,
+      };
+    });
+
+  return {
+    items,
+    updatedAt: new Date().toISOString(),
+    version: 1,
+  };
+}
+
+export function createInitialMessagesSeed(): ItemsJsonData {
+  const raw = readLocalSeedFile('messages-storage.json');
+  const rawItems = Array.isArray(raw) ? raw : (Array.isArray(raw?.items) ? raw.items : []);
+  const items = rawItems
+    .filter((m: any) => m && m.id && m.isDeleted !== true)
+    .map((m: any) => stripBase64Deep(m));
+
+  return {
+    items,
+    updatedAt: new Date().toISOString(),
+    version: 1,
+  };
+}
+
+export function createInitialQuickFilterSeed(): ItemsJsonData {
+  const raw = readLocalSeedFile('quick-filter-storage.json');
+  const rawItems = Array.isArray(raw) ? raw : (Array.isArray(raw?.items) ? raw.items : []);
+  const items = rawItems
+    .filter((q: any) => q && q.id)
+    .map((q: any) => stripBase64Deep(q));
+
+  return {
+    items,
+    updatedAt: new Date().toISOString(),
+    version: 1,
+  };
+}
+
+export function createInitialBlogCommentsSeed(): BlogCommentsJsonData {
+  const raw = readLocalSeedFile('blog-comments-storage.json');
+  const map: Record<string, any[]> = {};
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const sourceMap = raw.commentsByBlogId && typeof raw.commentsByBlogId === 'object' ? raw.commentsByBlogId : raw;
+    for (const [k, v] of Object.entries(sourceMap)) {
+      if (Array.isArray(v)) {
+        map[k] = stripBase64Deep(v);
+      }
+    }
+  }
+  return {
+    commentsByBlogId: map,
+    updatedAt: new Date().toISOString(),
+    version: 1,
+  };
+}
+
+export function createInitialOrdersSeed(): ItemsJsonData {
+  const raw = readLocalSeedFile('orders-storage.json');
+  const rawItems = Array.isArray(raw) ? raw : (Array.isArray(raw?.items) ? raw.items : []);
+  const items = rawItems
+    .filter((o: any) => o && o.id)
+    .map((o: any) => stripBase64Deep(o));
+
+  return {
+    items,
+    updatedAt: new Date().toISOString(),
+    version: 1,
+  };
+}
+

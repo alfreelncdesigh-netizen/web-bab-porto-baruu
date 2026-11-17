@@ -2,16 +2,24 @@ import { useState, useEffect } from 'react';
 import ArchiveMoveModal from './ArchiveMoveModal';
 import ConfirmModal from './ConfirmModal';
 import { motion } from 'motion/react';
-import { Project, categories } from '../data/projects';
+import { Project, categories } from '../types/project';
 import { Edit, Trash, EyeOff, Eye, Plus, X, Check, Upload, Loader2, Link as LinkIcon, Archive, AlertCircle, Handshake } from 'lucide-react';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot, getDocs, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { getStoredProjects, saveStoredProjects, cleanProjects, sortProjectsByRecency, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
-import { SiteSettings } from '../data/settings';
+import { 
+  getStoredProjects, 
+  saveStoredProjects, 
+  cleanProjects, 
+  sortProjectsByRecency, 
+  getStoredSettings, 
+  saveStoredSettings,
+  fetchProjectsFromBlob,
+  saveProjectToBlob,
+  patchProjectInBlob,
+  deleteProjectFromBlob
+} from '../lib/contentStorage';
+import { SiteSettings } from '../types/site';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { compressAndUpload, ensurePersistedAssetUrl, validatePortfolioImageFile, uploadPortfolioImageToVercelBlob } from '../lib/storageUploader';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
-import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function PortfolioAdmin() {
@@ -39,46 +47,28 @@ export default function PortfolioAdmin() {
     };
     window.addEventListener('user_projects_updated', handleUpdate);
 
-    const unsubscribe = onSnapshot(
-      collection(db, 'projects'),
-      (snapshot) => {
-        if (!isMounted) return;
-        const projs: Project[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          projs.push({ id: docSnap.id, ...data } as Project);
-        });
-        const sorted = sortProjectsByRecency(cleanProjects(projs));
-        setProjects(sorted);
-        saveStoredProjects(sorted);
-      },
-      (error) => {
-        logFirestoreError(error, OperationType.LIST, 'projects');
+    fetchProjectsFromBlob({ includeArchived: false })
+      .then((sorted) => {
+        if (isMounted) setProjects(sorted);
+      })
+      .catch((error: any) => {
         if (isMounted) {
-          showToast(error?.message || 'Gagal memuat daftar karya dari Cloud Firestore.', 'error');
+          showToast(error?.message || 'Gagal memuat daftar karya dari Vercel Blob.', 'error');
         }
-      }
-    );
+      });
 
     return () => {
       isMounted = false;
-      unsubscribe();
       window.removeEventListener('user_projects_updated', handleUpdate);
     };
   }, []);
 
   const refreshProjectsList = async () => {
     try {
-      const snapshot = await getDocs(collection(db, 'projects'));
-      const projs: Project[] = [];
-      snapshot.forEach((docSnap) => {
-        projs.push({ id: docSnap.id, ...docSnap.data() } as Project);
-      });
-      const sorted = sortProjectsByRecency(cleanProjects(projs));
+      const sorted = await fetchProjectsFromBlob({ includeArchived: false });
       setProjects(sorted);
-      await saveStoredProjects(sorted);
     } catch (err: any) {
-      logFirestoreError(err, OperationType.LIST, 'projects');
+      showToast(err?.message || 'Gagal memuat ulang daftar karya dari Vercel Blob.', 'error');
     }
   };
 
@@ -175,36 +165,10 @@ export default function PortfolioAdmin() {
         archiveFolderId: null,
       };
 
-      const projectRef = doc(db, 'projects', docId);
-      await setDoc(projectRef, {
-        title: savedProj.title,
-        category: savedProj.category,
-        image: savedProj.image,
-        images: savedProj.images || [],
-        ...(savedProj.imageWidth && savedProj.imageHeight
-          ? { imageWidth: savedProj.imageWidth, imageHeight: savedProj.imageHeight }
-          : {}),
-        description: savedProj.description,
-        date: savedProj.date || new Date().toISOString().split('T')[0],
-        role: savedProj.role || '',
-        aspectRatio: savedProj.aspectRatio || '',
-        draft: savedProj.draft || false,
-        totalHoursSpent: savedProj.totalHoursSpent || '',
-        toolsUsed: savedProj.toolsUsed || '',
-        completionDate: savedProj.completionDate || '',
-        isCollaboration: savedProj.isCollaboration || false,
-        collaborationPartner: savedProj.collaborationPartner || '',
-        collaborationLogo: savedProj.collaborationLogo || '',
-        collaborationText: savedProj.collaborationText || '',
-        createdAt: savedProj.createdAt || nowMs,
-        isArchived: false,
-        archiveFolderId: null,
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true,
-        updatedAt: new Date(nowMs).toISOString()
-      }, { merge: true });
+      const savedResult = await saveProjectToBlob(savedProj);
+      setProjects(savedResult.items);
 
-      // Jika kolaborasi aktif pada karya ini, langsung sinkronkan ke pengaturan Firestore
+      // Jika kolaborasi aktif pada karya ini, langsung sinkronkan ke pengaturan Vercel Blob
       if (savedProj.isCollaboration) {
         const siteSettings = getStoredSettings();
         const partnerLogo = savedProj.collaborationLogo || siteSettings.collaboration?.partnerLogo || '';
@@ -239,14 +203,13 @@ export default function PortfolioAdmin() {
         }
       } catch {}
 
-      await refreshProjectsList();
-      setEditingProject(savedProj);
-      markSaved(savedProj);
-      showToast("Karya berhasil disimpan ke Cloud Firestore & langsung tampil di web!");
+      const persistedProj = savedResult.item || savedProj;
+      setEditingProject(persistedProj);
+      markSaved(persistedProj);
+      showToast("Karya berhasil disimpan ke Vercel Blob & langsung tampil di web!");
       setUploadError(null);
     } catch (err: any) {
-      logFirestoreError(err, OperationType.WRITE, `projects/${editingProject.id}`);
-      showToast(err?.message || "Gagal menyimpan karya ke Cloud Firestore.", "error");
+      showToast(err?.message || "Gagal menyimpan karya ke Vercel Blob.", "error");
     } finally {
       setSaving(false);
     }
@@ -262,11 +225,9 @@ export default function PortfolioAdmin() {
     const docId = projectToDelete.id.toString();
 
     try {
-      await deleteDoc(doc(db, 'projects', docId));
-      const updated = projects.filter(p => p.id.toString() !== docId);
+      const updated = await deleteProjectFromBlob(docId);
       setProjects(updated);
-      await saveStoredProjects(updated);
-      showToast(`"${projectToDelete.title || 'Karya'}" berhasil dihapus permanen dari Cloud Firestore.`);
+      showToast(`"${projectToDelete.title || 'Karya'}" berhasil dihapus permanen dari Vercel Blob.`);
 
       // Lacak aktivitas penghapusan oleh kolaborator
       try {
@@ -282,8 +243,7 @@ export default function PortfolioAdmin() {
 
       setProjectToDelete(null);
     } catch (err: any) {
-      logFirestoreError(err, OperationType.DELETE, `projects/${docId}`);
-      showToast(err?.message || `Gagal menghapus karya "${projectToDelete.title || ''}" dari Cloud Firestore.`, "error");
+      showToast(err?.message || `Gagal menghapus karya "${projectToDelete.title || ''}" dari Vercel Blob.`, "error");
     } finally {
       setIsDeleting(false);
     }
@@ -291,21 +251,15 @@ export default function PortfolioAdmin() {
 
   const handleToggleDraft = async (project: Project) => {
     const newDraftStatus = !project.draft;
-    const nowMs = Date.now();
     try {
-      await updateDoc(doc(db, 'projects', project.id.toString()), {
-        draft: newDraftStatus,
-        updatedAt: new Date(nowMs).toISOString(),
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
+      const updated = await patchProjectInBlob({
+        id: project.id.toString(),
+        updates: { draft: newDraftStatus },
       });
-      const updated = projects.map(p => p.id === project.id ? { ...p, draft: newDraftStatus, updatedAt: nowMs } : p);
       setProjects(updated);
-      await saveStoredProjects(updated);
       showToast(newDraftStatus ? "Karya disembunyikan (Draft)." : "Karya ditampilkan (Publik).");
     } catch (err: any) {
-      logFirestoreError(err, OperationType.UPDATE, `projects/${project.id}`);
-      showToast(err?.message || "Gagal memperbarui status karya di Cloud Firestore.", "error");
+      showToast(err?.message || "Gagal memperbarui status karya di Vercel Blob.", "error");
     }
   };
 

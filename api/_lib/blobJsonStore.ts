@@ -1,3 +1,7 @@
+import crypto from 'crypto';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import {
   get,
   put,
@@ -17,6 +21,11 @@ export const BLOB_PATHS = {
   EXPERIENCE: 'data/experience.json',
   SITE_SETTINGS: 'data/site-settings.json',
   CV: 'data/cv.json',
+  BLOGS: 'data/blogs.json',
+  MESSAGES: 'data/messages.json',
+  QUICK_FILTER: 'data/quick-filter.json',
+  BLOG_COMMENTS: 'data/blog-comments.json',
+  ORDERS: 'data/orders.json',
 } as const;
 
 export const STATS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 menit
@@ -33,11 +42,43 @@ export class BlobStoreError extends Error {
   }
 }
 
-export function getBlobToken(): string {
+export function isValidVercelBlobToken(raw?: string | null): boolean {
+  const token = raw?.trim();
+  if (!token) return false;
+  // Format token Vercel Blob resmi: vercel_blob_rw_<storeId>_<secret>
+  const parts = token.split('_');
+  return (
+    parts.length >= 4 &&
+    parts[0] === 'vercel' &&
+    parts[1] === 'blob' &&
+    parts[2] === 'rw' &&
+    Boolean(parts[3]) &&
+    Boolean(parts.slice(3).join('_'))
+  );
+}
+
+export function getOptionalBlobToken(): string | null {
   const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+  if (!token) return null;
+  if (!isValidVercelBlobToken(token)) {
+    if (!loggedInvalidTokenNotice) {
+      loggedInvalidTokenNotice = true;
+      console.warn(
+        '[BlobJsonStore] BLOB_READ_WRITE_TOKEN ditemukan tetapi formatnya tidak valid (tidak memiliki store ID Vercel Blob). Menggunakan penyimpanan JSON lokal sementara.'
+      );
+    }
+    return null;
+  }
+  return token;
+}
+
+let loggedInvalidTokenNotice = false;
+
+export function getBlobToken(): string {
+  const token = getOptionalBlobToken();
   if (!token) {
     throw new BlobStoreError(
-      'Konfigurasi Vercel Blob belum diatur: environment variable BLOB_READ_WRITE_TOKEN tidak ditemukan di server.',
+      'Konfigurasi Vercel Blob belum diatur: environment variable BLOB_READ_WRITE_TOKEN tidak ditemukan atau tidak valid di server.',
       503,
       'BLOB_TOKEN_MISSING'
     );
@@ -162,6 +203,127 @@ function normalizeBlobFailure(err: unknown, context: string): BlobStoreError {
   return new BlobStoreError(`${context}: ${msg}`, 500, 'BLOB_IO_ERROR');
 }
 
+// ============================================================================
+// LOCAL JSON FALLBACK (Saat BLOB_READ_WRITE_TOKEN tidak diatur di preview/dev)
+// ============================================================================
+let loggedLocalFallbackNotice = false;
+
+function logLocalFallbackOnce(): void {
+  if (!loggedLocalFallbackNotice) {
+    loggedLocalFallbackNotice = true;
+    console.info(
+      '[BlobJsonStore] BLOB_READ_WRITE_TOKEN tidak ditemukan di environment. Menggunakan penyimpanan JSON lokal (data/*.json) untuk mode preview/lokal.'
+    );
+  }
+}
+
+function computeLocalEtag(rawText: string): string {
+  return `"local-${crypto.createHash('sha1').update(rawText).digest('hex').slice(0, 16)}"`;
+}
+
+function getLocalCandidatePaths(pathname: string): string[] {
+  const safeRelative = pathname.replace(/^\/+/, '');
+  return [
+    path.join(os.tmpdir(), 'alfreelnc-blob-data', safeRelative),
+    path.join('/tmp/alfreelnc-blob-data', safeRelative),
+  ];
+}
+
+function resolveWritableLocalPath(pathname: string): string {
+  const candidates = getLocalCandidatePaths(pathname);
+  for (const candidate of candidates) {
+    try {
+      const dir = path.dirname(candidate);
+      fs.mkdirSync(dir, { recursive: true });
+      fs.accessSync(dir, fs.constants.W_OK);
+      return candidate;
+    } catch {
+      // Coba kandidat berikutnya
+    }
+  }
+  throw new BlobStoreError(
+    `Tidak ada direktori lokal yang dapat ditulis untuk menyimpan ${pathname}.`,
+    500,
+    'LOCAL_STORE_UNWRITABLE'
+  );
+}
+
+function readLocalJsonDirect<T>(pathname: string): { data: T; etag: string } | null {
+  for (const candidate of getLocalCandidatePaths(pathname)) {
+    if (!fs.existsSync(candidate)) continue;
+    const rawText = fs.readFileSync(candidate, 'utf-8');
+    if (!rawText || !rawText.trim()) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(rawText) as T;
+      return { data: parsed, etag: computeLocalEtag(rawText) };
+    } catch (parseErr: any) {
+      throw new BlobStoreError(
+        `Gagal mengurai file JSON lokal (${pathname}): ${parseErr?.message || 'Format JSON rusak'}`,
+        500,
+        'INVALID_LOCAL_JSON'
+      );
+    }
+  }
+  return null;
+}
+
+function writeLocalJsonAtomic(targetPath: string, data: unknown): { etag: string } {
+  const serialized = JSON.stringify(data, null, 2);
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  const tmpPath = `${targetPath}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(tmpPath, serialized, 'utf-8');
+    fs.renameSync(tmpPath, targetPath);
+  } catch {
+    try {
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch {}
+    fs.writeFileSync(targetPath, serialized, 'utf-8');
+  }
+  return { etag: computeLocalEtag(serialized) };
+}
+
+async function readJsonFromLocal<T>(
+  pathname: string,
+  seedFactory: () => T
+): Promise<{ data: T; etag: string }> {
+  logLocalFallbackOnce();
+  return await withPathLock(pathname, async () => {
+    const existing = readLocalJsonDirect<T>(pathname);
+    if (existing) {
+      return existing;
+    }
+
+    const initialData = stripTransientFields(seedFactory());
+    assertNoBase64InJson(initialData, pathname);
+    const targetPath = resolveWritableLocalPath(pathname);
+    const { etag } = writeLocalJsonAtomic(targetPath, initialData);
+    return { data: initialData, etag };
+  });
+}
+
+async function mutateJsonInLocal<T>(
+  pathname: string,
+  mutator: (current: T) => T | Promise<T>,
+  seedFactory: () => T
+): Promise<{ data: T; etag: string }> {
+  logLocalFallbackOnce();
+  return await withPathLock(pathname, async () => {
+    const latest = readLocalJsonDirect<T>(pathname);
+    const currentData: T = latest ? latest.data : stripTransientFields(seedFactory());
+
+    const mutatedRaw = await mutator(structuredClone(currentData));
+    const nextData = stripTransientFields(mutatedRaw);
+    assertNoBase64InJson(nextData, pathname);
+
+    const targetPath = resolveWritableLocalPath(pathname);
+    const { etag } = writeLocalJsonAtomic(targetPath, nextData);
+    return { data: nextData, etag };
+  });
+}
+
 async function fetchBlobJsonDirect<T>(
   pathname: string,
   token: string
@@ -196,14 +358,21 @@ async function fetchBlobJsonDirect<T>(
 }
 
 /**
- * Membaca file JSON terbaru dari Vercel Blob.
- * Jika file belum pernah dibuat di Vercel Blob (null / 404), inisialisasi satu kali dengan seed yang bersih.
+ * Membaca file JSON terbaru dari Vercel Blob (atau JSON lokal jika BLOB_READ_WRITE_TOKEN belum diset).
+ * Jika file belum pernah dibuat, inisialisasi satu kali dengan seed yang bersih.
  */
 export async function readJsonFromBlob<T>(
   pathname: string,
   seedFactory: () => T
 ): Promise<{ data: T; etag: string }> {
-  const token = getBlobToken();
+  const token = getOptionalBlobToken();
+  if (!token) {
+    try {
+      return await readJsonFromLocal<T>(pathname, seedFactory);
+    } catch (err) {
+      throw normalizeBlobFailure(err, `Gagal membaca ${pathname} dari penyimpanan JSON lokal`);
+    }
+  }
 
   try {
     const existing = await fetchBlobJsonDirect<T>(pathname, token);
@@ -249,6 +418,7 @@ export async function readJsonFromBlob<T>(
  * Mekanisme anti-race-condition:
  * Mutex lokal + Baca JSON terbaru -> Ubah data -> Validasi bebas base64 -> Tulis dengan ifMatch ETag.
  * Retry maksimal 3 kali jika gagal sementara atau bentrok ETag.
+ * Jika BLOB_READ_WRITE_TOKEN tidak diset, gunakan file JSON lokal terproteksi mutex.
  */
 export async function mutateJsonInBlob<T>(
   pathname: string,
@@ -256,7 +426,14 @@ export async function mutateJsonInBlob<T>(
   seedFactory: () => T,
   maxRetries = 3
 ): Promise<{ data: T; etag: string }> {
-  const token = getBlobToken();
+  const token = getOptionalBlobToken();
+  if (!token) {
+    try {
+      return await mutateJsonInLocal<T>(pathname, mutator, seedFactory);
+    } catch (err) {
+      throw normalizeBlobFailure(err, `Gagal menyimpan ${pathname} ke penyimpanan JSON lokal`);
+    }
+  }
 
   return await withPathLock(pathname, async () => {
     let lastError: unknown = null;
