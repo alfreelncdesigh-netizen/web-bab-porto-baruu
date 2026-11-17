@@ -11,16 +11,14 @@ import {
   saveStoredQuickFilterItems,
   saveQuickFilterItemToFirestore, 
   deleteQuickFilterItemFromFirestore,
-  cleanQuickFilterItems,
-  mergeQuickFilterItems
+  cleanQuickFilterItems
 } from '../lib/quickFilterStorage';
-import { syncDeletedIdsFromServer } from '../lib/contentStorage';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { CustomLoadingPlaceholder } from './SectionInsight';
 import { compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function QuickFilterAdmin() {
@@ -66,7 +64,7 @@ export default function QuickFilterAdmin() {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // Subscribe to Firestore & server API for real-time admin sync
+  // Subscribe directly to Cloud Firestore quickFilterQA collection for real-time admin sync
   useEffect(() => {
     let isMounted = true;
     const handleUpdate = (e: any) => {
@@ -74,63 +72,40 @@ export default function QuickFilterAdmin() {
     };
     window.addEventListener('quick_filter_updated', handleUpdate);
 
-    (async () => {
-      await syncDeletedIdsFromServer();
-      try {
-        const res = await fetch('/api/quick-filter');
-        if (res.ok) {
-          const apiData = await res.json();
-          if (Array.isArray(apiData) && isMounted) {
-            const merged = mergeQuickFilterItems(getStoredQuickFilterItems(), apiData);
-            setItems(merged);
-            saveStoredQuickFilterItems(merged);
-            setIsLoading(false);
-          }
-        }
-      } catch {}
-    })();
+    const unsubscribe = onSnapshot(
+      collection(db, 'quickFilterQA'),
+      (snapshot) => {
+        if (!isMounted) return;
+        const loaded: QuickFilterItem[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          loaded.push({
+            id: docSnap.id,
+            question: data.question || '',
+            answer: data.answer || '',
+            category: data.category || 'Tren Desain',
+            images: Array.isArray(data.images) ? data.images : (typeof data.image === 'string' && data.image ? [data.image] : []),
+            tags: data.tags || [],
+            order: data.order ?? 0,
+            published: data.published !== false,
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt
+          });
+        });
 
-    let unsubscribe = () => {};
-    if (!isQuotaExhausted()) {
-      try {
-        unsubscribe = onSnapshot(
-          collection(db, 'quickFilterQA'),
-          (snapshot) => {
-            if (!isMounted) return;
-            const loaded: QuickFilterItem[] = [];
-            snapshot.forEach((docSnap) => {
-              const data = docSnap.data();
-              loaded.push({
-                id: docSnap.id,
-                question: data.question || '',
-                answer: data.answer || '',
-                category: data.category || 'Tren Desain',
-                images: Array.isArray(data.images) ? data.images : (typeof data.image === 'string' && data.image ? [data.image] : []),
-                tags: data.tags || [],
-                order: data.order ?? 0,
-                published: data.published !== false,
-                createdAt: data.createdAt,
-                updatedAt: data.updatedAt
-              });
-            });
-
-            const merged = mergeQuickFilterItems(getStoredQuickFilterItems(), loaded);
-            setItems(merged);
-            saveStoredQuickFilterItems(merged);
-            setIsLoading(false);
-          },
-          (error) => {
-            if (isQuotaError(error)) markQuotaExhausted();
-            logFirestoreError(error, OperationType.LIST, 'quickFilterQA');
-            if (isMounted) setIsLoading(false);
-          }
-        );
-      } catch {
+        const cleaned = cleanQuickFilterItems(loaded);
+        setItems(cleaned);
+        saveStoredQuickFilterItems(cleaned);
         setIsLoading(false);
+      },
+      (error) => {
+        logFirestoreError(error, OperationType.LIST, 'quickFilterQA');
+        if (isMounted) {
+          setIsLoading(false);
+          showToast(error?.message || 'Gagal memuat data Insight dari Cloud Firestore.', 'error');
+        }
       }
-    } else {
-      setIsLoading(false);
-    }
+    );
 
     return () => {
       isMounted = false;
@@ -198,7 +173,7 @@ export default function QuickFilterAdmin() {
         const uploadedUrl = await ensurePersistedAssetUrl(rawUrl, 'insight');
         if (uploadedUrl) {
           setFormImages(prev => [...prev, uploadedUrl]);
-          showToast('Gambar berhasil diunggah!');
+          showToast('Gambar berhasil diunggah ke Vercel Blob!');
         }
       } else {
         const rawUrls = await uploadMultipleImagesInParallel(
@@ -209,12 +184,12 @@ export default function QuickFilterAdmin() {
         const uploadedUrls = await Promise.all(rawUrls.map(u => ensurePersistedAssetUrl(u, 'insight')));
         if (uploadedUrls.length > 0) {
           setFormImages(prev => [...prev, ...uploadedUrls]);
-          showToast(`${uploadedUrls.length} gambar berhasil diunggah!`);
+          showToast(`${uploadedUrls.length} gambar berhasil diunggah ke Vercel Blob!`);
         }
       }
     } catch (err: any) {
       console.error('Upload image error:', err);
-      showToast('Gagal mengunggah gambar. Silakan coba lagi.', 'error');
+      showToast(err?.message || 'Gagal mengunggah gambar ke Vercel Blob.', 'error');
     } finally {
       setIsUploadingImages(false);
       setUploadStatusText('');
@@ -294,10 +269,10 @@ export default function QuickFilterAdmin() {
     if (!itemToDelete) return;
     try {
       await deleteQuickFilterItemFromFirestore(itemToDelete.id);
-      showToast('Item berhasil dihapus dari database', 'success');
+      showToast('Item berhasil dihapus dari Cloud Firestore', 'success');
       setItemToDelete(null);
-    } catch {
-      showToast('Gagal menghapus item dari database', 'error');
+    } catch (err: any) {
+      showToast(err?.message || 'Gagal menghapus item dari Cloud Firestore', 'error');
     }
   };
 
@@ -308,8 +283,8 @@ export default function QuickFilterAdmin() {
         published: !item.published
       });
       showToast(`Item ${!item.published ? 'ditampilkan' : 'disembunyikan'} di website`);
-    } catch {
-      showToast('Gagal mengubah status publikasi', 'error');
+    } catch (err: any) {
+      showToast(err?.message || 'Gagal mengubah status publikasi di Cloud Firestore', 'error');
     }
   };
 

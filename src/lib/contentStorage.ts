@@ -1,50 +1,55 @@
 import { SiteSettings, defaultSettings, defaultCvSections } from '../data/settings';
-import { Project, projects as defaultProjects } from '../data/projects';
+import { Project } from '../data/projects';
 import { BlogPost } from '../types/blog';
-import { defaultBlogPosts } from '../data/blogs';
-import { TemplateProduct, defaultTemplates } from '../data/templates';
-import { db, auth } from './firebase';
-import { doc, setDoc } from 'firebase/firestore';
-import { logFirestoreError, OperationType, isQuotaExhausted } from './firestoreErrorHandler';
+import { TemplateProduct } from '../data/templates';
+import { db } from './firebase';
+import { collection, doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
+import { logFirestoreError, OperationType } from './firestoreErrorHandler';
 
-const DUMMY_PROJECT_IDS = new Set(['poster-lks-smkn1-sinjai', 'branding-kemasan-teh-hijau', 'poster-promosi-diskon-kreatif', 'showcase-visual-3d-minimalis', 'banner-informasi-bca-finansial', 'visual-sosial-media-konten-kreatif', 'workspace-editing-tools-3d']);
+const DUMMY_PROJECT_IDS = new Set([
+  'poster-lks-smkn1-sinjai',
+  'branding-kemasan-teh-hijau',
+  'poster-promosi-diskon-kreatif',
+  'showcase-visual-3d-minimalis',
+  'banner-informasi-bca-finansial',
+  'visual-sosial-media-konten-kreatif',
+  'workspace-editing-tools-3d'
+]);
 
 const DUMMY_PROJECT_TITLES = new Set([
-  "Aplikasi Keuangan FinSmart",
-  "Poster Pameran Seni Kontemporer",
-  "Platform E-learning EduTech",
-  "Identitas Merek Kopi Senja",
-  "Poster Festival Musik Indie",
-  "Website Studio Arsitektur",
-  "Redesain Aplikasi Travel",
-  "Aplikasi Kesehatan SehatKu",
-  "Poster LKS Desain Grafis SMKN 1 Sinjai",
-  "Desain Kemasan & Identitas Visual Teh Hijau",
-  "Poster Promosi & Diskon Branding Digital",
-  "Eksplorasi Antarmuka Digital & 3D Minimalis",
-  "Banner Layanan Transaksi Finansial Digital",
-  "Koleksi Visual Kreatif Media Sosial",
-  "Suite Kreatif & Workspace Tools 3D"
+  'Aplikasi Keuangan FinSmart',
+  'Poster Pameran Seni Kontemporer',
+  'Platform E-learning EduTech',
+  'Identitas Merek Kopi Senja',
+  'Poster Festival Musik Indie',
+  'Website Studio Arsitektur',
+  'Redesain Aplikasi Travel',
+  'Aplikasi Kesehatan SehatKu',
+  'Poster LKS Desain Grafis SMKN 1 Sinjai',
+  'Desain Kemasan & Identitas Visual Teh Hijau',
+  'Poster Promosi & Diskon Branding Digital',
+  'Eksplorasi Antarmuka Digital & 3D Minimalis',
+  'Banner Layanan Transaksi Finansial Digital',
+  'Koleksi Visual Kreatif Media Sosial',
+  'Suite Kreatif & Workspace Tools 3D'
 ]);
 
 const DUMMY_BLOG_IDS = new Set([
-  "filosofi-desain-minimalis",
-  "beralih-ke-affinity-designer",
-  "hierarki-tipografi-modern",
-  "proses-desain-kemasan-teh-hijau"
+  'filosofi-desain-minimalis',
+  'beralih-ke-affinity-designer',
+  'hierarki-tipografi-modern',
+  'proses-desain-kemasan-teh-hijau'
 ]);
 
 const DUMMY_BLOG_TITLES = new Set([
-  "Filosofi Desain Minimalis & Fungsional",
-  "Filosofi Desain Minimalis: Ketika Kurang Berarti Lebih",
-  "Studi Kasus: Desain Kemasan & Identitas Visual Teh Hijau",
-  "Pengalaman & Efisiensi Menggunakan Affinity Suite untuk Desain Digital",
-  "Beralih ke Affinity Designer: Workflow Vektor Masa Depan",
-  "Hierarki Tipografi Modern untuk Poster dan Desain Antarmuka",
-  "Hierarki Tipografi dalam Desain Antarmuka Modern"
+  'Filosofi Desain Minimalis & Fungsional',
+  'Filosofi Desain Minimalis: Ketika Kurang Berarti Lebih',
+  'Studi Kasus: Desain Kemasan & Identitas Visual Teh Hijau',
+  'Pengalaman & Efisiensi Menggunakan Affinity Suite untuk Desain Digital',
+  'Beralih ke Affinity Designer: Workflow Vektor Masa Depan',
+  'Hierarki Tipografi Modern untuk Poster dan Desain Antarmuka',
+  'Hierarki Tipografi dalam Desain Antarmuka Modern'
 ]);
-
-const DELETED_RECORDS_STORAGE_KEY = 'deleted_record_ids';
 
 const ID_MONTH_MAP: Record<string, number> = {
   januari: 0, jan: 0, january: 0,
@@ -60,6 +65,13 @@ const ID_MONTH_MAP: Record<string, number> = {
   november: 10, nov: 10, nopember: 10,
   desember: 11, des: 11, dec: 11, december: 11,
 };
+
+// In-memory runtime state hydrated exclusively from Cloud Firestore (never from localStorage or mock arrays)
+let memorySettings: SiteSettings = { ...defaultSettings };
+let memoryProjects: Project[] = [];
+let memoryBlogs: BlogPost[] = [];
+let memoryExperiences: any[] = [];
+let memoryTemplates: TemplateProduct[] = [];
 
 export function getTimestampMs(val: any): number {
   if (val === null || val === undefined || val === '') return 0;
@@ -108,114 +120,21 @@ export function getRecencyTimestamp(item: any): number {
   return Math.max(updated, created, added, saved, idNum, dateMs);
 }
 
-function readAllDeletedRecordsMap(): Record<string, string[]> {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = localStorage.getItem(DELETED_RECORDS_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed;
-      }
-    }
-  } catch {}
-  return {};
+// Deleted records live directly in Firestore (docs deleted cleanly on Firestore)
+export function getDeletedIds(_type: string): Set<string> {
+  return new Set<string>();
 }
 
-export function getDeletedIds(type: string): Set<string> {
-  const map = readAllDeletedRecordsMap();
-  const list = Array.isArray(map[type]) ? map[type] : [];
-  const result = new Set<string>(list.map(String));
-  if (type === 'messages' && typeof window !== 'undefined') {
-    try {
-      const legacy = JSON.parse(localStorage.getItem('deleted_message_ids') || '[]');
-      if (Array.isArray(legacy)) legacy.forEach((id: any) => result.add(String(id)));
-    } catch {}
-  }
-  return result;
+export async function markDeletedIds(_type: string, _ids: (string | number)[]): Promise<void> {
+  // No-op: Deletions are performed directly on Firestore collections
 }
 
-export async function markDeletedIds(type: string, ids: (string | number)[]): Promise<void> {
-  const strIds = ids.map(id => String(id || '').trim()).filter(Boolean);
-  if (strIds.length === 0) return;
-
-  if (typeof window !== 'undefined') {
-    try {
-      const map = readAllDeletedRecordsMap();
-      const set = new Set<string>(Array.isArray(map[type]) ? map[type].map(String) : []);
-      strIds.forEach(id => set.add(id));
-      map[type] = Array.from(set);
-      localStorage.setItem(DELETED_RECORDS_STORAGE_KEY, JSON.stringify(map));
-      if (type === 'messages') {
-        const legacy = JSON.parse(localStorage.getItem('deleted_message_ids') || '[]');
-        const legacySet = new Set<string>([...(Array.isArray(legacy) ? legacy.map(String) : []), ...strIds]);
-        localStorage.setItem('deleted_message_ids', JSON.stringify(Array.from(legacySet)));
-      }
-    } catch {}
-  }
-
-  try {
-    await fetch('/api/deleted-ids', {
-      method: 'POST',
-      keepalive: true,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-admin-token': 'alfreelnc_admin_auth_verified'
-      },
-      body: JSON.stringify({ action: 'mark', type, ids: strIds })
-    });
-  } catch {}
-}
-
-export async function unmarkDeletedIds(type: string, ids: (string | number)[]): Promise<void> {
-  const strIds = ids.map(id => String(id || '').trim()).filter(Boolean);
-  if (strIds.length === 0) return;
-
-  if (typeof window !== 'undefined') {
-    try {
-      const map = readAllDeletedRecordsMap();
-      const set = new Set<string>(Array.isArray(map[type]) ? map[type].map(String) : []);
-      strIds.forEach(id => set.delete(id));
-      map[type] = Array.from(set);
-      localStorage.setItem(DELETED_RECORDS_STORAGE_KEY, JSON.stringify(map));
-    } catch {}
-  }
-
-  try {
-    await fetch('/api/deleted-ids', {
-      method: 'POST',
-      keepalive: true,
-      headers: {
-        'Content-Type': 'application/json',
-        'x-admin-token': 'alfreelnc_admin_auth_verified'
-      },
-      body: JSON.stringify({ action: 'unmark', type, ids: strIds })
-    });
-  } catch {}
+export async function unmarkDeletedIds(_type: string, _ids: (string | number)[]): Promise<void> {
+  // No-op
 }
 
 export async function syncDeletedIdsFromServer(): Promise<Record<string, string[]>> {
-  const localMap = readAllDeletedRecordsMap();
-  try {
-    const res = await fetch('/api/deleted-ids');
-    if (res.ok) {
-      const serverMap = await res.json();
-      if (serverMap && typeof serverMap === 'object' && !Array.isArray(serverMap)) {
-        const merged: Record<string, string[]> = { ...localMap };
-        for (const [k, v] of Object.entries(serverMap)) {
-          if (Array.isArray(v)) {
-            const set = new Set<string>([...(Array.isArray(merged[k]) ? merged[k].map(String) : []), ...v.map(String)]);
-            merged[k] = Array.from(set);
-          }
-        }
-        if (typeof window !== 'undefined') {
-          try { localStorage.setItem(DELETED_RECORDS_STORAGE_KEY, JSON.stringify(merged)); } catch {}
-        }
-        return merged;
-      }
-    }
-  } catch {}
-  return localMap;
+  return {};
 }
 
 export function cleanForFirestore<T>(data: T): T {
@@ -228,7 +147,6 @@ export function cleanForFirestore<T>(data: T): T {
 
 export function cleanProjects(projs: Project[]): Project[] {
   const seenIds = new Set<string>();
-  const deletedIds = getDeletedIds('projects');
   const cleaned: Project[] = [];
 
   for (const p of projs || []) {
@@ -237,7 +155,6 @@ export function cleanProjects(projs: Project[]): Project[] {
     const idStr = String(p.id || '').trim();
     const titleStr = (p.title || '').trim();
     if (!titleStr && !idStr) continue;
-    if (idStr && deletedIds.has(idStr)) continue;
     if (DUMMY_PROJECT_IDS.has(idStr)) continue;
     if (DUMMY_PROJECT_TITLES.has(titleStr)) continue;
     if (idStr && seenIds.has(idStr)) continue;
@@ -245,14 +162,13 @@ export function cleanProjects(projs: Project[]): Project[] {
     const rawImages = Array.isArray(p.images) ? p.images : [];
     const cleanImages = rawImages
       .map((img: any) => (typeof img === 'string' ? img.trim() : ''))
-      .filter((img: string) => img.length > 0 && !img.startsWith('blob:'));
+      .filter((img: string) => img.length > 0 && !img.startsWith('blob:') && !img.startsWith('data:'));
 
     const rawMainImg = typeof p.image === 'string' ? p.image.trim() : '';
-    const normImage = rawMainImg && !rawMainImg.startsWith('blob:')
+    const normImage = rawMainImg && !rawMainImg.startsWith('blob:') && !rawMainImg.startsWith('data:')
       ? rawMainImg
       : (cleanImages[0] || '');
 
-    // Pastikan item tetap valid jika memiliki judul karya atau gambar valid
     if (!titleStr && !normImage) continue;
 
     if (idStr) seenIds.add(idStr);
@@ -278,7 +194,6 @@ export function sortProjectsByRecency(projs: Project[]): Project[] {
 }
 
 export function mergeProjects(...lists: Project[][]): Project[] {
-  const deletedIds = getDeletedIds('projects');
   const archivedIds = new Set<string>();
   const map = new Map<string, Project>();
 
@@ -292,7 +207,7 @@ export function mergeProjects(...lists: Project[][]): Project[] {
         map.delete(id);
         continue;
       }
-      if (deletedIds.has(id) || archivedIds.has(id)) continue;
+      if (archivedIds.has(id)) continue;
 
       const prev = map.get(id);
       if (!prev) {
@@ -325,7 +240,6 @@ export function mergeProjects(...lists: Project[][]): Project[] {
 
 export function cleanBlogs(blogs: BlogPost[]): BlogPost[] {
   const seenIds = new Set<string>();
-  const deletedIds = getDeletedIds('blogPosts');
   const cleaned: BlogPost[] = [];
 
   for (const b of blogs || []) {
@@ -334,7 +248,6 @@ export function cleanBlogs(blogs: BlogPost[]): BlogPost[] {
     const idStr = String(b.id || '').trim();
     const titleStr = (b.title || '').trim();
     if (!titleStr && !idStr) continue;
-    if (idStr && deletedIds.has(idStr)) continue;
     if (DUMMY_BLOG_IDS.has(idStr)) continue;
     if (DUMMY_BLOG_TITLES.has(titleStr)) continue;
     if (idStr && seenIds.has(idStr)) continue;
@@ -361,7 +274,6 @@ export function sortBlogsByRecency(blogs: BlogPost[]): BlogPost[] {
 }
 
 export function mergeBlogs(...lists: BlogPost[][]): BlogPost[] {
-  const deletedIds = getDeletedIds('blogPosts');
   const archivedIds = new Set<string>();
   const map = new Map<string, BlogPost>();
 
@@ -375,7 +287,7 @@ export function mergeBlogs(...lists: BlogPost[][]): BlogPost[] {
         map.delete(id);
         continue;
       }
-      if (deletedIds.has(id) || archivedIds.has(id)) continue;
+      if (archivedIds.has(id)) continue;
 
       const prev = map.get(id);
       if (!prev) {
@@ -395,7 +307,6 @@ export function mergeBlogs(...lists: BlogPost[][]): BlogPost[] {
 
 export function cleanExperiences(exps: any[]): any[] {
   const seenIds = new Set<string>();
-  const deletedIds = getDeletedIds('experiences');
   const cleaned: any[] = [];
 
   for (const exp of exps || []) {
@@ -403,7 +314,6 @@ export function cleanExperiences(exps: any[]): any[] {
     if (exp.isArchived === true) continue;
     const idStr = String(exp.id || '').trim();
     if (!idStr) continue;
-    if (deletedIds.has(idStr)) continue;
     if (seenIds.has(idStr)) continue;
     seenIds.add(idStr);
 
@@ -428,7 +338,6 @@ export function sortExperiencesByRecency(exps: any[]): any[] {
 }
 
 export function mergeExperiences(...lists: any[][]): any[] {
-  const deletedIds = getDeletedIds('experiences');
   const archivedIds = new Set<string>();
   const map = new Map<string, any>();
 
@@ -442,7 +351,7 @@ export function mergeExperiences(...lists: any[][]): any[] {
         map.delete(id);
         continue;
       }
-      if (deletedIds.has(id) || archivedIds.has(id)) continue;
+      if (archivedIds.has(id)) continue;
 
       const prev = map.get(id);
       if (!prev) {
@@ -488,6 +397,7 @@ export function mergeSettingsByTimestamp(current: Partial<SiteSettings>, incomin
   });
   return { ...defaultSettings, ...cleaned } as SiteSettings;
 }
+
 export function cleanTemplates(_templates: TemplateProduct[]): TemplateProduct[] {
   return [];
 }
@@ -495,62 +405,37 @@ export function cleanTemplates(_templates: TemplateProduct[]): TemplateProduct[]
 export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSettings> {
   const cleaned = { ...settings };
   if (cleaned.aboutImage && cleaned.aboutImage.includes('photo-1499951360447')) {
-    cleaned.aboutImage = "";
+    cleaned.aboutImage = '';
   }
-  // Dapatkan hero image tersimpan yang pernah disetel admin agar tidak pernah hilang atau terganti sendiri
-  const userHero = typeof window !== 'undefined' 
-    ? (localStorage.getItem('app_custom_hero_image') || '') 
-    : '';
 
   if (cleaned.heroImage === '__RESET_DEFAULT__') {
     cleaned.heroImage = defaultSettings.heroImage;
-    if (typeof window !== 'undefined') {
-      try { 
-        localStorage.removeItem('app_custom_hero_image');
-        localStorage.removeItem('app_custom_hero_image_backup');
-      } catch {}
-    }
   } else if (cleaned.heroImage && typeof cleaned.heroImage === 'string' && cleaned.heroImage.trim().length > 0) {
     let hero = cleaned.heroImage.trim();
-    if (hero.includes('hero-albi')) {
-      hero = '/images/hero-albi.png';
-    } else if (hero.includes('cover_web_') || hero.includes('editing_tools_3d')) {
-      hero = '/images/hero-albi.png';
-    } else if (hero.includes('/src/assets/images/')) {
-      const filename = hero.split('/src/assets/images/')[1];
-      hero = `/images/${filename}`;
-    } else if (hero.startsWith('src/assets/images/')) {
-      hero = `/images/${hero.replace('src/assets/images/', '')}`;
-    } else if (hero.startsWith('./assets/images/')) {
-      hero = `/images/${hero.replace('./assets/images/', '')}`;
+    const isRemoteHttp = /^https?:\/\//i.test(hero);
+    if (!isRemoteHttp) {
+      if (hero.includes('hero-albi') || hero.includes('cover_web_') || hero.includes('editing_tools_3d')) {
+        hero = '/images/hero-albi.png';
+      } else if (hero.includes('/src/assets/images/')) {
+        const filename = hero.split('/src/assets/images/')[1];
+        hero = `/images/${filename}`;
+      } else if (hero.startsWith('src/assets/images/')) {
+        hero = `/images/${hero.replace('src/assets/images/', '')}`;
+      } else if (hero.startsWith('./assets/images/')) {
+        hero = `/images/${hero.replace('./assets/images/', '')}`;
+      }
     }
     cleaned.heroImage = hero;
-    if (typeof window !== 'undefined' && hero && !hero.includes('editing_tools_3d_1787123977793.jpg')) {
-      try { localStorage.setItem('app_custom_hero_image', hero); } catch {}
-    }
-  } else if (userHero && !userHero.includes('cover_web_') && !userHero.includes('editing_tools_3d')) {
-    // Pertahankan hero image pilihan admin sebelumnya, jangan pernah timpa dengan gambar bawaan
-    cleaned.heroImage = userHero;
   } else {
-    try {
-      const prev = localStorage.getItem('app_settings');
-      if (prev) {
-        const parsed = JSON.parse(prev);
-        if (parsed.heroImage && typeof parsed.heroImage === 'string' && parsed.heroImage.trim().length > 0 && !parsed.heroImage.includes('cover_web_') && !parsed.heroImage.includes('editing_tools_3d')) {
-          cleaned.heroImage = parsed.heroImage.trim();
-        }
-      }
-    } catch {}
-    if (!cleaned.heroImage || cleaned.heroImage.includes('cover_web_') || cleaned.heroImage.includes('editing_tools_3d')) {
-      cleaned.heroImage = defaultSettings.heroImage;
-    }
+    cleaned.heroImage = defaultSettings.heroImage;
   }
+
   if (Array.isArray(cleaned.cvSections) && cleaned.cvSections.length > 0) {
     cleaned.cvSections = cleaned.cvSections.map((s: any) => {
       let imgs: string[] = [];
       if (Array.isArray(s.images) && s.images.length > 0) {
-        imgs = s.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0);
-      } else if (s.image && typeof s.image === 'string' && s.image.trim().length > 0) {
+        imgs = s.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0 && !img.startsWith('blob:'));
+      } else if (s.image && typeof s.image === 'string' && s.image.trim().length > 0 && !s.image.startsWith('blob:')) {
         imgs = [s.image.trim()];
       }
       return {
@@ -562,14 +447,14 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
   } else if (!cleaned.cvSections) {
     cleaned.cvSections = defaultCvSections;
   }
+
   if (Array.isArray(cleaned.heroBanners)) {
-    // Normalisasi format path gambar banner dan filter banner valid
     const seenBannerIds = new Set<string>();
     cleaned.heroBanners = cleaned.heroBanners
       .filter((b: any) => b && typeof b === 'object')
       .map((b: any, bIdx: number) => {
         let img = b.image || '';
-        if (typeof img === 'string') {
+        if (typeof img === 'string' && !/^https?:\/\//i.test(img)) {
           if (img.includes('/src/assets/images/')) {
             img = `/images/${img.split('/src/assets/images/')[1]}`;
           } else if (img.startsWith('src/assets/images/')) {
@@ -592,6 +477,7 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
   } else if (cleaned.heroBanners === undefined) {
     cleaned.heroBanners = defaultSettings.heroBanners || [];
   }
+
   if (Array.isArray(cleaned.promoPosters)) {
     const seenPosterIds = new Set<string>();
     cleaned.promoPosters = cleaned.promoPosters
@@ -605,17 +491,19 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
           }
         }
         seenPosterIds.add(posterId);
-        if (p.link && p.link.includes('628112345678')) {
-          p.link = p.link.replace('628112345678', '6282394549268');
-        }
-        return { ...p, id: posterId };
+        const link = p.link && p.link.includes('628112345678')
+          ? p.link.replace('628112345678', '6282394549268')
+          : p.link;
+        return { ...p, id: posterId, link };
       });
   } else if (cleaned.promoPosters === undefined) {
     cleaned.promoPosters = defaultSettings.promoPosters || [];
   }
+
   if (cleaned.promoWidgetLink && cleaned.promoWidgetLink.includes('628112345678')) {
     cleaned.promoWidgetLink = cleaned.promoWidgetLink.replace('628112345678', '6282394549268');
   }
+
   if (cleaned.heroBadge) {
     cleaned.heroBadge = cleaned.heroBadge
       .replace(/portofolio desigh/gi, 'PORTFOLIO DESIGN')
@@ -623,365 +511,507 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
       .replace(/my portofolio design/gi, 'PORTFOLIO DESIGN')
       .replace(/portfolio desigh/gi, 'PORTFOLIO DESIGN');
   }
+
   if (cleaned.collaboration && typeof cleaned.collaboration === 'object') {
     cleaned.collaboration = {
       enabled: Boolean(cleaned.collaboration.enabled),
       partnerName: (cleaned.collaboration.partnerName || '').trim(),
       partnerLogo: (cleaned.collaboration.partnerLogo || '').trim(),
       collaborationText: (cleaned.collaboration.collaborationText || 'Kolaborasi Bersama').trim(),
-      autoTagNewItems: Boolean(cleaned.collaboration.autoTagNewItems)
+      autoTagNewItems: Boolean(cleaned.collaboration.autoTagNewItems),
+      collaboratorUsername: cleaned.collaboration.collaboratorUsername,
+      collaboratorPassword: cleaned.collaboration.collaboratorPassword,
+      collaboratorLoginEnabled: cleaned.collaboration.collaboratorLoginEnabled,
+      collaboratorAccounts: cleaned.collaboration.collaboratorAccounts
     };
   } else if (cleaned.collaboration === undefined) {
     cleaned.collaboration = defaultSettings.collaboration;
   }
+
   if (Array.isArray(cleaned.deletedMessageIds)) {
-    cleaned.deletedMessageIds = Array.from(new Set(cleaned.deletedMessageIds.filter((id: any) => typeof id === 'string' && id.trim().length > 0)));
+    cleaned.deletedMessageIds = Array.from(
+      new Set(cleaned.deletedMessageIds.filter((id: any) => typeof id === 'string' && id.trim().length > 0))
+    );
   } else {
-    try {
-      const localDel = typeof window !== 'undefined' ? localStorage.getItem('deleted_message_ids') : null;
-      if (localDel) {
-        cleaned.deletedMessageIds = JSON.parse(localDel);
-      } else {
-        cleaned.deletedMessageIds = [];
-      }
-    } catch {
-      cleaned.deletedMessageIds = [];
-    }
+    cleaned.deletedMessageIds = [];
   }
+
   return cleaned;
 }
 
-// 1. SETTINGS
-export function getStoredSettings(): SiteSettings {
-  try {
-    const saved = localStorage.getItem('app_settings');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      const cleaned = cleanSettings(parsed);
-      const merged = { ...defaultSettings, ...cleaned };
+let inFlightSettingsFetch: Promise<SiteSettings> | null = null;
 
-      // Cek backup CV jika ada foto di backup yang belum sempat tersimpan di app_settings
-      try {
-        const backupCv = localStorage.getItem('app_cv_backup');
-        if (backupCv) {
-          const parsedBackup = JSON.parse(backupCv);
-          if (Array.isArray(parsedBackup.cvSections) && parsedBackup.cvSections.length > 0) {
-            const hasBackupImages = parsedBackup.cvSections.some((s: any) => Array.isArray(s.images) && s.images.length > 0);
-            const currentHasImages = Array.isArray(merged.cvSections) && merged.cvSections.some((s: any) => Array.isArray(s.images) && s.images.length > 0);
-            if (hasBackupImages && !currentHasImages) {
-              merged.cvSections = parsedBackup.cvSections;
-            }
-          }
-        }
-      } catch {}
-
-      return merged;
-    }
-  } catch (e) {
-    console.warn("Error reading stored settings:", e);
+/**
+ * Mengambil seluruh dokumen settings langsung dari Cloud Firestore (settings/global, settings/cv, settings/hero, settings/promoPosters)
+ * dengan deduplikasi request bersamaan.
+ */
+export async function fetchSettingsFromFirestore(): Promise<SiteSettings> {
+  if (inFlightSettingsFetch) {
+    return inFlightSettingsFetch;
   }
-  return { ...defaultSettings };
+
+  inFlightSettingsFetch = (async () => {
+    try {
+      const [snapGlobal, snapCv, snapHero, snapPromo] = await Promise.all([
+        getDoc(doc(db, 'settings', 'global')),
+        getDoc(doc(db, 'settings', 'cv')).catch(() => null),
+        getDoc(doc(db, 'settings', 'hero')).catch(() => null),
+        getDoc(doc(db, 'settings', 'promoPosters')).catch(() => null),
+      ]);
+
+      const globalData = snapGlobal.exists() ? (snapGlobal.data() as Record<string, any>) : {};
+      const cvData = snapCv && snapCv.exists() ? (snapCv.data() as Record<string, any>) : null;
+      const heroData = snapHero && snapHero.exists() ? (snapHero.data() as Record<string, any>) : null;
+      const promoData = snapPromo && snapPromo.exists() ? (snapPromo.data() as Record<string, any>) : null;
+
+      const combinedRaw: Record<string, any> = {
+        ...globalData,
+        ...(cvData ? {
+          cvSections: (Array.isArray(cvData.cvSections) && cvData.cvSections.length > 0)
+            ? cvData.cvSections
+            : globalData.cvSections,
+          cvRole: cvData.cvRole || globalData.cvRole,
+          cvPdfFile: cvData.cvPdfFile !== undefined ? cvData.cvPdfFile : globalData.cvPdfFile,
+        } : {}),
+        ...(heroData?.heroImage ? { heroImage: heroData.heroImage } : {}),
+        ...(promoData ? {
+          promoPosters: Array.isArray(promoData.posters) ? promoData.posters : globalData.promoPosters,
+          promoWidgetActive: promoData.active !== undefined ? promoData.active : globalData.promoWidgetActive,
+        } : {}),
+        savedAt: Math.max(
+          getTimestampMs(globalData?.savedAt || globalData?.updatedAt),
+          getTimestampMs(cvData?.savedAt || cvData?.updatedAt),
+          getTimestampMs(heroData?.savedAt || heroData?.updatedAt),
+          getTimestampMs(promoData?.savedAt || promoData?.updatedAt)
+        ) || Date.now(),
+      };
+
+      const merged: SiteSettings = {
+        ...defaultSettings,
+        ...cleanSettings(combinedRaw),
+      } as SiteSettings;
+
+      hasHydratedSettings = true;
+      return setLocalSettings(merged);
+    } finally {
+      inFlightSettingsFetch = null;
+    }
+  })();
+
+  return inFlightSettingsFetch;
+}
+
+// 1. SETTINGS (In-memory cache hydrated from Firestore + CustomEvent broadcast)
+export function getStoredSettings(): SiteSettings {
+  return memorySettings;
 }
 
 export function setLocalSettings(newSettings: Partial<SiteSettings>): SiteSettings {
   const cleaned = cleanSettings(newSettings);
   const timestamp = newSettings.savedAt || Date.now();
   const merged: SiteSettings = { ...defaultSettings, ...cleaned, savedAt: timestamp };
-  try {
-    localStorage.setItem('app_settings', JSON.stringify(merged));
-    if (merged.cvSections || merged.cvPdfFile || merged.cvRole) {
-      localStorage.setItem('app_cv_backup', JSON.stringify({
-        cvSections: merged.cvSections,
-        cvRole: merged.cvRole,
-        cvPdfFile: merged.cvPdfFile,
-        savedAt: timestamp
-      }));
-    }
-  } catch (e) {
-    console.warn("LocalStorage save settings error:", e);
-    try {
-      localStorage.removeItem('user_projects');
-      localStorage.removeItem('blogPosts');
-      localStorage.setItem('app_settings', JSON.stringify(merged));
-    } catch (e2) {
-      console.warn("LocalStorage fallback write failed:", e2);
-    }
+  memorySettings = merged;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: merged }));
   }
-  window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: merged }));
   return merged;
 }
 
+/**
+ * Menyimpan pengaturan situs ke Cloud Firestore dan menunggu hingga seluruh operasi benar-benar selesai.
+ * Melempar error asli jika penulisan ke Firestore gagal (tidak pernah memberi status sukses palsu).
+ */
 export async function saveStoredSettings(newSettings: SiteSettings): Promise<boolean> {
-  // 1. Simpan ke local storage & kirim custom event untuk sinkronisasi antarmuka pengguna
-  const merged = setLocalSettings(newSettings);
-
-  // 2. Simpan redundansi ke server disk via /api/settings secara instan dengan otorisasi admin
-  try {
-    await fetch('/api/settings', {
-      method: 'POST',
-      keepalive: true,
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-admin-token': 'alfreelnc_admin_auth_verified'
-      },
-      body: JSON.stringify(merged)
-    });
-  } catch {}
-
-  // 3. Simpan ke Cloud Firestore (sanitasi undefined value agar tidak ditolak Firestore SDK)
-  if (isQuotaExhausted()) {
-    // Mode ketahanan kuota aktif: data telah tersimpan aman di disk server & localStorage
-    return true;
-  }
+  const cleaned = cleanSettings(newSettings);
+  const timestamp = Date.now();
+  const merged: SiteSettings = { ...defaultSettings, ...cleaned, savedAt: timestamp };
 
   try {
     const firestoreTasks: Promise<any>[] = [];
 
-    // Simpan dokumen khusus settings/hero ke Firestore agar link gambar hero tersimpan mandiri di Firebase
-    if ((newSettings as any).heroImage === '__RESET_DEFAULT__') {
-      firestoreTasks.push(
-        setDoc(doc(db, 'settings', 'hero'), cleanForFirestore({
-          heroImage: defaultSettings.heroImage,
-          savedAt: Date.now(),
+    // 1. settings/hero
+    const heroImageVal = (newSettings as any).heroImage === '__RESET_DEFAULT__'
+      ? defaultSettings.heroImage
+      : (merged.heroImage || defaultSettings.heroImage);
+
+    firestoreTasks.push(
+      setDoc(
+        doc(db, 'settings', 'hero'),
+        cleanForFirestore({
+          heroImage: heroImageVal,
+          savedAt: timestamp,
           updatedAt: new Date().toISOString(),
           _adminAuth: 'alfreelnc_admin_auth_verified',
           updatedByAdmin: true
-        }), { merge: true })
-      );
-      try {
-        fetch('/api/hero-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ heroImage: '' })
-        }).catch(() => {});
-      } catch {}
-    } else if (merged.heroImage && typeof merged.heroImage === 'string' && merged.heroImage.trim().length > 0) {
-      try {
-        if (typeof window !== 'undefined' && !merged.heroImage.includes('editing_tools_3d_1787123977793.jpg')) {
-          localStorage.setItem('app_custom_hero_image', merged.heroImage.trim());
-        }
-      } catch {}
+        }),
+        { merge: true }
+      )
+    );
 
-      const heroPayload: Record<string, any> = {
-        heroImage: merged.heroImage.trim(),
-        savedAt: merged.savedAt || Date.now(),
-        updatedAt: new Date().toISOString(),
-        _adminAuth: 'alfreelnc_admin_auth_verified',
-        updatedByAdmin: true
-      };
-
+    // 2. settings/cv
+    if (merged.cvSections || merged.cvPdfFile !== undefined || merged.cvRole) {
       firestoreTasks.push(
-        setDoc(doc(db, 'settings', 'hero'), cleanForFirestore(heroPayload), { merge: true })
+        setDoc(
+          doc(db, 'settings', 'cv'),
+          cleanForFirestore({
+            cvSections: merged.cvSections || [],
+            cvPdfFile: merged.cvPdfFile || '',
+            cvRole: merged.cvRole || '',
+            savedAt: timestamp,
+            updatedAt: new Date().toISOString(),
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true
+          }),
+          { merge: true }
+        )
       );
     }
 
-    if (merged.cvSections || merged.cvPdfFile || merged.cvRole) {
-      firestoreTasks.push(
-        setDoc(doc(db, 'settings', 'cv'), cleanForFirestore({
-          cvSections: merged.cvSections || [],
-          cvPdfFile: merged.cvPdfFile || '',
-          cvRole: merged.cvRole || '',
-          savedAt: merged.savedAt || Date.now(),
-          updatedAt: new Date().toISOString(),
-          _adminAuth: 'alfreelnc_admin_auth_verified',
-          updatedByAdmin: true
-        }), { merge: true })
-      );
-    }
-
+    // 3. settings/promoPosters
     if (Array.isArray(merged.promoPosters)) {
       const safePosters = merged.promoPosters.map((p: any) => {
-        // Hapus dataUrl raksasa agar ukuran dokumen Firestore sangat ringan (~500 byte)
-        const { dataUrl, ...rest } = p;
+        const { dataUrl: _drop, ...rest } = p;
         return rest;
       });
       firestoreTasks.push(
-        setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
-          posters: safePosters,
-          active: merged.promoWidgetActive !== false,
-          updatedAt: new Date().toISOString(),
-          savedAt: Date.now(),
-          _adminAuth: 'alfreelnc_admin_auth_verified',
-          updatedByAdmin: true
-        }), { merge: true })
+        setDoc(
+          doc(db, 'settings', 'promoPosters'),
+          cleanForFirestore({
+            posters: safePosters,
+            active: merged.promoWidgetActive !== false,
+            updatedAt: new Date().toISOString(),
+            savedAt: timestamp,
+            _adminAuth: 'alfreelnc_admin_auth_verified',
+            updatedByAdmin: true
+          }),
+          { merge: true }
+        )
       );
     }
 
+    // 4. settings/global
     const safeGlobalPayload: Record<string, any> = {
       ...merged,
+      heroImage: heroImageVal,
+      savedAt: timestamp,
+      updatedAt: new Date().toISOString(),
       _adminAuth: 'alfreelnc_admin_auth_verified',
       updatedByAdmin: true
     };
+    delete safeGlobalPayload.heroImageDataUrl;
     if (Array.isArray(safeGlobalPayload.promoPosters)) {
       safeGlobalPayload.promoPosters = safeGlobalPayload.promoPosters.map((p: any) => {
-        const { dataUrl, ...rest } = p;
+        const { dataUrl: _drop, ...rest } = p;
         return rest;
       });
-    }
-    if (safeGlobalPayload.heroImageDataUrl && safeGlobalPayload.heroImageDataUrl.length > 500000) {
-      delete safeGlobalPayload.heroImageDataUrl;
     }
 
     firestoreTasks.push(
       setDoc(doc(db, 'settings', 'global'), cleanForFirestore(safeGlobalPayload), { merge: true })
     );
 
-    // Menunggu operasi Firestore selesai dengan timeout aman
-    await Promise.race([
-      Promise.all(firestoreTasks),
-      new Promise((res) => setTimeout(res, 6000))
-    ]);
+    await Promise.all(firestoreTasks);
+
+    // Hanya update state in-memory & broadcast setelah Firestore benar-benar selesai
+    setLocalSettings({ ...merged, heroImage: heroImageVal });
     return true;
   } catch (e) {
     logFirestoreError(e, OperationType.WRITE, 'settings');
-    // Data tetap aman tersimpan di penyimpanan lokal dan server disk
-    return true;
+    throw e;
   }
 }
 
-// 2. PROJECTS
+// 2. PROJECTS (In-memory cache hydrated ONLY from Cloud Firestore)
 export function getStoredProjects(): Project[] {
-  try {
-    const saved = localStorage.getItem('user_projects');
-    if (saved !== null) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        return sortProjectsByRecency(cleanProjects(parsed));
-      }
-    }
-  } catch(e) {}
-  return sortProjectsByRecency(cleanProjects(defaultProjects));
-}
-
-function stripOversizedDataUrlsForLocalStorage<T>(items: T[]): T[] {
-  return items.map((item: any) => {
-    if (!item || typeof item !== 'object') return item;
-    const copy = { ...item };
-    if (typeof copy.image === 'string' && copy.image.startsWith('data:') && copy.image.length > 100000) {
-      copy.image = '';
-    }
-    if (Array.isArray(copy.images)) {
-      copy.images = copy.images.filter((u: any) => typeof u === 'string' && (!u.startsWith('data:') || u.length <= 100000));
-    }
-    if (typeof copy.collaborationLogo === 'string' && copy.collaborationLogo.startsWith('data:') && copy.collaborationLogo.length > 100000) {
-      copy.collaborationLogo = '';
-    }
-    return copy;
-  });
+  return memoryProjects;
 }
 
 export async function saveStoredProjects(newProjects: Project[]): Promise<void> {
   const clean = sortProjectsByRecency(cleanProjects(newProjects || []));
+  memoryProjects = clean;
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('user_projects_updated', { detail: clean }));
-    try {
-      localStorage.setItem('user_projects', JSON.stringify(clean));
-    } catch {
-      try {
-        localStorage.setItem('user_projects', JSON.stringify(stripOversizedDataUrlsForLocalStorage(clean)));
-      } catch {}
-    }
   }
-  try {
-    await fetch('/api/projects', {
-      method: 'POST',
-      keepalive: true,
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-admin-token': 'alfreelnc_admin_auth_verified'
-      },
-      body: JSON.stringify(clean)
-    });
-  } catch {}
 }
 
-// 3. BLOG POSTS
+// 3. BLOG POSTS (In-memory cache hydrated ONLY from Cloud Firestore)
 export function getStoredBlogs(): BlogPost[] {
-  try {
-    const saved = localStorage.getItem('blogPosts');
-    if (saved !== null) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        return sortBlogsByRecency(cleanBlogs(parsed));
-      }
-    }
-  } catch(e) {}
-  return [];
+  return memoryBlogs;
 }
 
 export async function saveStoredBlogs(newBlogs: BlogPost[]): Promise<void> {
   const clean = sortBlogsByRecency(cleanBlogs(newBlogs || []));
+  memoryBlogs = clean;
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: clean }));
-    try {
-      localStorage.setItem('blogPosts', JSON.stringify(clean));
-    } catch {
-      try {
-        localStorage.setItem('blogPosts', JSON.stringify(stripOversizedDataUrlsForLocalStorage(clean)));
-      } catch {}
-    }
   }
-  try {
-    await fetch('/api/blogs', {
-      method: 'POST',
-      keepalive: true,
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-admin-token': 'alfreelnc_admin_auth_verified'
-      },
-      body: JSON.stringify(clean)
-    });
-  } catch {}
 }
 
-// 4. EXPERIENCES
+// 4. EXPERIENCES (In-memory cache hydrated ONLY from Cloud Firestore)
 export function getStoredExperiences(): any[] {
-  try {
-    const saved = localStorage.getItem('user_experiences');
-    if (saved !== null) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) return sortExperiencesByRecency(cleanExperiences(parsed));
-    }
-  } catch(e) {}
-  return [];
+  return memoryExperiences;
 }
 
 export async function saveStoredExperiences(newExps: any[]): Promise<void> {
   const clean = sortExperiencesByRecency(cleanExperiences(newExps || []));
+  memoryExperiences = clean;
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('user_experiences_updated', { detail: clean }));
-    try {
-      localStorage.setItem('user_experiences', JSON.stringify(clean));
-    } catch {
-      try {
-        localStorage.setItem('user_experiences', JSON.stringify(stripOversizedDataUrlsForLocalStorage(clean)));
-      } catch {}
-    }
   }
-  try {
-    await fetch('/api/experiences', {
-      method: 'POST',
-      keepalive: true,
-      headers: { 
-        'Content-Type': 'application/json',
-        'x-admin-token': 'alfreelnc_admin_auth_verified'
-      },
-      body: JSON.stringify(clean)
-    });
-  } catch {}
 }
 
-// 5. TEMPLATES
+// 5. TEMPLATES (In-memory cache hydrated ONLY from Cloud Firestore)
 export function getStoredTemplates(): TemplateProduct[] {
-  try {
-    const saved = localStorage.getItem('templates');
-    if (saved) return JSON.parse(saved);
-  } catch(e) {}
-  return [];
+  return memoryTemplates;
 }
 
 export async function saveStoredTemplates(newTemplates: TemplateProduct[]): Promise<void> {
   const clean = (newTemplates || []).filter((t: TemplateProduct) => t && t.title);
-  window.dispatchEvent(new CustomEvent('templates_updated', { detail: clean }));
-  try { localStorage.setItem('templates', JSON.stringify(clean)); } catch(e) {}
+  memoryTemplates = clean;
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('templates_updated', { detail: clean }));
+  }
+}
+
+// 6. SINGLETON REAL-TIME SUBSCRIPTION HUBS (Mencegah pembacaan & onSnapshot duplikat antar komponen)
+let hasHydratedSettings = false;
+let settingsSubActive = false;
+const settingsCallbacks = new Set<(settings: SiteSettings) => void>();
+
+let hasHydratedCv = false;
+let cvSubActive = false;
+const cvCallbacks = new Set<(settings: SiteSettings) => void>();
+
+let hasHydratedProjects = false;
+let projectsSubActive = false;
+const projectCallbacks = new Set<(projects: Project[]) => void>();
+
+let hasHydratedBlogs = false;
+let blogsSubActive = false;
+const blogCallbacks = new Set<(blogs: BlogPost[]) => void>();
+
+let hasHydratedExperiences = false;
+let experiencesSubActive = false;
+const experienceCallbacks = new Set<(exps: any[]) => void>();
+
+function notifySettingsCallbacks(next: SiteSettings) {
+  settingsCallbacks.forEach(cb => {
+    try { cb(next); } catch {}
+  });
+  cvCallbacks.forEach(cb => {
+    try { cb(next); } catch {}
+  });
+}
+
+export function subscribeSettingsRealtime(cb?: (settings: SiteSettings) => void): () => void {
+  if (cb) {
+    settingsCallbacks.add(cb);
+    if (hasHydratedSettings) {
+      try { cb(memorySettings); } catch {}
+    }
+  }
+
+  if (!settingsSubActive && typeof window !== 'undefined') {
+    settingsSubActive = true;
+
+    onSnapshot(
+      doc(db, 'settings', 'global'),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const cloudData = docSnap.data() as Partial<SiteSettings>;
+          if (cloudData && Object.keys(cloudData).length > 0) {
+            const currentSaved = getTimestampMs(memorySettings?.savedAt);
+            const incomingSaved = getTimestampMs(cloudData?.savedAt || (cloudData as any)?.updatedAt);
+            const merged = (!hasHydratedSettings || incomingSaved >= currentSaved)
+              ? setLocalSettings({ ...memorySettings, ...cloudData, savedAt: incomingSaved || Date.now() })
+              : memorySettings;
+            hasHydratedSettings = true;
+            notifySettingsCallbacks(merged);
+            return;
+          }
+        }
+        hasHydratedSettings = true;
+        notifySettingsCallbacks(memorySettings);
+      },
+      (err) => {
+        logFirestoreError(err, OperationType.GET, 'settings/global');
+        hasHydratedSettings = true;
+        notifySettingsCallbacks(memorySettings);
+      }
+    );
+  }
+
+  return () => {
+    if (cb) settingsCallbacks.delete(cb);
+  };
+}
+
+export function subscribeCvRealtime(cb?: (settings: SiteSettings) => void): () => void {
+  const unsubBase = subscribeSettingsRealtime();
+  if (cb) {
+    cvCallbacks.add(cb);
+    if (hasHydratedCv || hasHydratedSettings) {
+      try { cb(memorySettings); } catch {}
+    }
+  }
+
+  if (!cvSubActive && typeof window !== 'undefined') {
+    cvSubActive = true;
+    onSnapshot(
+      doc(db, 'settings', 'cv'),
+      (cvSnap) => {
+        if (cvSnap.exists()) {
+          const cvData = cvSnap.data();
+          const cleanedCvSections = Array.isArray(cvData.cvSections)
+            ? cvData.cvSections.map((s: any) => ({
+                title: s.title || '',
+                content: s.content || '',
+                images: Array.isArray(s.images)
+                  ? s.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0 && !img.startsWith('blob:'))
+                  : (s.image && !s.image.startsWith('blob:') ? [s.image.trim()] : [])
+              }))
+            : undefined;
+          const updated = setLocalSettings({
+            ...memorySettings,
+            cvRole: cvData.cvRole || memorySettings.cvRole,
+            cvPdfFile: cvData.cvPdfFile !== undefined ? cvData.cvPdfFile : memorySettings.cvPdfFile,
+            ...(cleanedCvSections && cleanedCvSections.length > 0 ? { cvSections: cleanedCvSections } : {}),
+            savedAt: Math.max(getTimestampMs(memorySettings.savedAt), getTimestampMs(cvData.savedAt || cvData.updatedAt)) || Date.now(),
+          });
+          hasHydratedCv = true;
+          notifySettingsCallbacks(updated);
+          return;
+        }
+        hasHydratedCv = true;
+        notifySettingsCallbacks(memorySettings);
+      },
+      (err) => {
+        logFirestoreError(err, OperationType.GET, 'settings/cv');
+        hasHydratedCv = true;
+        notifySettingsCallbacks(memorySettings);
+      }
+    );
+  }
+
+  return () => {
+    unsubBase();
+    if (cb) cvCallbacks.delete(cb);
+  };
+}
+
+export function subscribeProjectsRealtime(cb?: (projects: Project[]) => void): () => void {
+  if (cb) {
+    projectCallbacks.add(cb);
+    if (hasHydratedProjects) {
+      try { cb(memoryProjects); } catch {}
+    }
+  }
+
+  if (!projectsSubActive && typeof window !== 'undefined') {
+    projectsSubActive = true;
+    onSnapshot(
+      collection(db, 'projects'),
+      (snapshot) => {
+        const projData: Project[] = [];
+        snapshot.forEach((docSnap) => {
+          projData.push({ id: docSnap.id, ...(docSnap.data() as any) });
+        });
+        const sorted = sortProjectsByRecency(cleanProjects(projData));
+        hasHydratedProjects = true;
+        saveStoredProjects(sorted);
+        projectCallbacks.forEach(fn => {
+          try { fn(sorted); } catch {}
+        });
+      },
+      (error) => {
+        logFirestoreError(error, OperationType.LIST, 'projects');
+        hasHydratedProjects = true;
+        projectCallbacks.forEach(fn => {
+          try { fn(memoryProjects); } catch {}
+        });
+      }
+    );
+  }
+
+  return () => {
+    if (cb) projectCallbacks.delete(cb);
+  };
+}
+
+export function subscribeBlogsRealtime(cb?: (blogs: BlogPost[]) => void): () => void {
+  if (cb) {
+    blogCallbacks.add(cb);
+    if (hasHydratedBlogs) {
+      try { cb(memoryBlogs); } catch {}
+    }
+  }
+
+  if (!blogsSubActive && typeof window !== 'undefined') {
+    blogsSubActive = true;
+    onSnapshot(
+      collection(db, 'blogPosts'),
+      (snapshot) => {
+        const loadedPosts: BlogPost[] = [];
+        snapshot.forEach((docSnap) => {
+          loadedPosts.push({ id: docSnap.id, ...(docSnap.data() as any) } as BlogPost);
+        });
+        const sorted = sortBlogsByRecency(cleanBlogs(loadedPosts));
+        hasHydratedBlogs = true;
+        saveStoredBlogs(sorted);
+        blogCallbacks.forEach(fn => {
+          try { fn(sorted); } catch {}
+        });
+      },
+      (error) => {
+        logFirestoreError(error, OperationType.LIST, 'blogPosts');
+        hasHydratedBlogs = true;
+        blogCallbacks.forEach(fn => {
+          try { fn(memoryBlogs); } catch {}
+        });
+      }
+    );
+  }
+
+  return () => {
+    if (cb) blogCallbacks.delete(cb);
+  };
+}
+
+export function subscribeExperiencesRealtime(cb?: (exps: any[]) => void): () => void {
+  if (cb) {
+    experienceCallbacks.add(cb);
+    if (hasHydratedExperiences) {
+      try { cb(memoryExperiences); } catch {}
+    }
+  }
+
+  if (!experiencesSubActive && typeof window !== 'undefined') {
+    experiencesSubActive = true;
+    onSnapshot(
+      collection(db, 'experiences'),
+      (snapshot) => {
+        const data: any[] = [];
+        snapshot.forEach((d) => {
+          data.push({ id: d.id, ...(d.data() as any) });
+        });
+        const sorted = sortExperiencesByRecency(cleanExperiences(data));
+        hasHydratedExperiences = true;
+        saveStoredExperiences(sorted);
+        experienceCallbacks.forEach(fn => {
+          try { fn(sorted); } catch {}
+        });
+      },
+      (error) => {
+        logFirestoreError(error, OperationType.LIST, 'experiences');
+        hasHydratedExperiences = true;
+        experienceCallbacks.forEach(fn => {
+          try { fn(memoryExperiences); } catch {}
+        });
+      }
+    );
+  }
+
+  return () => {
+    if (cb) experienceCallbacks.delete(cb);
+  };
 }

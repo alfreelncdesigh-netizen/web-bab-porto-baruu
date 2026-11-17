@@ -26,31 +26,15 @@ export interface FirestoreErrorInfo {
   };
 }
 
-const QUOTA_COOLDOWN_MS = 30 * 60 * 1000; // 30 menit atau hingga berganti hari UTC
-const UNREACHABLE_COOLDOWN_MS = 2 * 60 * 1000; // 2 menit jeda koneksi ulang jika jaringan tidak merespons
-
 export function markQuotaExhausted(): void {
   if (typeof window !== 'undefined') {
-    try {
-      const todayUtc = new Date().toISOString().slice(0, 10);
-      localStorage.setItem('firestore_quota_exhausted', 'true');
-      localStorage.setItem('firestore_quota_exhausted_time', String(Date.now()));
-      localStorage.setItem('firestore_quota_exhausted_day', todayUtc);
-      sessionStorage.setItem('firestore_quota_exhausted', 'true');
-      sessionStorage.setItem('firestore_quota_exhausted_time', String(Date.now()));
-      sessionStorage.setItem('firestore_quota_exhausted_day', todayUtc);
-      window.dispatchEvent(new CustomEvent('firestore_quota_exceeded'));
-    } catch {}
+    window.dispatchEvent(new CustomEvent('firestore_quota_exceeded'));
   }
 }
 
 export function markBackendUnreachable(): void {
   if (typeof window !== 'undefined') {
-    try {
-      const until = String(Date.now() + UNREACHABLE_COOLDOWN_MS);
-      sessionStorage.setItem('firestore_backend_unreachable_until', until);
-      window.dispatchEvent(new CustomEvent('firestore_network_offline'));
-    } catch {}
+    window.dispatchEvent(new CustomEvent('firestore_network_offline'));
   }
 }
 
@@ -69,33 +53,7 @@ export function clearQuotaStatus(): void {
 }
 
 export function isQuotaExhausted(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    // Jika backend sedang dalam masa tunggu koneksi gagal singkat, jangan paksakan koneksi baru
-    const unreachableUntil = Number(sessionStorage.getItem('firestore_backend_unreachable_until') || 0);
-    if (unreachableUntil > Date.now()) {
-      return true;
-    }
-
-    const val = localStorage.getItem('firestore_quota_exhausted') || sessionStorage.getItem('firestore_quota_exhausted');
-    if (!val) return false;
-
-    const savedDay = localStorage.getItem('firestore_quota_exhausted_day') || sessionStorage.getItem('firestore_quota_exhausted_day');
-    const todayUtc = new Date().toISOString().slice(0, 10);
-    if (savedDay && savedDay !== todayUtc) {
-      clearQuotaStatus();
-      return false;
-    }
-
-    const time = Number(localStorage.getItem('firestore_quota_exhausted_time') || sessionStorage.getItem('firestore_quota_exhausted_time') || 0);
-    if (Date.now() - time > QUOTA_COOLDOWN_MS) {
-      clearQuotaStatus();
-      return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 export function isQuotaError(error: unknown): boolean {
@@ -129,13 +87,15 @@ export function isConnectivityError(error: unknown): boolean {
   );
 }
 
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
-  if (isQuotaError(error)) {
-    markQuotaExhausted();
-  } else if (isConnectivityError(error)) {
-    markBackendUnreachable();
-  }
+export function getReadableFirestoreError(error: unknown, fallback = 'Operasi Cloud Firestore gagal.'): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  const code = (error as any)?.code;
+  if (code) return `Firestore error (${code})`;
+  return fallback;
+}
 
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -153,24 +113,27 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  throw new Error(error instanceof Error ? error.message : String(error));
 }
 
-export function logFirestoreError(error: unknown, operationType: OperationType, path: string | null): void {
-  if (isQuotaError(error)) {
-    markQuotaExhausted();
-    console.warn('Notice: Firestore Daily Quota exceeded. Operating seamlessly in local & server storage mode.');
-    return;
-  }
+const loggedQuotaErrorKeys = new Set<string>();
 
-  if (isConnectivityError(error)) {
+export function logFirestoreError(error: unknown, operationType: OperationType, path: string | null): void {
+  const errMessage = error instanceof Error ? error.message : String(error);
+  const quotaHit = isQuotaError(error);
+  if (quotaHit) {
+    markQuotaExhausted();
+    const dedupKey = `${operationType}:${path || ''}`;
+    if (loggedQuotaErrorKeys.has(dedupKey)) {
+      return;
+    }
+    loggedQuotaErrorKeys.add(dedupKey);
+  } else if (isConnectivityError(error)) {
     markBackendUnreachable();
-    console.warn('Notice: Cloud Firestore unreachable/offline. Operating seamlessly in local & server storage mode.');
-    return;
   }
 
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -185,5 +148,5 @@ export function logFirestoreError(error: unknown, operationType: OperationType, 
     operationType,
     path
   };
-  console.warn('Firestore Operation Notice: ', JSON.stringify(errInfo));
+  console.error('Firestore Operation Error:', JSON.stringify(errInfo));
 }

@@ -2,9 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRight, Sparkles, Search, MessageCircle, ChevronLeft, ChevronRight, Eye, Clock, Wrench, CalendarCheck, Activity, ChevronDown, Maximize2, Minimize2, Handshake } from 'lucide-react';
 import { Project } from '../data/projects';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { getStoredProjects, saveStoredProjects, cleanProjects, mergeProjects, syncDeletedIdsFromServer } from '../lib/contentStorage';
+import { getStoredProjects, cleanProjects, sortProjectsByRecency, subscribeProjectsRealtime } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
 import {
   isImageAlreadyLoaded,
@@ -13,7 +11,6 @@ import {
   preloadPortfolioImagesFast,
   subscribeImageLoaded,
 } from '../lib/imageLoadCache';
-import { logFirestoreError, OperationType, isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import ShareProjectModal from './ShareProjectModal';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -118,8 +115,6 @@ function getProjectMetrics(project: Project) {
   };
 }
 
-const PROJECTS_MANIFEST_CACHE_KEY = 'projects_manifest_cache';
-
 interface ProjectManifestItem {
   id: string;
   title?: string;
@@ -138,26 +133,6 @@ interface ProjectsManifest {
   draftCount: number;
   updatedAt?: string;
   items: ProjectManifestItem[];
-}
-
-function getCachedProjectsManifest(): ProjectsManifest | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(PROJECTS_MANIFEST_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.items)) {
-      return parsed as ProjectsManifest;
-    }
-  } catch {}
-  return null;
-}
-
-function saveCachedProjectsManifest(manifest: ProjectsManifest): void {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(PROJECTS_MANIFEST_CACHE_KEY, JSON.stringify(manifest));
-  } catch {}
 }
 
 function buildManifestFromProjects(itemsList: Project[]): ProjectsManifest {
@@ -375,7 +350,10 @@ export interface PortfolioProps {
 
 export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining }: PortfolioProps = {}) {
   const [projects, setProjects] = useState<Project[]>(() => getStoredProjects());
-  const [manifest, setManifest] = useState<ProjectsManifest | null>(() => getCachedProjectsManifest());
+  const [manifest, setManifest] = useState<ProjectsManifest | null>(() => {
+    const initial = getStoredProjects();
+    return initial.length > 0 ? buildManifestFromProjects(initial) : null;
+  });
   const [activeCategory, setActiveCategory] = useState('Semua');
   const [searchQuery, setSearchQuery] = useState('');
   const { t, translateDynamic } = useLanguage();
@@ -458,7 +436,6 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
   useEffect(() => {
     let isMounted = true;
 
-    // Pemuatan paralel berkecepatan tinggi untuk semua karya publik (prioritas teratas ke bawah)
     const fastLoadProjectImages = (items: Array<{ image?: string; draft?: boolean }>) => {
       const publicUrls = items
         .filter((p) => !p.draft && typeof p.image === 'string' && p.image.trim().length > 0)
@@ -468,110 +445,38 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       }
     };
 
-    // 1. Deteksi data lokal & manifest cache saat web langsung dibuka
     const initialProjects = getStoredProjects();
     if (initialProjects.length > 0) {
       setProjects(initialProjects);
       setLoading(false);
-      const localManifest = buildManifestFromProjects(initialProjects);
-      setManifest((prev) => prev || localManifest);
+      setManifest(buildManifestFromProjects(initialProjects));
       fastLoadProjectImages(initialProjects);
-    } else if (manifest?.items && manifest.items.length > 0) {
-      fastLoadProjectImages(manifest.items);
     }
-
-    // 2. Tarik hitungan karya & rasio/ukuran asli dari backend manifest (/api/projects/meta)
-    //    serta daftar proyek lengkap (/api/projects) secara paralel
-    (async () => {
-      await syncDeletedIdsFromServer();
-      try {
-        const [metaRes, projectsRes] = await Promise.all([
-          fetch('/api/projects/meta').catch(() => null),
-          fetch('/api/projects').catch(() => null),
-        ]);
-
-        if (metaRes && metaRes.ok && isMounted) {
-          const serverMeta = await metaRes.json();
-          if (serverMeta && typeof serverMeta === 'object' && Array.isArray(serverMeta.items)) {
-            setManifest(serverMeta);
-            saveCachedProjectsManifest(serverMeta);
-            fastLoadProjectImages(serverMeta.items);
-          }
-        }
-
-        const apiProjects = projectsRes && projectsRes.ok ? await projectsRes.json() : [];
-        if (Array.isArray(apiProjects) && isMounted) {
-          const merged = mergeProjects(getStoredProjects(), apiProjects);
-          setProjects(merged);
-          saveStoredProjects(merged);
-          const nextManifest = buildManifestFromProjects(merged);
-          setManifest(nextManifest);
-          saveCachedProjectsManifest(nextManifest);
-          setLoading(false);
-          fastLoadProjectImages(merged);
-        }
-      } catch (e) {
-        console.warn("Fetch /api/projects notice:", e);
-      }
-    })();
 
     const handleUpdate = (e: any) => {
       if (e.detail && isMounted) {
-        const merged = mergeProjects(e.detail);
-        setProjects(merged);
-        const nextManifest = buildManifestFromProjects(merged);
-        setManifest(nextManifest);
-        saveCachedProjectsManifest(nextManifest);
+        const sorted = sortProjectsByRecency(cleanProjects(e.detail));
+        setProjects(sorted);
+        setManifest(buildManifestFromProjects(sorted));
         setLoading(false);
-        fastLoadProjectImages(merged);
+        fastLoadProjectImages(sorted);
       }
     };
     window.addEventListener('user_projects_updated', handleUpdate);
 
-    // 3. Sinkronisasi sekunder dari Cloud Firestore (jika kuota masih tersedia)
-    let unsubscribe = () => {};
-    if (!isQuotaExhausted()) {
-      unsubscribe = onSnapshot(
-        collection(db, 'projects'),
-        (snapshot) => {
-          const projData: Project[] = [];
-          snapshot.forEach((doc) => {
-            const data = doc.data() as any;
-            projData.push({ id: doc.id, ...data });
-          });
-          const merged = mergeProjects(getStoredProjects(), projData);
-          if (isMounted) {
-            setProjects(merged);
-            saveStoredProjects(merged);
-            const nextManifest = buildManifestFromProjects(merged);
-            setManifest(nextManifest);
-            saveCachedProjectsManifest(nextManifest);
-            setLoading(false);
-            fastLoadProjectImages(merged);
-          }
-        },
-        (error) => {
-          if (isQuotaError(error)) markQuotaExhausted();
-          logFirestoreError(error, OperationType.LIST, 'projects');
-          const stored = getStoredProjects();
-          if (isMounted) {
-            setProjects(stored);
-            setLoading(false);
-          }
-        }
-      );
-    } else {
-      const stored = getStoredProjects();
+    // Real-time langsung dari Cloud Firestore melalui singleton shared subscription
+    const unsubscribe = subscribeProjectsRealtime((sorted) => {
       if (isMounted) {
-        setProjects(stored);
+        setProjects(sorted);
+        setManifest(buildManifestFromProjects(sorted));
         setLoading(false);
+        fastLoadProjectImages(sorted);
       }
-    }
+    });
 
-    // Safety timeout agar skeleton tidak pernah menggantung jika offline total
     const timer = setTimeout(() => {
       if (isMounted) setLoading(false);
-    }, 600);
+    }, 1500);
 
     return () => {
       isMounted = false;

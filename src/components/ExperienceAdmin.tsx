@@ -3,13 +3,13 @@ import ArchiveMoveModal from './ArchiveMoveModal';
 import ConfirmModal from './ConfirmModal';
 import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, updateDoc, arrayUnion, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { getStoredExperiences, saveStoredExperiences, mergeExperiences, markDeletedIds, unmarkDeletedIds, syncDeletedIdsFromServer, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { getStoredExperiences, saveStoredExperiences, cleanExperiences, sortExperiencesByRecency, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { SiteSettings } from '../data/settings';
 import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake, Upload, ChevronLeft, ChevronRight, Star, Link as LinkIcon } from 'lucide-react';
-import { withTimeout, compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
+import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
-import { isQuotaExhausted, markQuotaExhausted, isQuotaError, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function ExperienceAdmin() {
@@ -26,7 +26,6 @@ export default function ExperienceAdmin() {
   const [imageUrlInput, setImageUrlInput] = useState<string>('');
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const migratedIdsRef = useRef<Set<string>>(new Set());
   const { isSaved, markSaved, resetSaveState } = useAdminSaveState(editingItem);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -41,112 +40,25 @@ export default function ExperienceAdmin() {
     };
     window.addEventListener('user_experiences_updated', handleUpdate);
 
-    const migrateLoadedExperiences = async (items: any[]) => {
-      if (!Array.isArray(items) || items.length === 0) return;
-      const candidates = items.filter((exp) => {
-        if (!exp || !exp.id) return false;
-        const idStr = String(exp.id);
-        if (migratedIdsRef.current.has(idStr)) return false;
-        const imgs = Array.isArray(exp.images)
-          ? exp.images
-          : (exp.image ? [exp.image] : []);
-        return imgs.some(
-          (u: any) =>
-            typeof u === 'string' &&
-            u.trim().length > 0 &&
-            !u.trim().startsWith('blob:') &&
-            !u.trim().startsWith('/assets/experiences/')
-        );
-      });
-      if (candidates.length === 0) return;
-
-      for (const c of candidates) migratedIdsRef.current.add(String(c.id));
-
-      const migratedItems: any[] = [];
-      for (const exp of candidates) {
-        const rawImgs: string[] = Array.isArray(exp.images)
-          ? exp.images.filter((u: any) => typeof u === 'string' && u.trim().length > 0)
-          : (exp.image ? [String(exp.image).trim()] : []);
-        const persistedImgs: string[] = [];
-        let changed = false;
-        for (const raw of rawImgs) {
-          const next = raw.startsWith('/assets/experiences/')
-            ? raw
-            : await ensurePersistedAssetUrl(raw, 'experiences');
-          if (next && !next.startsWith('blob:')) {
-            persistedImgs.push(next);
-            if (next !== raw) changed = true;
-          } else {
-            persistedImgs.push(raw);
-          }
-        }
-        if (changed) {
-          const updatedExp = {
-            ...exp,
-            images: persistedImgs,
-            image: persistedImgs[0] || exp.image || '',
-          };
-          migratedItems.push(updatedExp);
-          if (!isQuotaExhausted()) {
-            setDoc(
-              doc(db, 'experiences', String(exp.id)),
-              {
-                images: updatedExp.images,
-                image: updatedExp.image,
-                _adminAuth: 'alfreelnc_admin_auth_verified',
-                updatedByAdmin: true,
-              },
-              { merge: true }
-            ).catch(() => {});
-          }
+    const unsub = onSnapshot(
+      collection(db, 'experiences'),
+      (snap) => {
+        if (!isMounted) return;
+        const data: any[] = [];
+        snap.forEach(d => {
+          data.push({ id: d.id, ...d.data() });
+        });
+        const sorted = sortExperiencesByRecency(cleanExperiences(data));
+        setExperiences(sorted);
+        saveStoredExperiences(sorted);
+      },
+      (error) => {
+        logFirestoreError(error, OperationType.LIST, 'experiences');
+        if (isMounted) {
+          showToast(error?.message || 'Gagal memuat data pengalaman dari Cloud Firestore.', 'error');
         }
       }
-
-      if (migratedItems.length > 0 && isMounted) {
-        const synced = mergeExperiences(migratedItems, getStoredExperiences());
-        setExperiences(synced);
-        await saveStoredExperiences(synced);
-      }
-    };
-
-    (async () => {
-      await syncDeletedIdsFromServer();
-      try {
-        const res = await fetch('/api/experiences');
-        if (res.ok) {
-          const apiData = await res.json();
-          if (Array.isArray(apiData) && isMounted) {
-            const merged = mergeExperiences(getStoredExperiences(), apiData);
-            setExperiences(merged);
-            await saveStoredExperiences(merged);
-            migrateLoadedExperiences(merged).catch(() => {});
-          }
-        }
-      } catch {}
-    })();
-
-    let unsub = () => {};
-    if (!isQuotaExhausted()) {
-      unsub = onSnapshot(
-        collection(db, 'experiences'),
-        (snap) => {
-          if (!isMounted) return;
-          const data: any[] = [];
-          snap.forEach(d => {
-            data.push({ id: d.id, ...d.data() });
-          });
-          const merged = mergeExperiences(getStoredExperiences(), data);
-          setExperiences(merged);
-          saveStoredExperiences(merged);
-          migrateLoadedExperiences(merged).catch(() => {});
-        },
-        (error) => {
-          if (isQuotaError(error)) markQuotaExhausted();
-          logFirestoreError(error, OperationType.LIST, 'experiences');
-          if (isMounted) setExperiences(getStoredExperiences());
-        }
-      );
-    }
+    );
 
     return () => {
       isMounted = false;
@@ -217,42 +129,31 @@ export default function ExperienceAdmin() {
     setIsDeleting(true);
     const id = itemToDelete.id.toString();
 
-    await markDeletedIds('experiences', [id]);
-
-    // 1. Langsung hapus dari state & local storage seketika (optimistic update)
-    const updated = experiences.filter(e => e.id.toString() !== id);
-    setExperiences(updated);
-    await saveStoredExperiences(updated);
-    showToast(`Pengalaman "${itemToDelete.header || ''}" berhasil dihapus permanen.`);
-    
-    // Lacak aktivitas penghapusan pengalaman oleh kolaborator
     try {
-      const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
-      if (u.role === 'collaborator') {
-        recordCollaboratorActivity(
-          'Menghapus Pengalaman',
-          `Kolaborator menghapus pengalaman "${itemToDelete.header || 'Tanpa Judul'}".`,
-          '/admin#experience'
-        );
-      }
-    } catch {}
+      await deleteDoc(doc(db, 'experiences', id));
+      const updated = experiences.filter(e => e.id.toString() !== id);
+      setExperiences(updated);
+      await saveStoredExperiences(updated);
+      showToast(`Pengalaman "${itemToDelete.header || ''}" berhasil dihapus permanen dari Cloud Firestore.`);
 
-    setItemToDelete(null);
-
-    // 2. Eksekusi penghapusan di cloud
-    if (!isQuotaExhausted()) {
       try {
-        await withTimeout(
-          deleteDoc(doc(db, 'experiences', id)),
-          6000,
-          "Database cloud selesai diperbarui."
-        );
-      } catch (err: any) {
-        if (isQuotaError(err)) markQuotaExhausted();
-        else logFirestoreError(err, OperationType.DELETE, `experiences/${id}`);
-      }
+        const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
+        if (u.role === 'collaborator') {
+          recordCollaboratorActivity(
+            'Menghapus Pengalaman',
+            `Kolaborator menghapus pengalaman "${itemToDelete.header || 'Tanpa Judul'}".`,
+            '/admin#experience'
+          );
+        }
+      } catch {}
+
+      setItemToDelete(null);
+    } catch (err: any) {
+      logFirestoreError(err, OperationType.DELETE, `experiences/${id}`);
+      showToast(err?.message || `Gagal menghapus pengalaman dari Cloud Firestore.`, "error");
+    } finally {
+      setIsDeleting(false);
     }
-    setIsDeleting(false);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -267,96 +168,55 @@ export default function ExperienceAdmin() {
     const isNew = Boolean(editingItem.isNew);
     const nowMs = Date.now();
 
-    const rawImages: string[] = Array.isArray(editingItem.images) ? editingItem.images : [];
-    const persistedImages: string[] = [];
-    for (const img of rawImages) {
-      const cleanUrl = await ensurePersistedAssetUrl(img || '', 'experiences');
-      if (cleanUrl && !cleanUrl.startsWith('blob:')) {
-        persistedImages.push(cleanUrl);
-      }
-    }
-
-    const persistedCollabLogo = editingItem.collaborationLogo
-      ? await ensurePersistedAssetUrl(editingItem.collaborationLogo, 'collaboration')
-      : '';
-
-    const toLocalAndServer: Record<string, any> = {
-      id: docId,
-      header: editingItem.header.trim(),
-      subtheme: (editingItem.subtheme || '').trim(),
-      description: (editingItem.description || '').trim(),
-      images: persistedImages,
-      image: persistedImages[0] || '',
-      isCollaboration: Boolean(editingItem.isCollaboration),
-      collaborationPartner: (editingItem.collaborationPartner || '').trim(),
-      collaborationLogo: persistedCollabLogo,
-      collaborationText: (editingItem.collaborationText || '').trim(),
-      createdAt: editingItem.createdAt || nowMs,
-      updatedAt: nowMs,
-      isArchived: false,
-      archiveFolderId: null,
-    };
-
-    const toFirestore: Record<string, any> = {
-      ...toLocalAndServer,
-      _adminAuth: 'alfreelnc_admin_auth_verified',
-      updatedByAdmin: true,
-      updatedAt: new Date(nowMs).toISOString()
-    };
-
-    if (isNew) {
-      toFirestore.dateAdded = serverTimestamp();
-    }
-
-    await unmarkDeletedIds('experiences', [docId]);
-
-    const mergedUpdated = mergeExperiences([toLocalAndServer], experiences);
-    setExperiences(mergedUpdated);
-    await saveStoredExperiences(mergedUpdated);
-
-    if (!isQuotaExhausted()) {
-      const docRef = doc(db, 'experiences', docId);
-      try {
-        if (!isNew && persistedImages.length > 0) {
-          try {
-            await withTimeout(
-              updateDoc(docRef, {
-                ...toFirestore,
-                images: arrayUnion(...persistedImages)
-              }),
-              5000,
-              "Firestore updateDoc timeout"
-            );
-          } catch (updateErr: any) {
-            await withTimeout(
-              setDoc(docRef, toFirestore, { merge: true }),
-              5000,
-              "Firestore setDoc fallback timeout"
-            );
-          }
-        } else {
-          await withTimeout(
-            setDoc(docRef, toFirestore, { merge: true }),
-            5000,
-            "Firestore setDoc timeout"
-          );
-        }
-      } catch (err: any) {
-        if (isQuotaError(err)) {
-          markQuotaExhausted();
-        } else {
-          logFirestoreError(err, OperationType.WRITE, `experiences/${docId}`);
+    try {
+      const rawImages: string[] = Array.isArray(editingItem.images) ? editingItem.images : [];
+      const persistedImages: string[] = [];
+      for (const img of rawImages) {
+        const cleanUrl = await ensurePersistedAssetUrl(img || '', 'experiences');
+        if (cleanUrl && !cleanUrl.startsWith('blob:')) {
+          persistedImages.push(cleanUrl);
         }
       }
-    }
 
-    // Jika kolaborasi aktif pada pengalaman ini, langsung terapkan ke pengaturan website
-    if (toLocalAndServer.isCollaboration) {
-      try {
+      const persistedCollabLogo = editingItem.collaborationLogo
+        ? await ensurePersistedAssetUrl(editingItem.collaborationLogo, 'collaboration')
+        : '';
+
+      const toSave: Record<string, any> = {
+        id: docId,
+        header: editingItem.header.trim(),
+        subtheme: (editingItem.subtheme || '').trim(),
+        description: (editingItem.description || '').trim(),
+        images: persistedImages,
+        image: persistedImages[0] || '',
+        isCollaboration: Boolean(editingItem.isCollaboration),
+        collaborationPartner: (editingItem.collaborationPartner || '').trim(),
+        collaborationLogo: persistedCollabLogo,
+        collaborationText: (editingItem.collaborationText || '').trim(),
+        createdAt: editingItem.createdAt || nowMs,
+        updatedAt: nowMs,
+        isArchived: false,
+        archiveFolderId: null,
+      };
+
+      const toFirestore: Record<string, any> = {
+        ...toSave,
+        _adminAuth: 'alfreelnc_admin_auth_verified',
+        updatedByAdmin: true,
+        updatedAt: new Date(nowMs).toISOString()
+      };
+
+      if (isNew) {
+        toFirestore.dateAdded = serverTimestamp();
+      }
+
+      await setDoc(doc(db, 'experiences', docId), toFirestore, { merge: true });
+
+      if (toSave.isCollaboration) {
         const siteSettings = getStoredSettings();
-        const partnerLogo = toLocalAndServer.collaborationLogo || siteSettings.collaboration?.partnerLogo || '';
-        const partnerName = toLocalAndServer.collaborationPartner || siteSettings.collaboration?.partnerName || '';
-        const collabText = toLocalAndServer.collaborationText || siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama';
+        const partnerLogo = toSave.collaborationLogo || siteSettings.collaboration?.partnerLogo || '';
+        const partnerName = toSave.collaborationPartner || siteSettings.collaboration?.partnerName || '';
+        const collabText = toSave.collaborationText || siteSettings.collaboration?.collaborationText || 'Kolaborasi Bersama';
 
         const updatedSettings: SiteSettings = {
           ...siteSettings,
@@ -371,45 +231,44 @@ export default function ExperienceAdmin() {
           savedAt: Date.now()
         };
         await saveStoredSettings(updatedSettings);
-      } catch (collabErr) {
-        console.warn("Notice: Syncing experience collaboration to settings:", collabErr);
       }
+
+      const sortedUpdated = sortExperiencesByRecency(
+        cleanExperiences([toSave, ...experiences.filter(ex => ex.id.toString() !== docId)])
+      );
+      setExperiences(sortedUpdated);
+      await saveStoredExperiences(sortedUpdated);
+
+      try {
+        const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
+        if (u.role === 'collaborator') {
+          recordCollaboratorActivity(
+            isNew ? 'Menambahkan Pengalaman Baru' : 'Memperbarui Pengalaman',
+            `Kolaborator ${isNew ? 'menambahkan pengalaman baru' : 'memperbarui pengalaman'} "${toSave.header}".`,
+            '/admin#experience'
+          );
+        }
+      } catch {}
+
+      const savedItemState = {
+        ...toSave,
+        isNew: false
+      };
+      setEditingItem(savedItemState);
+      markSaved(savedItemState);
+      showToast("Pengalaman & foto dokumentasi berhasil disimpan ke Cloud Firestore!");
+    } catch (err: any) {
+      logFirestoreError(err, OperationType.WRITE, `experiences/${docId}`);
+      showToast(err?.message || "Gagal menyimpan pengalaman ke Cloud Firestore.", "error");
+    } finally {
+      setSaving(false);
     }
-
-    // Lacak aktivitas kolaborator secara realtime jika sesi aktif adalah kolaborator
-    try {
-      const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
-      if (u.role === 'collaborator') {
-        recordCollaboratorActivity(
-          isNew ? 'Menambahkan Pengalaman Baru' : 'Memperbarui Pengalaman',
-          `Kolaborator ${isNew ? 'menambahkan pengalaman baru' : 'memperbarui pengalaman'} "${toLocalAndServer.header}".`,
-          '/admin#experience'
-        );
-      }
-    } catch {}
-
-    const savedItemState = {
-      ...toLocalAndServer,
-      isNew: false
-    };
-    setEditingItem(savedItemState);
-    markSaved(savedItemState);
-    showToast("Pengalaman & foto dokumentasi berhasil disimpan permanen!");
-    setSaving(false);
   };
 
-  /**
-   * 1. Upload Langsung Saat File Dipilih (Bisa 1 atau banyak gambar sekaligus, atau tambah gambar berikutnya)
-   * 2. Kompresi Otomatis Cepat di Client Menggunakan HTML5 Canvas (max 1200px, WebP, quality 0.8)
-   * 3. Pemrosesan Tangguh (Resilient): gambar berhasil langsung ditambahkan tanpa menggagalkan seluruh batch
-   * 4. Dukungan Menambah Foto ke-2, ke-3 dst secara berulang tanpa menimpa foto yang sudah ada
-   */
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const rawFiles = e.target.files;
     if (!rawFiles || rawFiles.length === 0 || !editingItem) return;
 
-    // Salin file list secara sinkron & bersihkan input seketika sebelum async
-    // agar pemilihan file berikutnya atau file yang sama selalu memicu onChange
     const fileList = Array.from(rawFiles);
     e.target.value = '';
     if (fileInputRef.current) {
@@ -419,10 +278,11 @@ export default function ExperienceAdmin() {
     setUploading(true);
     let successCount = 0;
     const newUrls: string[] = [];
+    let lastErrorMsg = '';
 
     for (let i = 0; i < fileList.length; i++) {
       const file = fileList[i];
-      setUploadProgressText(`Mengompres & Menyimpan ke Aset Backend (/assets/experiences/) (${i + 1}/${fileList.length})...`);
+      setUploadProgressText(`Mengompres & Mengunggah ke Vercel Blob (${i + 1}/${fileList.length})...`);
       try {
         const rawUrl = await compressAndUpload(file, 'experiences', 1200, 0.8, 25000);
         const url = await ensurePersistedAssetUrl(rawUrl, 'experiences');
@@ -431,44 +291,45 @@ export default function ExperienceAdmin() {
           successCount++;
         }
       } catch (err: any) {
-        console.warn(`Gagal mengunggah file ${file.name} ke aset backend:`, err);
+        lastErrorMsg = err?.message || `Gagal mengunggah file ${file.name}.`;
+        console.error(`Gagal mengunggah file ${file.name}:`, err);
       }
     }
 
-    if (newUrls.length > 0) {
-      const persistableCloudUrls = newUrls.filter(u => !u.startsWith('data:'));
-      if (!editingItem.isNew && editingItem.id && !isQuotaExhausted() && persistableCloudUrls.length > 0) {
-        try {
+    try {
+      if (newUrls.length > 0) {
+        const persistableCloudUrls = newUrls.filter(u => !u.startsWith('data:'));
+        if (!editingItem.isNew && editingItem.id && persistableCloudUrls.length > 0) {
           const docRef = doc(db, 'experiences', editingItem.id.toString());
           await updateDoc(docRef, {
             images: arrayUnion(...persistableCloudUrls),
             image: editingItem.image || persistableCloudUrls[0],
             updatedAt: new Date().toISOString()
           });
-        } catch (syncErr: any) {
-          if (isQuotaError(syncErr)) markQuotaExhausted();
         }
+
+        setEditingItem((prev: any) => {
+          if (!prev) return prev;
+          const currentImages = Array.isArray(prev.images)
+            ? prev.images.filter((img: any) => typeof img === 'string' && img.trim())
+            : (prev.image ? [prev.image] : []);
+          const mergedImages = [...currentImages, ...newUrls];
+          return {
+            ...prev,
+            images: mergedImages,
+            image: mergedImages[0] || ''
+          };
+        });
+        showToast(`${successCount} gambar berhasil diunggah ke Vercel Blob!`);
+      } else {
+        showToast(lastErrorMsg || "Gagal mengunggah gambar ke Vercel Blob.", "error");
       }
-
-      setEditingItem((prev: any) => {
-        if (!prev) return prev;
-        const currentImages = Array.isArray(prev.images)
-          ? prev.images.filter((img: any) => typeof img === 'string' && img.trim())
-          : (prev.image ? [prev.image] : []);
-        const mergedImages = [...currentImages, ...newUrls];
-        return {
-          ...prev,
-          images: mergedImages,
-          image: mergedImages[0] || ''
-        };
-      });
-      showToast(`${successCount} gambar berhasil disimpan ke aset backend!`);
-    } else {
-      showToast("Gagal mengunggah gambar, silakan coba lagi.", "error");
+    } catch (syncErr: any) {
+      showToast(syncErr?.message || "Gagal memperbarui foto pengalaman di Cloud Firestore.", "error");
+    } finally {
+      setUploading(false);
+      setUploadProgressText('');
     }
-
-    setUploading(false);
-    setUploadProgressText('');
   };
 
   const handleAddImageUrl = async () => {
@@ -480,16 +341,12 @@ export default function ExperienceAdmin() {
       const persistedUrl = await ensurePersistedAssetUrl(rawUrl, 'experiences');
       const finalUrl = persistedUrl && !persistedUrl.startsWith('blob:') ? persistedUrl : rawUrl;
 
-      if (!editingItem.isNew && editingItem.id && !isQuotaExhausted() && !finalUrl.startsWith('data:')) {
-        try {
-          const docRef = doc(db, 'experiences', editingItem.id.toString());
-          await updateDoc(docRef, {
-            images: arrayUnion(finalUrl),
-            updatedAt: new Date().toISOString()
-          });
-        } catch (syncErr: any) {
-          if (isQuotaError(syncErr)) markQuotaExhausted();
-        }
+      if (!editingItem.isNew && editingItem.id && !finalUrl.startsWith('data:')) {
+        const docRef = doc(db, 'experiences', editingItem.id.toString());
+        await updateDoc(docRef, {
+          images: arrayUnion(finalUrl),
+          updatedAt: new Date().toISOString()
+        });
       }
 
       setEditingItem((prev: any) => {
@@ -505,7 +362,9 @@ export default function ExperienceAdmin() {
         };
       });
       setImageUrlInput('');
-      showToast("Gambar berhasil disimpan ke aset backend dari tautan URL!");
+      showToast("Gambar berhasil ditambahkan dari tautan URL!");
+    } catch (err: any) {
+      showToast(err?.message || "Gagal menambahkan URL gambar.", "error");
     } finally {
       setAddingImageUrl(false);
     }

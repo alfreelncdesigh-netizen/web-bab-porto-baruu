@@ -1,94 +1,35 @@
 import { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
-import { collection, onSnapshot, deleteDoc, doc, setDoc, getDoc } from 'firebase/firestore';
-import { Trash2, Mail, Calendar, Check } from 'lucide-react';
+import { collection, onSnapshot, deleteDoc, doc } from 'firebase/firestore';
+import { Trash2, Mail, Calendar, Check, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import ConfirmModal from './ConfirmModal';
-import { getDeletedIds, markDeletedIds, syncDeletedIdsFromServer } from '../lib/contentStorage';
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 
 export default function MessagesAdmin() {
   const [messages, setMessages] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null);
   const [messageToDelete, setMessageToDelete] = useState<any>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
   useEffect(() => {
     const DUMMY_COMMENT_NAMES = new Set(['Rahmat Hidayat', 'Siti Nurhaliza', 'Dimas Pratama', 'Putri Ayu Lestari']);
     const DUMMY_COMMENT_IDS = new Set(['msg_1730000101', 'msg_1730000102', 'msg_1730000103', 'msg_1730000104']);
 
-    const loadApiMessages = async () => {
-      await syncDeletedIdsFromServer().catch(() => {});
-      const localDeleted = getDeletedIds('messages');
-
-      try {
-        const res = await fetch('/api/messages');
-        const apiData = res.ok ? await res.json() : [];
-        let localCache: any[] = [];
-        try {
-          const raw = localStorage.getItem('user_messages');
-          if (raw) localCache = JSON.parse(raw);
-        } catch {}
-
-        const combined = [...(Array.isArray(apiData) ? apiData : []), ...(Array.isArray(localCache) ? localCache : [])];
-        if (combined.length > 0) {
-          setMessages(prev => {
-            const map = new Map<string, any>();
-            combined.forEach((m: any) => {
-              if (
-                m &&
-                !localDeleted.has(String(m.id)) &&
-                m.isDeleted !== true &&
-                !DUMMY_COMMENT_IDS.has(String(m.id)) &&
-                !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
-              ) {
-                map.set(String(m.id), m);
-              }
-            });
-            prev.forEach((m: any) => {
-              if (
-                m &&
-                !localDeleted.has(String(m.id)) &&
-                m.isDeleted !== true &&
-                !DUMMY_COMMENT_IDS.has(String(m.id)) &&
-                !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
-              ) {
-                map.set(String(m.id), m);
-              }
-            });
-            const list = Array.from(map.values());
-            list.sort((a: any, b: any) => {
-              const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
-              const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
-              return timeB - timeA;
-            });
-            return list;
-          });
-        }
-      } catch {}
-      setLoading(false);
-    };
-
-    loadApiMessages();
-
-    if (isQuotaExhausted()) {
-      return;
-    }
-
-    // 2. Berlangganan pesan dari Firestore jika kuota tersedia
     const unsubscribe = onSnapshot(
       collection(db, 'messages'),
       (snapshot) => {
-        const localDeleted = getDeletedIds('messages');
-
         const msgData: any[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
           if (
             data.isDeleted === true ||
             data.status === 'deleted' ||
-            localDeleted.has(docSnap.id) ||
             DUMMY_COMMENT_IDS.has(docSnap.id) ||
             DUMMY_COMMENT_NAMES.has(String(data.name || '').trim())
           ) {
@@ -96,27 +37,17 @@ export default function MessagesAdmin() {
           }
           msgData.push({ id: docSnap.id, ...data });
         });
-        setMessages(prev => {
-          const map = new Map<string, any>();
-          prev.forEach((m: any) => {
-            if (!DUMMY_COMMENT_IDS.has(String(m.id)) && !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())) {
-              map.set(String(m.id), m);
-            }
-          });
-          msgData.forEach((m: any) => map.set(String(m.id), m));
-          const list = Array.from(map.values()).filter(m => !localDeleted.has(String(m.id)));
-          list.sort((a, b) => {
-            const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
-            const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
-            return timeB - timeA;
-          });
-          return list;
+        msgData.sort((a, b) => {
+          const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+          const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+          return timeB - timeA;
         });
+        setMessages(msgData);
         setLoading(false);
       },
       (err) => {
-        if (isQuotaError(err)) markQuotaExhausted();
-        console.warn("Messages error:", err);
+        console.error("Messages error:", err);
+        showToast(err?.message || "Gagal memuat pesan dari Firestore.", "error");
         setLoading(false);
       }
     );
@@ -132,65 +63,20 @@ export default function MessagesAdmin() {
     setIsDeleting(true);
     const id = String(messageToDelete.id);
 
-    // 1. Optimistic UI update & update local cache
-    setMessages(prev => {
-      const next = prev.filter(m => String(m.id) !== id);
-      try { localStorage.setItem('user_messages', JSON.stringify(next)); } catch {}
-      return next;
-    });
-    setToast("Pesan berhasil dihapus");
-    setTimeout(() => setToast(''), 3000);
-    setMessageToDelete(null);
-
-    // 2. Simpan ke blacklist permanen (localStorage + server)
-    await markDeletedIds('messages', [id]);
-
-    // 3. Hapus dari server disk (/api/messages/:id)
     try {
-      await fetch(`/api/messages/${encodeURIComponent(id)}`, { method: 'DELETE', keepalive: true }).catch(() => {});
-    } catch {}
+      await deleteDoc(doc(db, 'messages', id));
 
-    // 4. Siarkan event ke seluruh komponen aktif (seperti Contact.tsx di halaman publik)
-    window.dispatchEvent(new CustomEvent('message_deleted', { detail: { id } }));
-    window.dispatchEvent(new CustomEvent('messages_updated'));
-
-    if (!isQuotaExhausted()) {
-      try {
-        // 5. Tandai dokumen sebagai isDeleted di Firestore
-        await setDoc(doc(db, 'messages', id), {
-          isDeleted: true,
-          status: 'deleted',
-          deletedAt: new Date().toISOString(),
-          _adminAuth: 'alfreelnc_admin_auth_verified',
-          updatedByAdmin: true
-        }, { merge: true }).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); });
-
-        // 6. Hapus permanen dokumen dari database Firestore
-        await deleteDoc(doc(db, 'messages', id)).catch((e) => { if (isQuotaError(e)) markQuotaExhausted(); });
-
-        // 7. Catat ID pesan terhapus di settings/global agar tersimpan permanen di cloud
-        try {
-          const globalSnap = await getDoc(doc(db, 'settings', 'global'));
-          const existingDeleted: string[] = globalSnap.exists() && Array.isArray(globalSnap.data().deletedMessageIds)
-            ? globalSnap.data().deletedMessageIds
-            : [];
-          if (!existingDeleted.includes(id)) {
-            await setDoc(doc(db, 'settings', 'global'), {
-              deletedMessageIds: [...existingDeleted, id],
-              _adminAuth: 'alfreelnc_admin_auth_verified',
-              updatedByAdmin: true
-            }, { merge: true });
-          }
-        } catch (cloudErr) {
-          if (isQuotaError(cloudErr)) markQuotaExhausted();
-          console.warn("Notice: sync deletedMessageIds cloud:", cloudErr);
-        }
-      } catch (err) {
-        if (isQuotaError(err)) markQuotaExhausted();
-        console.warn("Delete message error:", err);
-      }
+      setMessages(prev => prev.filter(m => String(m.id) !== id));
+      setMessageToDelete(null);
+      window.dispatchEvent(new CustomEvent('message_deleted', { detail: { id } }));
+      window.dispatchEvent(new CustomEvent('messages_updated'));
+      showToast("Pesan berhasil dihapus dari Firestore.");
+    } catch (err: any) {
+      console.error("Delete message error:", err);
+      showToast(err?.message || "Gagal menghapus pesan dari Firestore.", "error");
+    } finally {
+      setIsDeleting(false);
     }
-    setIsDeleting(false);
   };
 
   const formatDate = (timestamp: any) => {
@@ -204,8 +90,12 @@ export default function MessagesAdmin() {
   return (
     <div className="relative">
       {toast && (
-        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-black text-white dark:bg-white dark:text-black px-6 py-3 rounded-2xl text-xs font-semibold flex items-center gap-2 shadow-xl">
-          <Check size={16} /> {toast}
+        <div className={`fixed top-24 left-1/2 -translate-x-1/2 z-[100] px-6 py-3 rounded-2xl text-xs font-semibold flex items-center gap-2 shadow-xl ${
+          toast.type === 'error'
+            ? 'bg-red-600 text-white'
+            : 'bg-black text-white dark:bg-white dark:text-black'
+        }`}>
+          {toast.type === 'error' ? <AlertCircle size={16} /> : <Check size={16} />} {toast.msg}
         </div>
       )}
       

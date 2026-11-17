@@ -2,10 +2,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Mail, MapPin, Phone, Check, ArrowRight, MessageSquare, MessageCircle, Send, CheckCircle2, X, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { db } from '../lib/firebase';
-import { doc, onSnapshot, collection, setDoc } from 'firebase/firestore';
-import { defaultSettings, SiteSettings } from '../data/settings';
-import { getStoredSettings, getDeletedIds, syncDeletedIdsFromServer, mergeSettingsByTimestamp } from '../lib/contentStorage';
-import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
+import { onSnapshot, collection, setDoc, doc } from 'firebase/firestore';
+import { SiteSettings } from '../data/settings';
+import { getStoredSettings, subscribeSettingsRealtime } from '../lib/contentStorage';
+import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { FastInput, FastTextarea } from './FastInput';
 import { useLanguage } from '../contexts/LanguageContext';
 import { 
@@ -24,24 +24,7 @@ export default function Contact() {
  const [formData, setFormData] = useState({ name: '', email: '', message: '' });
  const [isSubmitting, setIsSubmitting] = useState(false);
  const [isSuccess, setIsSuccess] = useState(false);
- const [messages, setMessages] = useState<any[]>(() => {
-   try {
-     const raw = typeof window !== 'undefined' ? localStorage.getItem('user_messages') : null;
-     if (raw) {
-       const parsed = JSON.parse(raw);
-       if (Array.isArray(parsed) && parsed.length > 0) {
-         const filtered = parsed.filter((m: any) => 
-           m && 
-           !DUMMY_COMMENT_IDS.has(String(m.id)) && 
-           !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
-         );
-         try { localStorage.setItem('user_messages', JSON.stringify(filtered)); } catch {}
-         return filtered;
-       }
-     }
-   } catch {}
-   return [];
- });
+ const [messages, setMessages] = useState<any[]>([]);
  const [loadingMessages, setLoadingMessages] = useState(true);
  const [showAllComments, setShowAllComments] = useState(false);
  const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
@@ -106,143 +89,50 @@ export default function Contact() {
   };
   window.addEventListener('message_deleted', handleMessageDeleted);
 
-  // 1. Muat komentar yang sudah ada dari endpoint server disk (/api/messages)
-  syncDeletedIdsFromServer().catch(() => {});
+  // 1. Berlangganan pesan & komentar langsung dari Cloud Firestore
+  const unsubscribeMessages = onSnapshot(
+    collection(db, 'messages'),
+    (snapshot) => {
+      const currentStored = getStoredSettings();
+      const deletedSet = new Set(currentStored.deletedMessageIds || []);
 
-  fetch('/api/settings')
-    .then(r => r.ok ? r.json() : null)
-    .then(serverData => {
-      if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
-        setSettings(prev => mergeSettingsByTimestamp(prev, serverData));
-      }
-    })
-    .catch(() => {});
-
-  fetch('/api/messages')
-    .then(res => res.ok ? res.json() : [])
-    .then(apiData => {
-      if (Array.isArray(apiData) && apiData.length > 0) {
-        const localDeleted = getDeletedIds('messages');
-
-        setMessages(prev => {
-          const map = new Map<string, any>();
-          apiData.forEach((m: any) => {
-            if (
-              !localDeleted.has(String(m.id)) && 
-              m.isDeleted !== true &&
-              !DUMMY_COMMENT_IDS.has(String(m.id)) &&
-              !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
-            ) {
-              map.set(String(m.id), m);
-            }
-          });
-          prev.forEach((m: any) => {
-            if (
-              !localDeleted.has(String(m.id)) && 
-              m.isDeleted !== true &&
-              !DUMMY_COMMENT_IDS.has(String(m.id)) &&
-              !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())
-            ) {
-              map.set(String(m.id), m);
-            }
-          });
-          const merged = Array.from(map.values());
-          merged.sort((a: any, b: any) => {
-            const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
-            const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
-            return timeB - timeA;
-          });
-          try {
-            localStorage.setItem('user_messages', JSON.stringify(merged));
-          } catch {}
-          return merged;
-        });
-        setLoadingMessages(false);
-      } else {
-        setLoadingMessages(false);
-      }
-    })
-    .catch(() => {
-      setLoadingMessages(false);
-    });
-
-  let unsubscribeMessages = () => {};
-  let unsubscribe = () => {};
-
-  if (!isQuotaExhausted()) {
-    // 2. Berlangganan data seluruh komentar secara publik untuk sinkronisasi cloud jika tersedia
-    unsubscribeMessages = onSnapshot(
-      collection(db, 'messages'),
-      (snapshot) => {
-        const currentStored = getStoredSettings();
-        const cloudDeleted = currentStored.deletedMessageIds || [];
-        const deletedSet = new Set([...Array.from(getDeletedIds('messages')), ...cloudDeleted]);
-
-        const msgData: any[] = [];
-        snapshot.forEach((docSnap) => {
-          const data = docSnap.data();
-          if (
-            data.isDeleted === true || 
-            data.status === 'deleted' || 
-            deletedSet.has(docSnap.id) ||
-            DUMMY_COMMENT_IDS.has(docSnap.id) ||
-            DUMMY_COMMENT_NAMES.has(String(data.name || '').trim())
-          ) {
-            return;
-          }
-          msgData.push({ id: docSnap.id, ...data });
-        });
-
-        setMessages(prev => {
-          const map = new Map<string, any>();
-          prev.forEach((m: any) => {
-            if (!DUMMY_COMMENT_IDS.has(String(m.id)) && !DUMMY_COMMENT_NAMES.has(String(m.name || '').trim())) {
-              map.set(String(m.id), m);
-            }
-          });
-          msgData.forEach((m: any) => map.set(String(m.id), m));
-          const merged = Array.from(map.values()).filter(m => !deletedSet.has(String(m.id)));
-          merged.sort((a, b) => {
-            const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
-            const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
-            return timeB - timeA;
-          });
-          try {
-            localStorage.setItem('user_messages', JSON.stringify(merged));
-          } catch {}
-          return merged;
-        });
-        setLoadingMessages(false);
-      },
-      (err) => {
-        if (isQuotaError(err)) markQuotaExhausted();
-        console.warn("Messages public subscription notice (retaining disk/cached messages):", err);
-        setLoadingMessages(false);
-      }
-    );
-
-    const docRef = doc(db, 'settings', 'global');
-    unsubscribe = onSnapshot(
-     docRef,
-     (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as Partial<SiteSettings>;
-        setSettings(prev => mergeSettingsByTimestamp(prev, data));
-        if (Array.isArray(data.deletedMessageIds) && data.deletedMessageIds.length > 0) {
-          const delSet = new Set(data.deletedMessageIds);
-          setMessages(prev => prev.filter(m => !delSet.has(m.id)));
+      const msgData: any[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        if (
+          data.isDeleted === true ||
+          data.status === 'deleted' ||
+          deletedSet.has(docSnap.id) ||
+          DUMMY_COMMENT_IDS.has(docSnap.id) ||
+          DUMMY_COMMENT_NAMES.has(String(data.name || '').trim())
+        ) {
+          return;
         }
-      }
-     },
-     (err) => {
-      if (isQuotaError(err)) markQuotaExhausted();
-      console.warn("Contact settings error (using stored):", err);
-      setSettings(getStoredSettings());
-     }
-    );
-  } else {
-    setLoadingMessages(false);
-  }
+        msgData.push({ id: docSnap.id, ...data });
+      });
+
+      msgData.sort((a, b) => {
+        const timeA = a.dateAdded?.toMillis ? a.dateAdded.toMillis() : new Date(a.dateAdded || 0).getTime();
+        const timeB = b.dateAdded?.toMillis ? b.dateAdded.toMillis() : new Date(b.dateAdded || 0).getTime();
+        return timeB - timeA;
+      });
+      setMessages(msgData);
+      setLoadingMessages(false);
+    },
+    (err) => {
+      logFirestoreError(err, OperationType.LIST, 'messages');
+      setLoadingMessages(false);
+    }
+  );
+
+  // 2. Berlangganan pengaturan kontak langsung dari Cloud Firestore (shared singleton)
+  const unsubscribe = subscribeSettingsRealtime((nextSettings) => {
+    setSettings(nextSettings);
+    if (Array.isArray(nextSettings.deletedMessageIds) && nextSettings.deletedMessageIds.length > 0) {
+      const delSet = new Set(nextSettings.deletedMessageIds);
+      setMessages(prev => prev.filter(m => !delSet.has(m.id)));
+    }
+  });
 
   const commentsTimeout = setTimeout(() => {
     setLoadingMessages(false);
@@ -272,47 +162,26 @@ export default function Contact() {
     dateAdded: new Date().toISOString()
   };
 
-  // 1. Tampilkan komentar baru seketika di state website (Optimistic UI)
-  setMessages(prev => [newCommentObj, ...prev]);
-
-  // 2. Simpan seketika di penyimpanan lokal perangkat
   try {
-    const localMsgs = JSON.parse(localStorage.getItem('user_messages') || '[]');
-    localMsgs.unshift(newCommentObj);
-    localStorage.setItem('user_messages', JSON.stringify(localMsgs));
-  } catch {}
-
-  // 3. Simpan ke server disk via /api/messages secara permanen
-  try {
-    fetch('/api/messages', {
-      method: 'POST',
-      keepalive: true,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newCommentObj)
-    }).catch(() => {});
-  } catch {}
-
-  // 4. Sinkronkan ke Cloud Firestore di latar belakang dengan ID yang sama
-  if (!isQuotaExhausted()) {
-    setDoc(doc(db, 'messages', newCommentObj.id), {
-      ...newCommentObj
-    }, { merge: true }).catch((error: any) => {
-      if (isQuotaError(error)) {
-        markQuotaExhausted();
-      }
-      console.warn("Background cloud comment sync notice:", error);
-    });
+    await setDoc(doc(db, 'messages', newCommentObj.id), newCommentObj, { merge: true });
+    setIsSuccess(true);
+    setFormData({ name: '', email: '', message: '' });
+    triggerToast(
+      'success',
+      'Pesan Berhasil Terkirim!',
+      `Terima kasih${currentName ? `, ${currentName}` : ''}. Komentar Anda telah tersimpan di Cloud Firestore dan tampil di website.`
+    );
+    setTimeout(() => setIsSuccess(false), 5000);
+  } catch (error: any) {
+    logFirestoreError(error, OperationType.CREATE, `messages/${newCommentObj.id}`);
+    triggerToast(
+      'error',
+      'Gagal Mengirim Pesan',
+      `Operasi Cloud Firestore gagal: ${error?.message || 'Silakan coba lagi.'}`
+    );
+  } finally {
+    setIsSubmitting(false);
   }
-
-  setIsSubmitting(false);
-  setIsSuccess(true);
-  setFormData({ name: '', email: '', message: '' });
-  triggerToast(
-    'success',
-    'Pesan Berhasil Terkirim!',
-    `Terima kasih${currentName ? `, ${currentName}` : ''}. Komentar Anda telah tersimpan dan tampil di website.`
-  );
-  setTimeout(() => setIsSuccess(false), 5000);
  };
 
  const waLink = "https://wa.me/qr/UDCAZ44OXWLGM1";

@@ -1,17 +1,17 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { db } from '../lib/firebase';
-import { doc, getDoc, onSnapshot, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { User, Phone, Instagram, LayoutTemplate, PenTool, Layers, Maximize, Hash, Calendar, DollarSign, ArrowRight, ArrowLeft, Send, CheckCircle2, FileText, UploadCloud, Info, Wallet, FileEdit, X, ChevronDown, CreditCard, ShieldCheck, Sparkles, ExternalLink, Tag, ShoppingBag, Download } from 'lucide-react';
 import { FastInput, FastTextarea } from './FastInput';
 import { ServiceSelectModal, servicesList } from './ServiceSelectModal';
-import { getStoredSettings } from '../lib/contentStorage';
+import { getStoredSettings, subscribeSettingsRealtime } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { defaultPromoPosters, PromoPosterItem } from '../data/settings';
 import { PAYMENT_METHODS, BriLogo, BrimoLogo, DanaLogo, GopayLogo, OvoLogo, ShopeePayLogo, LinkAjaLogo } from './PaymentLogos';
 import { getCookie, setCookie, deleteCookie } from '../lib/cookies';
 import { compressAndUpload } from '../lib/storageUploader';
-import { isQuotaExhausted, markQuotaExhausted, isQuotaError } from '../lib/firestoreErrorHandler';
+import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useLanguage } from '../contexts/LanguageContext';
 
 interface StoreProps {
@@ -58,57 +58,18 @@ export default function Store({ isOrderView = false }: StoreProps) {
     };
     window.addEventListener('app_settings_updated', handleSettingsUpdate);
 
-    // 0. Sinkronisasi dari server disk (/api/settings)
-    fetch('/api/settings')
-      .then(r => r.ok ? r.json() : null)
-      .then(serverData => {
-        if (serverData?.promoPosters && Array.isArray(serverData.promoPosters)) {
-          setPromoPosters(deduplicatePosters(serverData.promoPosters));
-        }
-        if (serverData?.contactPhone) {
-          setWhatsappNumber(getCleanPhone(serverData.contactPhone));
-        }
-      })
-      .catch(() => {});
-
-    let unsubPromo = () => {};
-    let unsub = () => {};
-
-    if (!isQuotaExhausted()) {
-      // 1. Dengarkan doc settings/promoPosters khusus
-      unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data.posters && Array.isArray(data.posters)) {
-            setPromoPosters(deduplicatePosters(data.posters));
-          }
-        }
-      }, (err) => {
-        if (isQuotaError(err)) markQuotaExhausted();
-        console.warn("Store promo realtime sync notice:", err);
-      });
-
-      // 2. Dengarkan doc settings/global
-      unsub = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data.promoPosters && Array.isArray(data.promoPosters)) {
-            setPromoPosters(deduplicatePosters(data.promoPosters));
-          }
-          if (data.contactPhone) {
-            setWhatsappNumber(getCleanPhone(data.contactPhone));
-          }
-        }
-      }, (err) => {
-        if (isQuotaError(err)) markQuotaExhausted();
-        console.warn("Store realtime sync notice:", err);
-      });
-    }
+    const unsubscribe = subscribeSettingsRealtime((nextSettings) => {
+      if (nextSettings?.promoPosters) {
+        setPromoPosters(deduplicatePosters(nextSettings.promoPosters));
+      }
+      if (nextSettings?.contactPhone) {
+        setWhatsappNumber(getCleanPhone(nextSettings.contactPhone));
+      }
+    });
 
     return () => {
       window.removeEventListener('app_settings_updated', handleSettingsUpdate);
-      unsubPromo();
-      unsub();
+      unsubscribe();
     };
   }, []);
 
@@ -136,20 +97,18 @@ export default function Store({ isOrderView = false }: StoreProps) {
     setStep(1);
   }, [isDesktop]);
 
-  // Form State
-    const getInitialFormData = () => {
+  // Form State (draft form sementara disimpan di cookie sesi saja)
+  const getInitialFormData = () => {
     try {
       const fromCookie = getCookie('order_draft');
       if (fromCookie) return JSON.parse(fromCookie);
-      const saved = localStorage.getItem('order_draft');
-      if (saved) return JSON.parse(saved);
-    } catch(e) {}
+    } catch {}
     return {
       nama: '', whatsapp: '', sosmed: '', jenisLayanan: '', layananLainnya: '', tujuan: '', gaya: '', format: '', jumlah: '', deadline: '', budget: '', materi: '', referensiUrl: '', catatan: '',
     };
   };
   const [formData, setFormData] = useState(getInitialFormData);
-  const [isDraftLoaded, setIsDraftLoaded] = useState(() => !!getCookie('order_draft') || !!localStorage.getItem('order_draft'));
+  const [isDraftLoaded, setIsDraftLoaded] = useState(() => !!getCookie('order_draft'));
   const [showCancelPopup, setShowCancelPopup] = useState(false);
   const [showNavPopup, setShowNavPopup] = useState(false);
   const [pendingNavView, setPendingNavView] = useState<string | null>(null);
@@ -196,7 +155,6 @@ export default function Store({ isOrderView = false }: StoreProps) {
     setFormData({ nama: '', whatsapp: '', sosmed: '', jenisLayanan: '', layananLainnya: '', tujuan: '', gaya: '', format: '', jumlah: '', deadline: '', budget: '', materi: '', referensiUrl: '', catatan: '' });
     setStep(1);
     setIsDraftLoaded(false);
-    localStorage.removeItem('order_draft');
     deleteCookie('order_draft');
   };
 
@@ -215,7 +173,6 @@ export default function Store({ isOrderView = false }: StoreProps) {
 
   const navDraft = () => {
     const draftJson = JSON.stringify(formData);
-    localStorage.setItem('order_draft', draftJson);
     setCookie('order_draft', draftJson, { days: 30 });
     setIsDraftLoaded(true);
     setShowNavPopup(false);
@@ -230,30 +187,6 @@ export default function Store({ isOrderView = false }: StoreProps) {
   };
 
 
-  useEffect(() => {
-    const handleSettingsUpdate = (e: any) => {
-      if (e.detail && e.detail.contactPhone) {
-        setWhatsappNumber(getCleanPhone(e.detail.contactPhone));
-      }
-    };
-    window.addEventListener('app_settings_updated', handleSettingsUpdate);
-
-    const fetchSettings = async () => {
-      if (isQuotaExhausted()) return;
-      try {
-        const docRef = doc(db, 'settings', 'global');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().contactPhone) {
-          setWhatsappNumber(getCleanPhone(docSnap.data().contactPhone));
-        }
-      } catch (e) {
-        if (isQuotaError(e)) markQuotaExhausted();
-        console.warn(e);
-      }
-    };
-    fetchSettings();
-    return () => window.removeEventListener('app_settings_updated', handleSettingsUpdate);
-  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -380,7 +313,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
     const { total, breakdown } = getPriceBreakdown();
     const breakdownText = breakdown.map(b => `  - ${b.label}: ${formatIDR(b.price)}`).join('\n');
 
-    // Simpan data order ke LocalStorage, Server Disk (/api/orders), & Cloud Firestore
+    // Simpan data order langsung ke Cloud Firestore
     const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const orderRecord = {
       id: orderId,
@@ -403,32 +336,14 @@ export default function Store({ isOrderView = false }: StoreProps) {
     };
 
     try {
-      const existing = JSON.parse(localStorage.getItem('orders') || '[]');
-      existing.unshift(orderRecord);
-      localStorage.setItem('orders', JSON.stringify(existing.slice(0, 100)));
-    } catch {}
-
-    try {
-      fetch('/api/orders', {
-        method: 'POST',
-        keepalive: true,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(orderRecord)
-      }).catch(() => {});
-    } catch {}
-
-    if (!isQuotaExhausted()) {
-      try {
-        await setDoc(doc(db, 'orders', orderId), {
-          ...orderRecord,
-          createdAt: serverTimestamp(),
-        }, { merge: true });
-      } catch (error: any) {
-        if (isQuotaError(error)) {
-          markQuotaExhausted();
-        }
-        console.warn("Notice: Firestore order logging handled safely:", error?.message || error);
-      }
+      await setDoc(doc(db, 'orders', orderId), {
+        ...orderRecord,
+        createdAt: serverTimestamp(),
+      }, { merge: true });
+    } catch (error: any) {
+      logFirestoreError(error, OperationType.CREATE, `orders/${orderId}`);
+      showToast(`Gagal menyimpan pesanan ke Cloud Firestore: ${error?.message || 'Coba lagi.'}`);
+      return;
     }
     
     const message = `Halo, saya ingin melakukan pemesanan custom desain dengan detail berikut:

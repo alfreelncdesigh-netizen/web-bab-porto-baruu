@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, ArrowUpRight, Sparkles } from 'lucide-react';
 import { getStoredCookieConsent } from "../lib/cookies";
 import { SiteSettings, defaultSettings, PromoPosterItem, defaultPromoPosters } from '../data/settings';
-import { getStoredSettings } from '../lib/contentStorage';
+import { getStoredSettings, subscribeSettingsRealtime } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 
 // ====================================================================================================
@@ -12,8 +12,6 @@ import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 //    - Link WhatsApp: Ubah nomor WhatsApp & teks URL encoded.
 //    - Link Halaman Order Website: '#store'
 // ====================================================================================================
-import { db } from '../lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
 
 export const LINK_TUJUAN_CTA_DEFAULT = "https://wa.me/qr/UDCAZ44OXWLGM1";
 
@@ -119,37 +117,9 @@ export default function PromoPosterWidget({
       }
     };
 
-    let unsubPromo = () => {};
-    let unsubGlobal = () => {};
-
-    // Dynamic import check avoided by using module-level helpers
-    if (localStorage.getItem('firestore_quota_exhausted') !== 'true') {
-      // 1. Dengarkan doc settings/promoPosters secara realtime
-      unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          const current = getStoredSettings();
-          if (current.savedAt && data.savedAt && Number(data.savedAt) < Number(current.savedAt)) return;
-          if (Array.isArray(data.posters) && data.posters.length > 0) {
-            setSettings(prev => ({
-              ...prev,
-              promoPosters: data.posters,
-              promoWidgetActive: data.active !== undefined ? data.active !== false : prev.promoWidgetActive
-            }));
-          }
-        }
-      }, (err) => console.warn("PromoWidget promoPosters notice:", err));
-
-      // 2. Dengarkan doc settings/global secara realtime
-      unsubGlobal = onSnapshot(doc(db, 'settings', 'global'), (snap) => {
-        if (snap.exists()) {
-          const data = snap.data() as SiteSettings;
-          const current = getStoredSettings();
-          if (current.savedAt && data.savedAt && Number(data.savedAt) < Number(current.savedAt)) return;
-          setSettings(prev => ({ ...prev, ...data }));
-        }
-      }, (err) => console.warn("PromoWidget settings/global notice:", err));
-    }
+    const unsubscribeSettings = subscribeSettingsRealtime((nextSettings) => {
+      setSettings(nextSettings);
+    });
 
     // Event testing dari dashboard admin: munculkan widget sekarang secara acak
     const handleTriggerPromoNow = (e?: any) => {
@@ -170,8 +140,7 @@ export default function PromoPosterWidget({
     window.addEventListener('app_settings_updated', handleSettingsUpdate);
     window.addEventListener('trigger_promo_widget_now', handleTriggerPromoNow);
     return () => {
-      unsubPromo();
-      unsubGlobal();
+      unsubscribeSettings();
       window.removeEventListener('app_settings_updated', handleSettingsUpdate);
       window.removeEventListener('trigger_promo_widget_now', handleTriggerPromoNow);
     };

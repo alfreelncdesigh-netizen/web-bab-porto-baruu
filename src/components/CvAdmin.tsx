@@ -2,16 +2,12 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import { 
-  Loader2, Check, Upload, FileText, X, Plus, Trash2, 
-  Image as ImageIcon, ChevronLeft, ChevronRight, Layers 
-} from 'lucide-react';
-import imageCompression from 'browser-image-compression';
+import { Loader2, Check, Upload, FileText, X, Plus, Trash2, Image as ImageIcon, ChevronLeft, ChevronRight, Layers } from 'lucide-react';
 import { defaultSettings, defaultCvSections } from '../data/settings';
-import { getStoredSettings, saveStoredSettings, mergeSettingsByTimestamp } from '../lib/contentStorage';
+import { getStoredSettings, saveStoredSettings, fetchSettingsFromFirestore } from '../lib/contentStorage';
 import { compressImageToWebP } from '../lib/imageCompressor';
 import { uploadImageToStorage, ensurePersistedAssetUrl } from '../lib/storageUploader';
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import ConfirmModal from './ConfirmModal';
 import { FastInput, FastTextarea } from './FastInput';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
@@ -40,88 +36,38 @@ export default function CvAdmin() {
   const { isSaved, markSaved } = useAdminSaveState(settings);
 
   useEffect(() => {
-    const fetchSettings = async () => {
+    let isMounted = true;
+    const loadFromCloud = async () => {
+      setLoading(true);
       try {
-        let baseSettings = getStoredSettings();
-
-        try {
-          const res = await fetch('/api/settings');
-          if (res.ok) {
-            const serverData = await res.json();
-            if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
-              baseSettings = mergeSettingsByTimestamp(baseSettings, serverData);
-            }
-          }
-        } catch {}
-
-        let data: any = {};
-        let cvDataFromCloud: any = null;
-
-        if (!isQuotaExhausted()) {
-          try {
-            const [docSnap, cvSnap] = await Promise.all([
-              getDoc(doc(db, 'settings', 'global')),
-              getDoc(doc(db, 'settings', 'cv')).catch(() => null)
-            ]);
-            if (docSnap.exists()) {
-              data = docSnap.data();
-            }
-            if (cvSnap && cvSnap.exists()) {
-              cvDataFromCloud = cvSnap.data();
-            }
-          } catch (e) {
-            if (isQuotaError(e)) markQuotaExhausted();
-            logFirestoreError(e, OperationType.GET, 'settings/cv');
-          }
-        }
-
-        const cloudCombined: any = {
-          ...data,
-          ...(cvDataFromCloud || {}),
-          savedAt: Math.max(Number(cvDataFromCloud?.savedAt || 0), Number(data?.savedAt || 0))
-        };
-
-        const merged = mergeSettingsByTimestamp(baseSettings, cloudCombined);
-        const rawSections = (merged.cvSections && merged.cvSections.length > 0)
-          ? merged.cvSections
-          : (baseSettings.cvSections && baseSettings.cvSections.length > 0 ? baseSettings.cvSections : defaultCvSections);
-
-        const normalizedSections = rawSections.map((s: any, idx: number) => {
-          let imgs = Array.isArray(s.images)
+        const fetched = await fetchSettingsFromFirestore();
+        if (!isMounted) return;
+        const rawSections = fetched.cvSections && fetched.cvSections.length > 0 ? fetched.cvSections : defaultCvSections;
+        const normalizedSections = rawSections.map((s: any) => ({
+          title: s.title || '',
+          content: s.content || '',
+          images: Array.isArray(s.images)
             ? s.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0 && !img.startsWith('blob:'))
-            : (s.image && !s.image.startsWith('blob:') ? [s.image.trim()] : []);
-
-          if (imgs.length === 0 && baseSettings.cvSections?.[idx]) {
-            const localSec = baseSettings.cvSections[idx];
-            if (Array.isArray(localSec.images) && localSec.images.length > 0) {
-              imgs = localSec.images.filter((img: any) => typeof img === 'string' && img.trim().length > 0 && !img.startsWith('blob:'));
-            }
-          }
-
-          return {
-            title: s.title || '',
-            content: s.content || '',
-            images: imgs
-          };
-        });
-
-        const finalSettings = {
+            : (s.image && !s.image.startsWith('blob:') ? [s.image.trim()] : [])
+        }));
+        setSettings({
           ...defaultSettings,
-          ...merged,
-          cvRole: merged.cvRole || baseSettings.cvRole || 'Desainer Grafis',
-          cvPdfFile: merged.cvPdfFile || baseSettings.cvPdfFile || '',
+          ...fetched,
+          cvRole: fetched.cvRole || 'Desainer Grafis',
+          cvPdfFile: fetched.cvPdfFile || '',
           cvSections: normalizedSections
-        };
-
-        setSettings(finalSettings);
-      } catch (err) {
-        if (isQuotaError(err)) markQuotaExhausted();
-        console.warn("Error fetching settings (using stored):", err);
+        });
+      } catch (err: any) {
+        logFirestoreError(err, OperationType.GET, 'settings/cv');
+        if (isMounted) {
+          showToast(err?.message || 'Gagal memuat data CV dari Cloud Firestore.', 'error');
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
-    fetchSettings();
+    loadFromCloud();
+    return () => { isMounted = false; };
   }, []);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -143,16 +89,16 @@ export default function CvAdmin() {
     try {
       const cleanUrl = await uploadImageToStorage(file, file.name, undefined, 'cv');
       const persistedUrl = await ensurePersistedAssetUrl(cleanUrl, 'cv');
-      if (persistedUrl && !persistedUrl.startsWith('blob:')) {
-        const nextSettings = { ...settings, cvPdfFile: persistedUrl, savedAt: Date.now() };
-        setSettings(nextSettings);
-        await saveStoredSettings(nextSettings);
-        showToast(isPng ? "File CV (PNG) berhasil diunggah & disimpan ke aset website!" : "File CV (PDF) berhasil diunggah & disimpan ke aset website!");
-        return;
+      if (!persistedUrl || persistedUrl.startsWith('blob:')) {
+        throw new Error("Gagal memperoleh URL publik file CV dari Vercel Blob.");
       }
-      throw new Error("Gagal menyimpan file CV ke aset website");
+      const nextSettings = { ...settings, cvPdfFile: persistedUrl, savedAt: Date.now() };
+      await saveStoredSettings(nextSettings);
+      setSettings(nextSettings);
+      markSaved(nextSettings);
+      showToast(isPng ? "File CV (PNG) berhasil diunggah ke Vercel Blob & disimpan ke Cloud Firestore!" : "File CV (PDF) berhasil diunggah ke Vercel Blob & disimpan ke Cloud Firestore!");
     } catch (err: any) {
-      showToast(err.message || "Gagal mengunggah file CV.", "error");
+      showToast(err?.message || "Gagal mengunggah atau menyimpan file CV.", "error");
     } finally {
       e.target.value = '';
       setUploading(false);
@@ -165,10 +111,8 @@ export default function CvAdmin() {
     setSaveProgressText('Menyiapkan data...');
 
     try {
-      // 1. OPTIMASI PAYLOAD: Pastikan tidak ada data Base64 raksasa di dalam JSON database
-      // Jika ada gambar lokal/Base64, unggah ke storage terlebih dahulu secara paralel
-      const currentSections = Array.isArray(settings.cvSections) 
-        ? [...settings.cvSections] 
+      const currentSections = Array.isArray(settings.cvSections)
+        ? [...settings.cvSections]
         : [...defaultCvSections];
 
       let totalBase64 = 0;
@@ -185,9 +129,8 @@ export default function CvAdmin() {
 
       if (totalBase64 > 0) {
         let converted = 0;
-        setSaveProgressText(`Memproses & Menyimpan Gambar (0/${totalBase64})...`);
+        setSaveProgressText(`Memproses & Mengunggah Gambar ke Vercel Blob (0/${totalBase64})...`);
 
-        // ASYNCHRONOUS / PARALLEL UPLOAD menggunakan Promise.all
         updatedSections = await Promise.all(
           currentSections.map(async (sec, secIdx) => {
             const imgs = Array.isArray(sec.images) ? sec.images : (sec.image ? [sec.image] : []);
@@ -195,20 +138,16 @@ export default function CvAdmin() {
             const convertedImages = await Promise.all(
               imgs.map(async (img: any, imgIdx: number) => {
                 if (typeof img === 'string' && img.startsWith('data:image/')) {
-                  try {
-                    // Kompresi WebP client-side (max-width 800px, kualitas 75-80%)
-                    const { blob, file: webpFile } = await compressImageToWebP(img, 800, 0.78);
-                    const filename = `cv_sec${secIdx}_${imgIdx}_${Date.now()}.webp`;
-                    const uploadedUrl = await uploadImageToStorage(blob || webpFile, filename, undefined, 'cv');
-                    const persistedUrl = await ensurePersistedAssetUrl(uploadedUrl, 'cv');
-                    converted++;
-                    setSaveProgressText(`Memproses & Menyimpan Gambar (${converted}/${totalBase64})...`);
-                    return (persistedUrl && !persistedUrl.startsWith('blob:')) ? persistedUrl : '';
-                  } catch (err) {
-                    converted++;
-                    setSaveProgressText(`Memproses & Menyimpan Gambar (${converted}/${totalBase64})...`);
-                    return '';
+                  const { blob, file: webpFile } = await compressImageToWebP(img, 800, 0.78);
+                  const filename = `cv_sec${secIdx}_${imgIdx}_${Date.now()}.webp`;
+                  const uploadedUrl = await uploadImageToStorage(blob || webpFile, filename, undefined, 'cv');
+                  const persistedUrl = await ensurePersistedAssetUrl(uploadedUrl, 'cv');
+                  if (!persistedUrl || persistedUrl.startsWith('blob:')) {
+                    throw new Error('Gagal mengunggah gambar CV ke Vercel Blob.');
                   }
+                  converted++;
+                  setSaveProgressText(`Memproses & Mengunggah Gambar ke Vercel Blob (${converted}/${totalBase64})...`);
+                  return persistedUrl;
                 }
                 return (typeof img === 'string' && !img.startsWith('blob:')) ? await ensurePersistedAssetUrl(img, 'cv') : '';
               })
@@ -222,7 +161,7 @@ export default function CvAdmin() {
         );
       }
 
-      setSaveProgressText('Menyimpan ke Database...');
+      setSaveProgressText('Menyimpan ke Cloud Firestore...');
 
       const persistedPdf = settings.cvPdfFile ? await ensurePersistedAssetUrl(settings.cvPdfFile, 'cv') : '';
       const settingsToSave = {
@@ -232,18 +171,13 @@ export default function CvAdmin() {
         savedAt: Date.now()
       };
 
+      await saveStoredSettings(settingsToSave);
       setSettings(settingsToSave);
-
-      const success = await saveStoredSettings(settingsToSave);
       markSaved(settingsToSave);
-      if (success) {
-        showToast('Data CV & Foto berhasil disimpan ke Cloud Database & Sinkron Real-time!', 'success');
-      } else {
-        showToast('Data CV disimpan (Penyimpanan Lokal Aktif)', 'success');
-      }
+      showToast('Data CV & Foto berhasil disimpan ke Cloud Firestore & Sinkron Real-time!', 'success');
     } catch (err: any) {
       console.error("Gagal menyimpan CV:", err);
-      showToast(err.message || 'Gagal menyimpan perubahan', 'error');
+      showToast(err?.message || 'Gagal menyimpan perubahan CV ke Cloud Firestore.', 'error');
     } finally {
       setIsSaving(false);
       setSaveProgressText('');
@@ -335,51 +269,41 @@ export default function CvAdmin() {
       const validUrls = uploadedUrls.filter((u): u is string => typeof u === 'string' && u.trim().length > 0 && !u.startsWith('blob:'));
 
       if (validUrls.length > 0) {
-        setUploadStatusText("Menyimpan ke database...");
+        setUploadStatusText("Menyimpan ke Cloud Firestore...");
 
-        // METODE APPEND: Ambil referensi array foto yang sudah ada pada blok target, lalu gabungkan foto baru di akhir array (bukan overwrite)
-        setSettings((prevSettings: any) => {
-          const newSections = Array.isArray(prevSettings.cvSections)
-            ? prevSettings.cvSections.map((sec: any) => ({
-                ...sec,
-                images: Array.isArray(sec.images) ? [...sec.images] : (sec.image ? [sec.image] : [])
-              }))
-            : [...defaultCvSections];
+        const newSections = Array.isArray(settings.cvSections)
+          ? settings.cvSections.map((sec: any) => ({
+              ...sec,
+              images: Array.isArray(sec.images) ? [...sec.images] : (sec.image ? [sec.image] : [])
+            }))
+          : [...defaultCvSections];
 
-          if (!newSections[destIndex]) {
-            newSections[destIndex] = { title: '', content: '', images: [] };
-          }
+        if (!newSections[destIndex]) {
+          newSections[destIndex] = { title: '', content: '', images: [] };
+        }
 
-          const existingImages = (newSections[destIndex].images || []).filter(
-            (img: any) => typeof img === 'string' && img.trim().length > 0
-          );
+        const existingImages = (newSections[destIndex].images || []).filter(
+          (img: any) => typeof img === 'string' && img.trim().length > 0
+        );
 
-          // APPEND FOTO BARU KE ARRAY FOTO YANG SUDAH ADA
-          newSections[destIndex].images = [...existingImages, ...validUrls];
+        newSections[destIndex].images = [...existingImages, ...validUrls];
 
-          const updatedSettings = {
-            ...prevSettings,
-            cvSections: newSections,
-            savedAt: Date.now()
-          };
+        const updatedSettings = {
+          ...settings,
+          cvSections: newSections,
+          savedAt: Date.now()
+        };
 
-          // Simpan ke server disk, LocalStorage, & Cloud Firestore seketika
-          saveStoredSettings(updatedSettings).then((success) => {
-            if (success) {
-              showToast(`${validUrls.length} foto berhasil diunggah & disimpan!`, "success");
-            } else {
-              showToast(`${validUrls.length} foto berhasil ditambahkan (Penyimpanan Lokal Aktif)`, "success");
-            }
-          });
-
-          return updatedSettings;
-        });
+        await saveStoredSettings(updatedSettings);
+        setSettings(updatedSettings);
+        markSaved(updatedSettings);
+        showToast(`${validUrls.length} foto berhasil diunggah ke Vercel Blob & disimpan ke Cloud Firestore!`, "success");
       } else {
-        showToast("Gagal mengunggah foto.", "error");
+        throw new Error("Gagal memperoleh URL foto dari Vercel Blob.");
       }
     } catch (err: any) {
       console.error("Gagal memproses upload gambar secara paralel:", err);
-      showToast(err.message || "Gagal mengunggah foto.", "error");
+      showToast(err?.message || "Gagal mengunggah atau menyimpan foto CV.", "error");
     } finally {
       setIsImageUploading(false);
       setUploadingSectionIndex(null);
@@ -399,16 +323,20 @@ export default function CvAdmin() {
     const targetIdx = direction === 'left' ? imgIdx - 1 : imgIdx + 1;
     if (targetIdx < 0 || targetIdx >= images.length) return;
 
-    // Swap
     const temp = images[imgIdx];
     images[imgIdx] = images[targetIdx];
     images[targetIdx] = temp;
 
     newSections[sectionIdx] = { ...newSections[sectionIdx], images };
-    const updatedSettings = { ...settings, cvSections: newSections };
-    setSettings(updatedSettings);
-    await saveStoredSettings(updatedSettings);
-    showToast(`Urutan foto diperbarui & disimpan`);
+    const updatedSettings = { ...settings, cvSections: newSections, savedAt: Date.now() };
+    try {
+      await saveStoredSettings(updatedSettings);
+      setSettings(updatedSettings);
+      markSaved(updatedSettings);
+      showToast(`Urutan foto diperbarui & disimpan ke Cloud Firestore`);
+    } catch (err: any) {
+      showToast(err?.message || "Gagal menyimpan urutan foto ke Cloud Firestore.", "error");
+    }
   };
 
   // REMOVE SPECIFIC IMAGE
@@ -420,10 +348,15 @@ export default function CvAdmin() {
     
     images.splice(imgIdx, 1);
     newSections[sectionIdx] = { ...newSections[sectionIdx], images };
-    const updatedSettings = { ...settings, cvSections: newSections };
-    setSettings(updatedSettings);
-    await saveStoredSettings(updatedSettings);
-    showToast("Foto dihapus & perubahan disimpan");
+    const updatedSettings = { ...settings, cvSections: newSections, savedAt: Date.now() };
+    try {
+      await saveStoredSettings(updatedSettings);
+      setSettings(updatedSettings);
+      markSaved(updatedSettings);
+      showToast("Foto dihapus & disimpan ke Cloud Firestore");
+    } catch (err: any) {
+      showToast(err?.message || "Gagal menghapus foto dari Cloud Firestore.", "error");
+    }
   };
 
   // CLEAR ALL IMAGES FROM SECTION
@@ -438,10 +371,15 @@ export default function CvAdmin() {
 
     const newSections = [...(settings.cvSections || [])];
     newSections[sectionIdx] = { ...newSections[sectionIdx], images: [] };
-    const updatedSettings = { ...settings, cvSections: newSections };
-    setSettings(updatedSettings);
-    await saveStoredSettings(updatedSettings);
-    showToast("Semua foto di blok ini telah dihapus & disimpan");
+    const updatedSettings = { ...settings, cvSections: newSections, savedAt: Date.now() };
+    try {
+      await saveStoredSettings(updatedSettings);
+      setSettings(updatedSettings);
+      markSaved(updatedSettings);
+      showToast("Semua foto di blok ini telah dihapus & disimpan ke Cloud Firestore");
+    } catch (err: any) {
+      showToast(err?.message || "Gagal menghapus semua foto di Cloud Firestore.", "error");
+    }
   };
 
   const currentSection = settings.cvSections?.[targetSectionIndex] || null;

@@ -19,21 +19,14 @@ declare global { interface Window { hasRecordedView?: boolean; } }
 import { ThemeProvider } from './contexts/ThemeContext';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { ArrowLeft } from 'lucide-react';
-import { db, testConnection } from './lib/firebase';
-import { doc, getDoc, setDoc, updateDoc, increment, collection, getDocs } from 'firebase/firestore';
-import { isQuotaExhausted, markQuotaExhausted, isQuotaError, isConnectivityError, markBackendUnreachable } from './lib/firestoreErrorHandler';
+import { db } from './lib/firebase';
+import { doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
+import { isQuotaError, markQuotaExhausted, isConnectivityError, markBackendUnreachable } from './lib/firestoreErrorHandler';
 import { 
-  getStoredSettings, setLocalSettings, mergeSettingsByTimestamp,
-  getStoredProjects, saveStoredProjects, mergeProjects,
-  getStoredBlogs, saveStoredBlogs, mergeBlogs,
-  getStoredExperiences, saveStoredExperiences, mergeExperiences,
-  syncDeletedIdsFromServer, getTimestampMs, getRecencyTimestamp
+  getStoredSettings, subscribeSettingsRealtime, subscribeProjectsRealtime
 } from './lib/contentStorage';
-import { getStoredQuickFilterItems, saveStoredQuickFilterItems, mergeQuickFilterItems } from './lib/quickFilterStorage';
-import { defaultSettings } from './data/settings';
 import { resolveImageUrl } from './lib/imageResolver';
 import { preloadPortfolioImagesFast, markImageLoaded } from './lib/imageLoadCache';
-import { syncFirestoreSnapshotToSW, getCachedFirestoreSnapshot } from './lib/firestoreSnapshotCache';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import IntroVideoSplash from './components/IntroVideoSplash';
 
@@ -337,8 +330,8 @@ export default function App() {
   // Dynamic social sharing images & metadata synchronizer
   useEffect(() => {
     const currentSettings = getStoredSettings();
-    const heroImage = (currentSettings.heroImage && !currentSettings.heroImage.includes('cover_web_') && !currentSettings.heroImage.includes('editing_tools_3d'))
-      ? currentSettings.heroImage
+    const heroImage = currentSettings.heroImage
+      ? resolveImageUrl(currentSettings.heroImage)
       : '/images/hero-albi-og.jpg';
 
     const metaMap: Record<string, { title: string; description: string; image: string; hash: string }> = {
@@ -484,9 +477,6 @@ export default function App() {
 
   useEffect(() => {
     const recordView = async () => {
-      // Jika kuota harian write Firestore sedang habis, lewati penulisan statistik ke cloud
-      if (isQuotaExhausted()) return;
-
       const sessionRecorded = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('session_view_recorded');
       if (sessionRecorded) return;
 
@@ -508,7 +498,7 @@ export default function App() {
         } else if (isConnectivityError(e)) {
           markBackendUnreachable();
         }
-        console.warn("Notice: Stats view recording handled safely (offline / quota resilient mode):", e?.message || e);
+        console.warn("Notice: Stats view recording handled safely:", e?.message || e);
       }
     };
 
@@ -535,335 +525,45 @@ export default function App() {
               resolve();
             };
             img.onerror = () => resolve();
-            setTimeout(resolve, 2500); // 2.5s safety timeout per image
+            setTimeout(resolve, 2500);
           });
         };
 
-        const imagePromises: Promise<void>[] = [];
-
-        // 1. Preload local initial cache
-        const currentSettings = getStoredSettings();
-        if (currentSettings.heroImage) imagePromises.push(preloadImage(currentSettings.heroImage));
-        if (currentSettings.aboutImage) imagePromises.push(preloadImage(currentSettings.aboutImage));
-        if (currentSettings.heroBanners) {
-          currentSettings.heroBanners.forEach(b => { if (b?.image) imagePromises.push(preloadImage(b.image)); });
-        }
-
-        const currentProjects = getStoredProjects();
-        // Preload semua gambar karya publik secara paralel dengan concurrency 6 dari atas ke bawah
-        preloadPortfolioImagesFast(
-          currentProjects.filter(p => !p.draft).map(p => p.image),
-          6
-        );
-        currentProjects.slice(0, 2).forEach(p => {
-          if (p.image) imagePromises.push(preloadImage(p.image));
-        });
-
-        const currentBlogs = getStoredBlogs();
-        // Hanya preload maksimal 2 blog teratas
-        currentBlogs.slice(0, 2).forEach(b => {
-          const img = b.image || (b as any).coverImage;
-          if (img) imagePromises.push(preloadImage(img));
-        });
-
-        if (currentSettings.cvSections && Array.isArray(currentSettings.cvSections)) {
-          currentSettings.cvSections.forEach(s => {
-            if (Array.isArray(s.images)) {
-              s.images.forEach(img => { if (img) imagePromises.push(preloadImage(img)); });
-            } else if (s.image) {
-              imagePromises.push(preloadImage(s.image));
+        const settingsPromise = new Promise<void>((resolve) => {
+          let settled = false;
+          const unsub = subscribeSettingsRealtime(async (finalSettings) => {
+            if (settled) return;
+            settled = true;
+            unsub();
+            const extraImgs: Promise<void>[] = [];
+            if (finalSettings?.heroImage) extraImgs.push(preloadImage(finalSettings.heroImage));
+            if (finalSettings?.aboutImage) extraImgs.push(preloadImage(finalSettings.aboutImage));
+            if (finalSettings?.heroBanners) {
+              finalSettings.heroBanners.forEach(b => { if (b?.image) extraImgs.push(preloadImage(b.image)); });
             }
+            await Promise.all(extraImgs);
+            resolve();
           });
-        }
+        });
 
-        // 2. Sync from Server Disk & Firebase Firestore without overwriting newer local changes
-        const cloudSync = async () => {
-          try {
-            await syncDeletedIdsFromServer().catch(() => {});
-            const handleFsCatch = (e: unknown) => {
-              if (isQuotaError(e)) markQuotaExhausted();
-              else if (isConnectivityError(e)) markBackendUnreachable();
-              return null;
-            };
-            const canUseFirestorePromise = isQuotaExhausted()
-              ? Promise.resolve(false)
-              : testConnection().catch(() => false);
+        const projectsPromise = new Promise<void>((resolve) => {
+          let settled = false;
+          const unsub = subscribeProjectsRealtime(async (sorted) => {
+            if (settled) return;
+            settled = true;
+            unsub();
+            preloadPortfolioImagesFast(
+              sorted.filter(p => !p.draft).map(p => p.image),
+              6
+            );
+            await Promise.all(sorted.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
+            resolve();
+          });
+        });
 
-            // Settings: Sinkronisasi server disk & Firestore dengan proteksi timestamp
-            const settingsPromise = Promise.all([
-              fetch('/api/settings').then(res => res.ok ? res.json() : null).catch(() => null),
-              fetch('/api/hero-image').then(r => r.ok ? r.json() : null).catch(() => null),
-              canUseFirestorePromise.then(ok => ok ? getDoc(doc(db, 'settings', 'global')).catch(handleFsCatch) : null),
-              canUseFirestorePromise.then(ok => ok ? getDoc(doc(db, 'settings', 'cv')).catch(handleFsCatch) : null),
-              canUseFirestorePromise.then(ok => ok ? getDoc(doc(db, 'settings', 'hero')).catch(handleFsCatch) : null)
-            ]).then(async ([serverData, serverHeroData, snapGlobal, snapCv, snapHero]) => {
-              let merged = getStoredSettings();
-
-              if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
-                merged = mergeSettingsByTimestamp(merged, serverData);
-              }
-
-              if (snapGlobal || snapCv || snapHero) {
-                const data = snapGlobal && snapGlobal.exists() ? snapGlobal.data() : {};
-                const cvData = snapCv && snapCv.exists() ? snapCv.data() : null;
-                const heroData = snapHero && snapHero.exists() ? snapHero.data() : null;
-                if ((data && Object.keys(data).length > 0) || cvData || heroData) {
-                  const cloudCvSections = (cvData?.cvSections && cvData.cvSections.length > 0)
-                    ? cvData.cvSections
-                    : data.cvSections;
-                  const cloudSavedAt = Math.max(
-                    getTimestampMs(data?.savedAt || data?.updatedAt),
-                    getTimestampMs(cvData?.savedAt || cvData?.updatedAt),
-                    getTimestampMs(heroData?.savedAt || heroData?.updatedAt)
-                  );
-                  merged = mergeSettingsByTimestamp(merged, {
-                    ...data,
-                    ...(cvData ? {
-                      cvSections: cloudCvSections,
-                      cvRole: cvData.cvRole || data.cvRole,
-                      cvPdfFile: cvData.cvPdfFile || data.cvPdfFile,
-                    } : {}),
-                    ...(heroData?.heroImage ? { heroImage: heroData.heroImage } : {}),
-                    ...(cloudSavedAt > 0 ? { savedAt: cloudSavedAt } : {})
-                  });
-                }
-              }
-
-              const filterHeroCandidate = (val?: any): string => {
-                if (typeof val !== 'string') return '';
-                const trimmed = val.trim();
-                if (!trimmed || trimmed.includes('cover_web_') || trimmed.includes('editing_tools_3d')) return '';
-                if (trimmed.includes('hero-albi')) return '/images/hero-albi.png';
-                return trimmed;
-              };
-
-              const cachedUserHero = typeof localStorage !== 'undefined' ? localStorage.getItem('app_custom_hero_image') : '';
-              const finalHero = filterHeroCandidate(merged.heroImage)
-                || filterHeroCandidate(serverHeroData?.heroImage)
-                || filterHeroCandidate(cachedUserHero)
-                || defaultSettings.heroImage;
-
-              if (finalHero && finalHero !== defaultSettings.heroImage && typeof localStorage !== 'undefined') {
-                try { localStorage.setItem('app_custom_hero_image', finalHero); } catch {}
-              }
-
-              const finalSettings = { ...defaultSettings, ...merged, heroImage: finalHero };
-              setLocalSettings(finalSettings);
-              syncFirestoreSnapshotToSW('settings', [finalSettings]);
-
-              const extraImgs: Promise<void>[] = [];
-              if (finalSettings?.heroImage) extraImgs.push(preloadImage(finalSettings.heroImage));
-              if (finalSettings?.aboutImage) extraImgs.push(preloadImage(finalSettings.aboutImage));
-              if (finalSettings?.heroBanners) {
-                finalSettings.heroBanners.forEach(b => { if (b?.image) extraImgs.push(preloadImage(b.image)); });
-              }
-              await Promise.all(extraImgs);
-            }).catch(e => {
-              if (isQuotaError(e)) markQuotaExhausted();
-              console.warn("Cloud settings sync fallback:", e);
-            });
-
-            // Projects: Gabungkan lokal + disk server (/api/projects + /api/projects/meta) + Cloud Firestore
-            const projectsPromise = Promise.all([
-              fetch('/api/projects/meta').then(res => res.ok ? res.json() : null).catch(() => null),
-              fetch('/api/projects').then(res => res.ok ? res.json() : null).catch(() => null),
-              canUseFirestorePromise.then(ok => ok ? getDocs(collection(db, 'projects')).catch(handleFsCatch) : null)
-            ]).then(async ([serverMeta, serverProjs, snap]) => {
-              if (serverMeta && typeof serverMeta === 'object' && Array.isArray(serverMeta.items)) {
-                try {
-                  localStorage.setItem('projects_manifest_cache', JSON.stringify(serverMeta));
-                } catch {}
-                preloadPortfolioImagesFast(
-                  serverMeta.items.filter((i: any) => !i.draft).map((i: any) => i.image),
-                  6
-                );
-              }
-
-              const localProjs = getStoredProjects();
-              const localMap = new Map(localProjs.map(p => [String(p.id), p]));
-              const cloudProjs: any[] = [];
-              if (snap && !snap.empty) {
-                snap.forEach(d => {
-                  const data = d.data();
-                  if (data.isArchived === true) {
-                    const localItem = localMap.get(d.id);
-                    const cloudUpdated = getTimestampMs(data.updatedAt || data.createdAt);
-                    const localUpdated = localItem ? getRecencyTimestamp(localItem) : 0;
-                    if (!localItem || cloudUpdated > localUpdated) {
-                      cloudProjs.push({ id: d.id, ...data });
-                    }
-                    return;
-                  }
-                  cloudProjs.push({ id: d.id, ...data });
-                });
-              }
-
-              const merged = mergeProjects(
-                localProjs,
-                Array.isArray(serverProjs) ? serverProjs : [],
-                cloudProjs
-              );
-
-              if (merged.length > 0 || (Array.isArray(serverProjs) && serverProjs.length === 0 && localProjs.length === 0)) {
-                saveStoredProjects(merged);
-                syncFirestoreSnapshotToSW('projects', merged);
-                preloadPortfolioImagesFast(
-                  merged.filter(p => !p.draft).map(p => p.image),
-                  6
-                );
-                await Promise.all(merged.slice(0, 2).map(p => p.image ? preloadImage(p.image) : Promise.resolve()));
-              }
-            }).catch(e => {
-              if (isQuotaError(e)) markQuotaExhausted();
-              console.warn("Cloud projects sync fallback:", e);
-            });
-
-            // Blogs: Gabungkan lokal + disk server (/api/blogs) + Cloud Firestore
-            const blogsPromise = Promise.all([
-              fetch('/api/blogs').then(res => res.ok ? res.json() : null).catch(() => null),
-              canUseFirestorePromise.then(ok => ok ? getDocs(collection(db, 'blogPosts')).catch(handleFsCatch) : null)
-            ]).then(async ([serverBlogs, snap]) => {
-              const localBlogs = getStoredBlogs();
-              const localMap = new Map(localBlogs.map(b => [String(b.id), b]));
-              const cloudBlogs: any[] = [];
-              if (snap && !snap.empty) {
-                snap.forEach(d => {
-                  const data = d.data();
-                  if (data.isArchived === true) {
-                    const localItem = localMap.get(d.id);
-                    const cloudUpdated = getTimestampMs(data.updatedAt || data.createdAt);
-                    const localUpdated = localItem ? getRecencyTimestamp(localItem) : 0;
-                    if (!localItem || cloudUpdated > localUpdated) {
-                      cloudBlogs.push({ id: d.id, ...data });
-                    }
-                    return;
-                  }
-                  cloudBlogs.push({ id: d.id, ...data });
-                });
-              }
-
-              const merged = mergeBlogs(
-                localBlogs,
-                Array.isArray(serverBlogs) ? serverBlogs : [],
-                cloudBlogs
-              );
-
-              if (merged.length > 0) {
-                saveStoredBlogs(merged);
-                syncFirestoreSnapshotToSW('blogPosts', merged);
-                await Promise.all(merged.slice(0, 2).map(b => {
-                  const img = b.image || (b as any).coverImage;
-                  return img ? preloadImage(img) : Promise.resolve();
-                }));
-              }
-            }).catch(e => {
-              if (isQuotaError(e)) markQuotaExhausted();
-              console.warn("Cloud blogs sync fallback:", e);
-            });
-
-            // Experiences: Gabungkan lokal + disk server (/api/experiences) + Cloud Firestore
-            const expPromise = Promise.all([
-              fetch('/api/experiences').then(res => res.ok ? res.json() : null).catch(() => null),
-              canUseFirestorePromise.then(ok => ok ? getDocs(collection(db, 'experiences')).catch(handleFsCatch) : null)
-            ]).then(([serverExps, snap]) => {
-              const localExps = getStoredExperiences();
-              const localMap = new Map(localExps.map(ex => [String(ex.id), ex]));
-              const cloudExps: any[] = [];
-              if (snap && !snap.empty) {
-                snap.forEach(d => {
-                  const data = d.data();
-                  if (data.isArchived === true) {
-                    const localItem = localMap.get(d.id);
-                    const cloudUpdated = getTimestampMs(data.updatedAt || data.createdAt);
-                    const localUpdated = localItem ? getRecencyTimestamp(localItem) : 0;
-                    if (!localItem || cloudUpdated > localUpdated) {
-                      cloudExps.push({ id: d.id, ...data });
-                    }
-                    return;
-                  }
-                  cloudExps.push({ id: d.id, ...data });
-                });
-              }
-
-              const merged = mergeExperiences(
-                localExps,
-                Array.isArray(serverExps) ? serverExps : [],
-                cloudExps
-              );
-
-              if (merged.length > 0) {
-                saveStoredExperiences(merged);
-                syncFirestoreSnapshotToSW('experiences', merged);
-              }
-            }).catch(e => {
-              if (isQuotaError(e)) markQuotaExhausted();
-              console.warn("Cloud exp sync fallback:", e);
-            });
-
-            // QuickFilterQA: Gabungkan lokal + disk server (/api/quick-filter) + Cloud Firestore
-            const quickFilterPromise = Promise.all([
-              fetch('/api/quick-filter').then(res => res.ok ? res.json() : null).catch(() => null),
-              canUseFirestorePromise.then(ok => ok ? getDocs(collection(db, 'quickFilterQA')).catch(handleFsCatch) : null)
-            ]).then(([serverQF, snap]) => {
-              const localQF = getStoredQuickFilterItems();
-              const cloudQF: any[] = [];
-              if (snap && !snap.empty) {
-                snap.forEach(d => {
-                  const data = d.data();
-                  if (!data.isArchived) {
-                    cloudQF.push({ id: d.id, ...data });
-                  }
-                });
-              }
-              const merged = mergeQuickFilterItems(
-                localQF,
-                Array.isArray(serverQF) ? serverQF : [],
-                cloudQF
-              );
-              if (merged.length > 0) {
-                saveStoredQuickFilterItems(merged);
-              }
-            }).catch(e => {
-              if (isQuotaError(e)) markQuotaExhausted();
-              console.warn("Cloud quickFilter sync fallback:", e);
-            });
-
-            await Promise.all([settingsPromise, projectsPromise, blogsPromise, expPromise, quickFilterPromise]);
-          } catch (err) {
-            console.warn("Cloud sync offline fallback, reading SW snapshot cache:", err);
-            try {
-              const [cSet, cProj, cBlog, cExp] = await Promise.all([
-                getCachedFirestoreSnapshot<any>('settings'),
-                getCachedFirestoreSnapshot<any>('projects'),
-                getCachedFirestoreSnapshot<any>('blogPosts'),
-                getCachedFirestoreSnapshot<any>('experiences')
-              ]);
-              if (cSet && cSet[0]) {
-                setLocalSettings(cSet[0]);
-                window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: cSet[0] }));
-              }
-              if (cProj && cProj.length > 0) saveStoredProjects(cProj);
-              if (cBlog && cBlog.length > 0) {
-                saveStoredBlogs(cBlog);
-                window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: cBlog }));
-              }
-              if (cExp && cExp.length > 0) {
-                saveStoredExperiences(cExp);
-                window.dispatchEvent(new CustomEvent('user_experiences_updated', { detail: cExp }));
-              }
-            } catch (cacheErr) {
-              console.warn("Offline snapshot recovery notice:", cacheErr);
-            }
-          }
-        };
-
-        const isCached = typeof window !== 'undefined' && (
-          localStorage.getItem('all_content_cached') === 'true' ||
-          Boolean(localStorage.getItem('alfreelnc_cookie_consent'))
-        );
-        const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, isCached ? 800 : 2500));
+        const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 2500));
         await Promise.race([
-          Promise.all([...imagePromises, cloudSync()]),
+          Promise.all([settingsPromise, projectsPromise]),
           timeoutPromise
         ]);
       } catch (e) {
@@ -880,13 +580,8 @@ export default function App() {
       }
     });
 
-    const isAlreadyCached = typeof window !== 'undefined' && (
-      localStorage.getItem('all_content_cached') === 'true' ||
-      Boolean(localStorage.getItem('alfreelnc_cookie_consent'))
-    );
-    const minDelay = new Promise<void>((resolve) => setTimeout(resolve, isAlreadyCached ? 80 : 450));
+    const minDelay = new Promise<void>((resolve) => setTimeout(resolve, 350));
 
-    // Wait for content, images, DOM ready, and a smooth minimum presentation delay
     Promise.all([prefetchData(), domReady, minDelay])
       .then(() => {
         setIsAppLoading(false);
@@ -894,11 +589,10 @@ export default function App() {
       .catch(() => {
         setIsAppLoading(false);
       });
-      
-    // Maximum safe fallback: ALWAYS reveal content after 1.2s if cached, 2.5s otherwise
+
     const maxFallback = setTimeout(() => {
       setIsAppLoading(false);
-    }, isAlreadyCached ? 1200 : 2500);
+    }, 2500);
 
     return () => clearTimeout(maxFallback);
   }, []);

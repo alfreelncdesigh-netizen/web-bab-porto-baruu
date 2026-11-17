@@ -1,12 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { db } from '../lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
 import { MapPin, MessageCircle, ArrowRight, Copy, Check, ExternalLink } from 'lucide-react';
-import { SiteSettings, defaultSettings } from '../data/settings';
-import { getStoredSettings, cleanSettings, mergeSettingsByTimestamp } from '../lib/contentStorage';
+import { SiteSettings } from '../data/settings';
+import { getStoredSettings, subscribeSettingsRealtime } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import ImageWithSkeleton from './ImageWithSkeleton';
 import { useLanguage } from '../contexts/LanguageContext';
 import { 
@@ -81,28 +78,10 @@ export default function About() {
   };
   window.addEventListener('app_settings_updated', handleUpdate);
 
-  let unsubscribe = () => {};
-  if (!isQuotaExhausted()) {
-    const docRef = doc(db, 'settings', 'global');
-    unsubscribe = onSnapshot(
-      docRef,
-      (docSnap) => {
-        if (docSnap.exists()) {
-          const cloudData = docSnap.data() as Partial<SiteSettings>;
-          if (cloudData && Object.keys(cloudData).length > 0) {
-            const merged = mergeSettingsByTimestamp(getStoredSettings(), cloudData);
-            setSettings(merged);
-            try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
-          }
-        }
-      },
-     (err) => {
-      if (isQuotaError(err)) markQuotaExhausted();
-      logFirestoreError(err, OperationType.GET, 'settings/global');
-      setSettings(getStoredSettings());
-     }
-    );
-  }
+  const unsubscribe = subscribeSettingsRealtime((nextSettings) => {
+    setSettings(nextSettings);
+  });
+
   return () => {
     unsubscribe();
     window.removeEventListener('app_settings_updated', handleUpdate);

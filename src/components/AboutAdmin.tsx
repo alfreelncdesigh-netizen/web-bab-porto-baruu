@@ -4,10 +4,10 @@ import { db } from '../lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { Loader2, Check, Upload, Image as ImageIcon } from 'lucide-react';
 import { defaultSettings } from '../data/settings';
-import { getStoredSettings, saveStoredSettings, cleanSettings } from '../lib/contentStorage';
+import { getStoredSettings, saveStoredSettings, fetchSettingsFromFirestore, cleanSettings } from '../lib/contentStorage';
 import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl } from '../lib/imageResolver';
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function AboutAdmin() {
@@ -21,26 +21,11 @@ export default function AboutAdmin() {
  useEffect(() => {
   const fetchSettings = async () => {
    try {
-    const local = getStoredSettings();
-    setSettings(local);
-    if (isQuotaExhausted()) {
-     setLoading(false);
-     return;
-    }
-    const docSnap = await getDoc(doc(db, 'settings', 'global'));
-    if (docSnap.exists()) {
-     const cloudData = docSnap.data() as any;
-     const cloudSavedAt = cloudData?.savedAt || 0;
-     const localSavedAt = local?.savedAt || 0;
-     if (cloudSavedAt >= localSavedAt) {
-       const merged = { ...defaultSettings, ...cleanSettings(cloudData) };
-       setSettings(merged);
-       try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
-     }
-    }
+    const fresh = await fetchSettingsFromFirestore();
+    setSettings(fresh);
    } catch (err: any) {
-    if (isQuotaError(err)) markQuotaExhausted();
     logFirestoreError(err, OperationType.GET, 'settings/global');
+    setToast({ msg: `Gagal memuat pengaturan dari Firestore: ${err?.message || 'Periksa koneksi.'}`, type: 'error' });
    } finally {
     setLoading(false);
    }
@@ -83,18 +68,14 @@ export default function AboutAdmin() {
  const handleProfileImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   if (!e.target.files || e.target.files.length === 0) return;
   const file = e.target.files[0];
+  const previousImage = settings.aboutImage;
   setUploadingImage(true);
 
   try {
-   // Preview instan lokal di UI
-   const previewUrl = URL.createObjectURL(file);
-   setSettings(prev => ({ ...prev, aboutImage: previewUrl }));
-
-   // Upload cepat langsung ke aset website
    const rawUrl = await compressAndUpload(file, 'about', 1400, 0.85);
    const finalUrl = await ensurePersistedAssetUrl(rawUrl, 'about');
    if (!finalUrl || finalUrl.startsWith('blob:')) {
-     throw new Error("Gagal memperoleh tautan publik aset gambar profil.");
+     throw new Error("Gagal memperoleh tautan publik Vercel Blob.");
    }
 
    const updated = {
@@ -102,15 +83,16 @@ export default function AboutAdmin() {
      aboutImage: finalUrl,
      savedAt: Date.now()
    };
-   setSettings(updated);
 
-   // Auto-save instan ke database Firestore & server
+   // Simpan ke Cloud Firestore & tunggu hingga benar-benar selesai
    await saveStoredSettings(updated);
-   window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-   showToast('Foto profil berhasil diunggah & tersimpan di aset website!');
+   setSettings(updated);
+   markSaved(updated);
+   showToast('Foto profil berhasil diunggah ke Vercel Blob & disimpan ke Cloud Firestore!');
   } catch (err: any) {
    console.error("Upload profile image failed:", err);
-   showToast(err?.message || 'Gagal mengunggah foto profil ke aset website', 'error');
+   setSettings(prev => ({ ...prev, aboutImage: previousImage }));
+   showToast(err?.message || 'Gagal mengunggah atau menyimpan foto profil', 'error');
   } finally {
    setUploadingImage(false);
    if (e.target) e.target.value = '';
@@ -121,17 +103,12 @@ export default function AboutAdmin() {
   e.preventDefault();
   setIsSaving(true);
   try {
-   const success = await saveStoredSettings(settings);
+   await saveStoredSettings(settings);
    markSaved(settings);
-   window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: settings }));
-   if (success) {
-     showToast('Profil Tentang Saya berhasil disimpan!');
-   } else {
-     showToast('Profil Tentang Saya disimpan di penyimpanan lokal.', 'success');
-   }
+   showToast('Profil Tentang Saya berhasil disimpan ke Cloud Firestore!');
   } catch (err: any) {
    console.warn("Save error:", err);
-   showToast(err?.message || 'Gagal menyimpan profil', 'error');
+   showToast(err?.message || 'Gagal menyimpan profil ke Cloud Firestore', 'error');
   } finally {
    setIsSaving(false);
   }

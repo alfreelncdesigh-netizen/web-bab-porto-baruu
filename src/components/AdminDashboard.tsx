@@ -7,7 +7,7 @@ import {
   ShoppingCart, Briefcase, BarChart3, User, Mail, Archive, Sparkles, 
   Eye, EyeOff, ShieldCheck, Search, Upload, Check, Copy, Loader2, AlertCircle
 } from 'lucide-react';
-import { doc, getDoc, setDoc, getDocs, query, collection, where } from 'firebase/firestore';
+import { doc, getDoc, setDoc, getDocs, query, collection, where, orderBy, limit } from 'firebase/firestore';
 
 import QuickFilterAdmin from './QuickFilterAdmin';
 import BlogAdmin from './BlogAdmin';
@@ -23,14 +23,12 @@ import ArchiveAdmin from './ArchiveAdmin';
 import PromoAdmin from './PromoAdmin';
 import AdminAccessAdmin from './AdminAccessAdmin';
 import CollaborationAdmin from './CollaborationAdmin';
-import { getStoredSettings } from '../lib/contentStorage';
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
 import { Handshake } from 'lucide-react';
 import {
   compressAndUpload,
   ensurePersistedAssetUrl,
-  getStoredUploadedMedia,
+  recordMediaPermanently,
   type StoredMediaRecord
 } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
@@ -60,14 +58,30 @@ export default function AdminDashboard() {
   const [activeAdminName, setActiveAdminName] = useState('albian');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Quick backend image uploader states (reuses storageUploader + localStorage cache + imageResolver)
+  // Quick Vercel Blob image uploader states
   const quickUploadInputRef = useRef<HTMLInputElement | null>(null);
   const [uploadFolder, setUploadFolder] = useState<AdminUploadFolder>('works');
   const [isUploadingAsset, setIsUploadingAsset] = useState(false);
   const [uploadAssetError, setUploadAssetError] = useState<string | null>(null);
   const [lastUploadedUrl, setLastUploadedUrl] = useState<string | null>(null);
   const [copiedAssetUrl, setCopiedAssetUrl] = useState<string | null>(null);
-  const [cachedMediaList, setCachedMediaList] = useState<StoredMediaRecord[]>(() => getStoredUploadedMedia());
+  const [cachedMediaList, setCachedMediaList] = useState<StoredMediaRecord[]>([]);
+
+  const loadCloudUploadedMedia = async () => {
+    try {
+      const snap = await getDocs(
+        query(collection(db, 'uploadedMedia'), orderBy('timestamp', 'desc'), limit(12))
+      );
+      const list: StoredMediaRecord[] = [];
+      snap.forEach((d) => {
+        const data = d.data() as StoredMediaRecord;
+        if (data?.url) list.push(data);
+      });
+      setCachedMediaList(list);
+    } catch (err) {
+      console.warn("Load uploadedMedia notice:", err);
+    }
+  };
 
   // Cek sesi yang sudah tersimpan di browser (sessionStorage) dan Firebase Auth saat pertama kali dimuat
   useEffect(() => {
@@ -97,16 +111,13 @@ export default function AdminDashboard() {
           const isMaster = MASTER_ADMINS.includes(email);
           let isAllowed = isMaster;
 
-          if (!isAllowed && !isQuotaExhausted()) {
+          if (!isAllowed) {
             try {
               const userDoc = await getDoc(doc(db, 'adminUsers', email));
               if (userDoc.exists() && userDoc.data().status === 'allowed') {
                 isAllowed = true;
               }
             } catch (err) {
-              if (isQuotaError(err)) {
-                markQuotaExhausted();
-              }
               console.warn("Error checking admin access", err);
             }
           }
@@ -133,10 +144,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!isAuth) return;
-    setCachedMediaList(getStoredUploadedMedia());
-    const syncCache = () => setCachedMediaList(getStoredUploadedMedia());
-    window.addEventListener('storage', syncCache);
-    return () => window.removeEventListener('storage', syncCache);
+    loadCloudUploadedMedia();
   }, [isAuth, activeTab]);
 
   const handleCredentialsSubmit = async (e: React.FormEvent) => {
@@ -170,66 +178,49 @@ export default function AdminDashboard() {
         setWebPassword('');
         setIsLoggingIn(false);
 
-        // Pastikan record admin tersimpan di Firestore (jika kuota tersedia)
-        if (!isQuotaExhausted()) {
-          try {
-            await setDoc(doc(db, 'adminUsers', 'albian'), {
-              username: 'albian',
-              status: 'allowed',
-              role: 'master',
-              lastLogin: new Date().toISOString()
-            }, { merge: true });
-          } catch (err) {
-            if (isQuotaError(err)) {
-              markQuotaExhausted();
-            }
-          }
+        // Pastikan record admin tersimpan di Firestore
+        try {
+          await setDoc(doc(db, 'adminUsers', 'albian'), {
+            username: 'albian',
+            status: 'allowed',
+            role: 'master',
+            lastLogin: new Date().toISOString()
+          }, { merge: true });
+        } catch (err) {
+          console.warn("Update admin lastLogin notice:", err);
         }
 
         return;
       }
 
-      // 2. Cek Kredensial Khusus Kolaborator dari Settings (Lokal & Firestore)
-      let siteSettings = getStoredSettings();
-      let collabCfg = siteSettings.collaboration;
-      let accounts = collabCfg?.collaboratorAccounts || [];
+      // 2. Cek Kredensial Khusus Kolaborator langsung dari Cloud Firestore (settings/global)
+      let collabCfg: any = undefined;
+      let accounts: any[] = [];
+      let matchedAccount: any = undefined;
+      let isDirectCollabMatch = cleanUser === 'kolaborator' && cleanPass === 'kolaborasi123';
 
-      // Jika akun belum ditemukan di local storage, ambil langsung dokumen 'settings/global' dari Firestore
-      let matchedAccount = accounts.find(
-        (a) => a.username?.toLowerCase().trim() === cleanUser && a.password?.trim() === cleanPass
-      );
-
-      let isDirectCollabMatch = 
-        (collabCfg?.collaboratorUsername &&
-         collabCfg.collaboratorUsername.toLowerCase().trim() === cleanUser &&
-         collabCfg?.collaboratorPassword &&
-         collabCfg.collaboratorPassword.trim() === cleanPass) ||
-        (cleanUser === 'kolaborator' && cleanPass === 'kolaborasi123');
-
-      if (!matchedAccount && !isDirectCollabMatch && !isQuotaExhausted()) {
-        try {
-          const globalDocSnap = await getDoc(doc(db, 'settings', 'global'));
-          if (globalDocSnap.exists()) {
-            const remoteSettings = globalDocSnap.data();
-            if (remoteSettings?.collaboration) {
-              collabCfg = remoteSettings.collaboration;
-              accounts = collabCfg.collaboratorAccounts || [];
-              matchedAccount = accounts.find(
-                (a: any) => a.username?.toLowerCase().trim() === cleanUser && a.password?.trim() === cleanPass
+      try {
+        const globalDocSnap = await getDoc(doc(db, 'settings', 'global'));
+        if (globalDocSnap.exists()) {
+          const remoteSettings = globalDocSnap.data();
+          if (remoteSettings?.collaboration) {
+            collabCfg = remoteSettings.collaboration;
+            accounts = collabCfg.collaboratorAccounts || [];
+            matchedAccount = accounts.find(
+              (a: any) => a.username?.toLowerCase().trim() === cleanUser && a.password?.trim() === cleanPass
+            );
+            isDirectCollabMatch =
+              isDirectCollabMatch ||
+              Boolean(
+                collabCfg?.collaboratorUsername &&
+                collabCfg.collaboratorUsername.toLowerCase().trim() === cleanUser &&
+                collabCfg?.collaboratorPassword &&
+                collabCfg.collaboratorPassword.trim() === cleanPass
               );
-              isDirectCollabMatch = 
-                (collabCfg?.collaboratorUsername &&
-                 collabCfg.collaboratorUsername.toLowerCase().trim() === cleanUser &&
-                 collabCfg?.collaboratorPassword &&
-                 collabCfg.collaboratorPassword.trim() === cleanPass);
-            }
           }
-        } catch (fetchErr) {
-          if (isQuotaError(fetchErr)) {
-            markQuotaExhausted();
-          }
-          console.warn("Notice: Remote settings check error:", fetchErr);
         }
+      } catch (fetchErr) {
+        console.warn("Notice: Remote settings check error:", fetchErr);
       }
 
       if (matchedAccount || isDirectCollabMatch) {
@@ -256,7 +247,7 @@ export default function AdminDashboard() {
         setWebPassword('');
         setIsLoggingIn(false);
 
-        // Catat aktivitas login kolaborator ke sistem audit log realtime
+        // Catat aktivitas login kolaborator ke sistem audit log Firestore
         recordCollaboratorActivity(
           'Login ke Mode Admin',
           `Kolaborator "${cleanUser}" (${partnerName}) berhasil masuk ke mode admin.`,
@@ -270,21 +261,16 @@ export default function AdminDashboard() {
       // 3. Cek Firestore collection adminUsers & collaboratorAccounts untuk username tambahan yang didaftarkan
       let foundData: any = null;
 
-      // Cek langsung berdasarkan Document ID di adminUsers
-      if (!isQuotaExhausted()) {
-        try {
-          const directDoc = await getDoc(doc(db, 'adminUsers', cleanUser));
-          if (directDoc.exists()) {
-            foundData = directDoc.data();
-          }
-        } catch (err) {
-          if (isQuotaError(err)) markQuotaExhausted();
-          console.warn("Direct doc check err:", err);
+      try {
+        const directDoc = await getDoc(doc(db, 'adminUsers', cleanUser));
+        if (directDoc.exists()) {
+          foundData = directDoc.data();
         }
+      } catch (err) {
+        console.warn("Direct doc check err:", err);
       }
 
-      // Jika belum ditemukan, cek langsung koleksi collaboratorAccounts
-      if (!foundData && !isQuotaExhausted()) {
+      if (!foundData) {
         try {
           const collabDocSnap = await getDoc(doc(db, 'collaboratorAccounts', cleanUser));
           if (collabDocSnap.exists()) {
@@ -296,13 +282,11 @@ export default function AdminDashboard() {
             };
           }
         } catch (cErr) {
-          if (isQuotaError(cErr)) markQuotaExhausted();
           console.warn("Collaborator doc check notice:", cErr);
         }
       }
 
-      // Jika belum ditemukan, cari via query field 'username' atau 'email'
-      if (!foundData && !isQuotaExhausted()) {
+      if (!foundData) {
         try {
           const qUser = query(collection(db, 'adminUsers'), where('username', '==', cleanUser));
           const snapUser = await getDocs(qUser);
@@ -316,7 +300,6 @@ export default function AdminDashboard() {
             }
           }
         } catch (qErr) {
-          if (isQuotaError(qErr)) markQuotaExhausted();
           console.warn("Firestore query err:", qErr);
         }
       }
@@ -347,20 +330,14 @@ export default function AdminDashboard() {
           setWebPassword('');
           setIsLoggingIn(false);
 
-          // Update last login
-          if (!isQuotaExhausted()) {
-            try {
-              await setDoc(doc(db, 'adminUsers', cleanUser), {
-                lastLogin: new Date().toISOString(),
-                _adminAuth: 'alfreelnc_admin_auth_verified',
-                updatedByAdmin: true
-              }, { merge: true });
-            } catch (err) {
-              if (isQuotaError(err)) markQuotaExhausted();
-            }
-          }
+          try {
+            await setDoc(doc(db, 'adminUsers', cleanUser), {
+              lastLogin: new Date().toISOString(),
+              _adminAuth: 'alfreelnc_admin_auth_verified',
+              updatedByAdmin: true
+            }, { merge: true });
+          } catch {}
 
-          // Jika role collaborator, catat aktivitas login
           if (role === 'collaborator') {
             recordCollaboratorActivity(
               'Login ke Mode Admin',
@@ -372,43 +349,16 @@ export default function AdminDashboard() {
 
           return;
         } else {
-          setError('Username atau kata sandi tidak sesuai. Silakan periksa kembali kata sandi kolaborator Anda.');
+          setError('Username atau kata sandi tidak sesuai. Silakan periksa kembali kata sandi Anda.');
           setIsLoggingIn(false);
           return;
         }
       }
 
-      // Jika akun tidak ditemukan
       setError('Username atau kata sandi tidak sesuai. Silakan masukkan kredensial yang valid.');
     } catch (err: any) {
       console.error("Login verification error:", err);
-      // Fallback darurat jika ada gangguan koneksi Firestore
-      if (cleanUser === 'albian' && cleanPass === '31102008') {
-        setActiveAdminName('albian');
-        setAdminRole('master');
-        sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: 'albian', role: 'master' }));
-        sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
-        setIsAuth(true);
-        setWebPassword('');
-        return;
-      }
-      if (cleanUser === 'kolaborator' && cleanPass === 'kolaborasi123') {
-        setActiveAdminName('kolaborator');
-        setAdminRole('collaborator');
-        setActiveTab('portfolio');
-        sessionStorage.setItem('admin_auth_user', JSON.stringify({ username: 'kolaborator', role: 'collaborator' }));
-        sessionStorage.setItem('admin_auth_token', 'alfreelnc_admin_auth_verified');
-        setIsAuth(true);
-        setWebPassword('');
-        recordCollaboratorActivity(
-          'Login ke Mode Admin',
-          'Kolaborator "kolaborator" berhasil login ke mode admin.',
-          '/admin#portfolio',
-          { username: 'kolaborator', role: 'collaborator' }
-        );
-        return;
-      }
-      setError('Terjadi kendala saat otentikasi. Silakan periksa koneksi Anda.');
+      setError(err?.message || 'Terjadi kendala saat otentikasi ke Firestore. Silakan periksa koneksi Anda.');
     } finally {
       setIsLoggingIn(false);
     }
@@ -506,14 +456,15 @@ export default function AdminDashboard() {
     try {
       const rawUrl = await compressAndUpload(file, uploadFolder, 1400, 0.82, 25000);
       const persistedUrl = await ensurePersistedAssetUrl(rawUrl, uploadFolder);
-      if (!persistedUrl || persistedUrl.startsWith('blob:')) {
-        throw new Error('Gagal mendapatkan URL aset yang valid dari server.');
+      if (!persistedUrl || persistedUrl.startsWith('blob:') || persistedUrl.startsWith('data:')) {
+        throw new Error('Gagal mendapatkan URL publik Vercel Blob yang valid.');
       }
 
+      await recordMediaPermanently(persistedUrl, file.name, file.size, uploadFolder);
       setLastUploadedUrl(persistedUrl);
-      setCachedMediaList(getStoredUploadedMedia());
+      await loadCloudUploadedMedia();
     } catch (err: any) {
-      setUploadAssetError(err?.message || 'Gagal mengunggah gambar ke backend.');
+      setUploadAssetError(err?.message || 'Gagal mengunggah gambar ke Vercel Blob.');
     } finally {
       setIsUploadingAsset(false);
     }
@@ -956,7 +907,7 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* Quick Backend Image Uploader & LocalStorage Cache Utility */}
+          {/* Quick Vercel Blob Image Uploader */}
           <div className="mb-5 p-3.5 sm:p-4 rounded-2xl bg-zinc-50/90 dark:bg-[#101010] border border-zinc-200/80 dark:border-zinc-800 shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -965,10 +916,10 @@ export default function AdminDashboard() {
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-xs font-bold text-black dark:text-white leading-tight">
-                    Upload Aset Gambar ke Backend
+                    Upload Aset Gambar ke Vercel Blob
                   </h3>
                   <p className="text-[11px] text-zinc-500 dark:text-zinc-400 truncate">
-                    Kompres WebP otomatis, simpan ke backend, dan cache di localStorage.
+                    Kompres WebP otomatis, unggah ke Vercel Blob, dan simpan URL ke Firestore.
                   </p>
                 </div>
               </div>
@@ -1036,7 +987,7 @@ export default function AdminDashboard() {
                 />
                 <div className="min-w-0 flex-1">
                   <span className="block text-[10px] font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold">
-                    Tersimpan di Backend & Cache
+                    Tersimpan di Vercel Blob & Firestore
                   </span>
                   <span className="block text-xs font-mono text-zinc-700 dark:text-zinc-300 truncate">
                     {lastUploadedUrl}
@@ -1066,7 +1017,7 @@ export default function AdminDashboard() {
               <div className="mt-3 pt-2.5 border-t border-zinc-200/70 dark:border-zinc-800/80">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-semibold">
-                    Cache Aset Terakhir ({cachedMediaList.length})
+                    Aset Cloud Terakhir ({cachedMediaList.length})
                   </span>
                 </div>
                 <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">

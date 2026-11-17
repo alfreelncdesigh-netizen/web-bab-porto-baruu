@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { db } from '../lib/firebase';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { getStoredExperiences, saveStoredExperiences, mergeExperiences, syncDeletedIdsFromServer } from '../lib/contentStorage';
-import { logFirestoreError, OperationType, isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
+import { getStoredExperiences, cleanExperiences, sortExperiencesByRecency, subscribeExperiencesRealtime } from '../lib/contentStorage';
 import { 
   Briefcase, 
   ArrowRight, 
@@ -183,66 +180,31 @@ export default function Experience() {
   useEffect(() => {
     let isMounted = true;
 
-    // 1. Ambil data dari cache lokal
-    const local = getStoredExperiences();
-    if (local.length > 0) {
-      setExperiences(local);
+    const initial = getStoredExperiences();
+    if (initial.length > 0) {
+      setExperiences(initial);
       setLoading(false);
     }
 
-    // 2. Sinkronisasi tombstone & ambil dari server disk (/api/experiences)
-    (async () => {
-      await syncDeletedIdsFromServer();
-      try {
-        const res = await fetch('/api/experiences');
-        const apiData = res.ok ? await res.json() : [];
-        if (Array.isArray(apiData) && isMounted) {
-          const merged = mergeExperiences(getStoredExperiences(), apiData);
-          setExperiences(merged);
-          saveStoredExperiences(merged);
-          setLoading(false);
-        }
-      } catch {}
-    })();
-
     const handleUpdate = (e: any) => {
-      if (e.detail && Array.isArray(e.detail) && isMounted) setExperiences(e.detail);
+      if (e.detail && Array.isArray(e.detail) && isMounted) {
+        setExperiences(sortExperiencesByRecency(cleanExperiences(e.detail)));
+        setLoading(false);
+      }
     };
     window.addEventListener('user_experiences_updated', handleUpdate);
 
-    // 3. Sinkronisasi sekunder dari Firestore jika kuota belum habis
-    let unsub = () => {};
-    if (!isQuotaExhausted()) {
-      unsub = onSnapshot(
-        collection(db, 'experiences'),
-        (snap) => {
-          const data: any[] = [];
-          snap.forEach(d => {
-            data.push({ id: d.id, ...(d.data() as any) });
-          });
-          const merged = mergeExperiences(getStoredExperiences(), data);
-          if (isMounted) {
-            setExperiences(merged);
-            saveStoredExperiences(merged);
-            setLoading(false);
-          }
-        },
-        (error) => {
-          if (isQuotaError(error)) markQuotaExhausted();
-          logFirestoreError(error, OperationType.LIST, 'experiences');
-          if (isMounted) {
-            setExperiences(getStoredExperiences());
-            setLoading(false);
-          }
-        }
-      );
-    } else {
-      if (isMounted) setLoading(false);
-    }
+    // Real-time langsung dari Cloud Firestore melalui singleton shared subscription
+    const unsub = subscribeExperiencesRealtime((sorted) => {
+      if (isMounted) {
+        setExperiences(sorted);
+        setLoading(false);
+      }
+    });
 
     const timer = setTimeout(() => {
       if (isMounted) setLoading(false);
-    }, 400);
+    }, 1500);
 
     return () => {
       isMounted = false;

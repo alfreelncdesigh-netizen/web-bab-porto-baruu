@@ -1,11 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
-import { db } from '../lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { SiteSettings, defaultSettings } from '../data/settings';
-import { getStoredSettings, cleanSettings, mergeSettingsByTimestamp, getTimestampMs } from '../lib/contentStorage';
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { SiteSettings } from '../data/settings';
+import { getStoredSettings, subscribeSettingsRealtime } from '../lib/contentStorage';
 import HeroBannerCarousel from './HeroBannerCarousel';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import heroAlbiImg from '../assets/images/hero-albi.png';
@@ -20,89 +17,15 @@ export default function Hero() {
     };
     window.addEventListener('app_settings_updated', handleUpdate);
 
-    // Initial sync from local storage
     const currentLocal = getStoredSettings();
     if (currentLocal) setSettings(currentLocal);
 
-    let unsubscribeGlobal = () => {};
-    let unsubscribeHero = () => {};
-
-    if (!isQuotaExhausted()) {
-      // 1. Dengarkan pembaruan global settings dari Firestore (tanpa menimpa setting lokal yang lebih baru)
-      const docRef = doc(db, 'settings', 'global');
-      unsubscribeGlobal = onSnapshot(
-        docRef,
-        (docSnap) => {
-          if (docSnap.exists()) {
-            const cloudData = docSnap.data() as Partial<SiteSettings>;
-            if (cloudData && Object.keys(cloudData).length > 0) {
-              const current = getStoredSettings();
-              const merged = mergeSettingsByTimestamp(current, cloudData);
-              const cloudHero = merged.heroImage;
-              const userHero = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image') || '') : '';
-              const isInvalidCloud = !cloudHero || cloudHero.includes('cover_web_') || cloudHero.includes('editing_tools_3d');
-              const heroImg = isInvalidCloud
-                ? (userHero && !userHero.includes('cover_web_') && !userHero.includes('editing_tools_3d') ? userHero : '/images/hero-albi.png')
-                : cloudHero.trim();
-              const finalMerged = { ...merged, heroImage: heroImg };
-              setSettings(finalMerged);
-              try { localStorage.setItem('app_settings', JSON.stringify(finalMerged)); } catch (e) {}
-            }
-          }
-        },
-        (err) => {
-          if (isQuotaError(err)) markQuotaExhausted();
-          logFirestoreError(err, OperationType.GET, 'settings/global');
-          setSettings(getStoredSettings());
-        }
-      );
-
-      // 2. Dengarkan pembaruan dokumen mandiri settings/hero dari Firestore
-      const heroDocRef = doc(db, 'settings', 'hero');
-      unsubscribeHero = onSnapshot(
-        heroDocRef,
-        (heroSnap) => {
-          if (heroSnap.exists()) {
-            const hData = heroSnap.data();
-            const current = getStoredSettings();
-            const currentSaved = getTimestampMs(current?.savedAt);
-            const heroSaved = getTimestampMs(hData?.savedAt || hData?.updatedAt);
-            if (currentSaved > 0 && heroSaved > 0 && heroSaved < currentSaved) return;
-
-            const rawHImg = hData?.heroImage && typeof hData.heroImage === 'string' ? hData.heroImage.trim() : '';
-            const isInvalidHImg = !rawHImg || rawHImg.includes('cover_web_') || rawHImg.includes('editing_tools_3d');
-            const hImg = isInvalidHImg ? '/images/hero-albi.png' : rawHImg;
-            const hDataUrl = hData?.heroImageDataUrl && typeof hData.heroImageDataUrl === 'string' ? hData.heroImageDataUrl.trim() : '';
-            
-            if (hImg || hDataUrl) {
-              setSettings(prev => ({
-                ...prev,
-                heroImage: hImg,
-                ...(hDataUrl ? { heroImageDataUrl: hDataUrl } : {})
-              }));
-              if (typeof window !== 'undefined') {
-                try {
-                  localStorage.setItem('app_custom_hero_image', hImg);
-                  const cur = JSON.parse(localStorage.getItem('app_settings') || '{}');
-                  cur.heroImage = hImg;
-                  localStorage.setItem('app_settings', JSON.stringify(cur));
-                  if (hDataUrl) {
-                    localStorage.setItem('app_custom_hero_image_backup', hDataUrl);
-                  }
-                } catch {}
-              }
-            }
-          }
-        },
-        (err) => {
-          if (isQuotaError(err)) markQuotaExhausted();
-        }
-      );
-    }
+    const unsubscribe = subscribeSettingsRealtime((nextSettings) => {
+      setSettings(nextSettings);
+    });
 
     return () => {
-      unsubscribeGlobal();
-      unsubscribeHero();
+      unsubscribe();
       window.removeEventListener('app_settings_updated', handleUpdate);
     };
   }, []);
@@ -121,8 +44,7 @@ export default function Hero() {
     handleImageError(e);
   };
 
-  const userHero = typeof window !== 'undefined' ? (localStorage.getItem('app_custom_hero_image') || '') : '';
-  const rawHero = settings.heroImage || userHero || '';
+  const rawHero = settings.heroImage || '';
   const isOldCoverOrDummy = !rawHero || rawHero.includes('cover_web_') || rawHero.includes('editing_tools_3d');
   const currentHeroImg = isOldCoverOrDummy ? heroAlbiImg : resolveImageUrl(rawHero);
 

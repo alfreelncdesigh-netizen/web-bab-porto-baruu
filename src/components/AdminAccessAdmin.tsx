@@ -22,8 +22,6 @@ export const MASTER_ADMINS = [
   'alfreelnc.desigh@gmail.com'
 ];
 
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted } from '../lib/firestoreErrorHandler';
-
 export default function AdminAccessAdmin() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [newIdentifier, setNewIdentifier] = useState('');
@@ -33,20 +31,14 @@ export default function AdminAccessAdmin() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
 
-  useEffect(() => {
-    try {
-      const cached = localStorage.getItem('admin_users_cache');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          setUsers(parsed);
-        }
-      }
-    } catch {}
+  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 4000);
+  };
 
-    // Pastikan dokumen bawaan master 'albian' tersimpan di Firestore (jika kuota tersedia)
+  useEffect(() => {
+    // Pastikan dokumen bawaan master 'albian' tersimpan di Firestore
     const seedMaster = async () => {
-      if (isQuotaExhausted()) return;
       try {
         await setDoc(doc(db, 'adminUsers', 'albian'), {
           username: 'albian',
@@ -55,14 +47,10 @@ export default function AdminAccessAdmin() {
           addedAt: '2025-01-01T00:00:00.000Z'
         }, { merge: true });
       } catch (err) {
-        if (isQuotaError(err)) {
-          markQuotaExhausted();
-        }
+        console.warn("Seed master admin notice:", err);
       }
     };
     seedMaster();
-
-    if (isQuotaExhausted()) return;
 
     const unsubscribe = onSnapshot(
       collection(db, 'adminUsers'),
@@ -82,24 +70,14 @@ export default function AdminAccessAdmin() {
         });
         const sorted = list.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
         setUsers(sorted);
-        try {
-          localStorage.setItem('admin_users_cache', JSON.stringify(sorted));
-        } catch {}
       },
       (error) => {
-        if (isQuotaError(error)) {
-          markQuotaExhausted();
-        }
-        console.warn("Admin users listener notice:", error);
+        console.error("Admin users listener error:", error);
+        showToast(error?.message || "Gagal memuat daftar admin dari Firestore.", "error");
       }
     );
     return () => unsubscribe();
   }, []);
-
-  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
-  };
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,39 +114,22 @@ export default function AdminAccessAdmin() {
         addedAt: new Date().toISOString()
       };
 
-      const updated = [newUser, ...users];
-      setUsers(updated);
-      try {
-        localStorage.setItem('admin_users_cache', JSON.stringify(updated));
-      } catch {}
+      await setDoc(doc(db, 'adminUsers', cleanId), {
+        username: newUser.username,
+        email: newUser.email,
+        password: passwordToSet,
+        status: 'allowed',
+        role: 'admin',
+        addedAt: newUser.addedAt
+      });
 
-      if (!isQuotaExhausted()) {
-        try {
-          await setDoc(doc(db, 'adminUsers', cleanId), {
-            username: newUser.username,
-            email: newUser.email,
-            password: passwordToSet,
-            status: 'allowed',
-            role: 'admin',
-            addedAt: newUser.addedAt
-          });
-        } catch (err) {
-          if (isQuotaError(err)) {
-            markQuotaExhausted();
-          } else {
-            throw err;
-          }
-        }
-      }
-
-      showToast(`Akses admin untuk "${cleanId}" berhasil ditambahkan.`);
+      setUsers(prev => prev.some(u => u.id === cleanId) ? prev : [newUser, ...prev]);
+      showToast(`Akses admin untuk "${cleanId}" berhasil disimpan ke Firestore.`);
       setNewIdentifier('');
       setNewPassword('');
     } catch (err: any) {
-      console.warn("Add admin user notice:", err);
-      showToast('Tersimpan lokal (sinkronisasi cloud tertunda karena kuota).');
-      setNewIdentifier('');
-      setNewPassword('');
+      console.error("Add admin user error:", err);
+      showToast(err?.message || 'Gagal menambahkan akses admin ke Firestore.', 'error');
     } finally {
       setIsAdding(false);
     }
@@ -182,24 +143,15 @@ export default function AdminAccessAdmin() {
     }
 
     const newStatus = user.status === 'allowed' ? 'blocked' : 'allowed';
-    const updated = users.map(u => u.id === user.id ? { ...u, status: newStatus } : u) as AdminUser[];
-    setUsers(updated);
     try {
-      localStorage.setItem('admin_users_cache', JSON.stringify(updated));
-    } catch {}
-    showToast(`Akses ${newStatus === 'allowed' ? 'diizinkan' : 'diblokir'} untuk ${user.username || user.email}`);
-
-    if (!isQuotaExhausted()) {
-      try {
-        await updateDoc(doc(db, 'adminUsers', user.id), {
-          status: newStatus
-        });
-      } catch (err) {
-        if (isQuotaError(err)) {
-          markQuotaExhausted();
-        }
-        console.warn("Toggle admin status notice:", err);
-      }
+      await updateDoc(doc(db, 'adminUsers', user.id), {
+        status: newStatus
+      });
+      setUsers(prev => prev.map(u => u.id === user.id ? { ...u, status: newStatus } : u) as AdminUser[]);
+      showToast(`Akses ${newStatus === 'allowed' ? 'diizinkan' : 'diblokir'} untuk ${user.username || user.email}`);
+    } catch (err: any) {
+      console.error("Toggle admin status error:", err);
+      showToast(err?.message || 'Gagal memperbarui status akses admin di Firestore.', 'error');
     }
   };
 
@@ -217,26 +169,17 @@ export default function AdminAccessAdmin() {
     setIsDeleting(true);
     const id = userToDelete.id;
 
-    // Optimistic update
-    const updated = users.filter(u => u.id !== id);
-    setUsers(updated);
     try {
-      localStorage.setItem('admin_users_cache', JSON.stringify(updated));
-    } catch {}
-    showToast(`Admin "${userToDelete.username || userToDelete.email}" dihapus dari akses.`);
-    setUserToDelete(null);
-
-    if (!isQuotaExhausted()) {
-      try {
-        await deleteDoc(doc(db, 'adminUsers', id));
-      } catch (err) {
-        if (isQuotaError(err)) {
-          markQuotaExhausted();
-        }
-        console.warn("Delete admin user notice:", err);
-      }
+      await deleteDoc(doc(db, 'adminUsers', id));
+      setUsers(prev => prev.filter(u => u.id !== id));
+      showToast(`Admin "${userToDelete.username || userToDelete.email}" dihapus dari Firestore.`);
+      setUserToDelete(null);
+    } catch (err: any) {
+      console.error("Delete admin user error:", err);
+      showToast(err?.message || 'Gagal menghapus akses admin dari Firestore.', 'error');
+    } finally {
+      setIsDeleting(false);
     }
-    setIsDeleting(false);
   };
 
   return (

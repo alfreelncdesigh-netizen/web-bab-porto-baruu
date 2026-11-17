@@ -21,7 +21,7 @@ import { uploadImageToStorage, base64ToBlob, recordMediaPermanently, ensurePersi
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { db } from '../lib/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 const createDefaultSlots = (): PromoPosterItem[] => [
@@ -60,7 +60,7 @@ export default function PromoAdmin() {
   const [isGlobalActive, setIsGlobalActive] = useState<boolean>(() => settings.promoWidgetActive !== false);
   const [saving, setSaving] = useState(false);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
-  const [notification, setNotification] = useState<{ type: 'success' | 'info'; message: string } | null>(null);
+  const [notification, setNotification] = useState<{ type: 'success' | 'info' | 'error'; message: string } | null>(null);
   const [cookieStatus, setCookieStatus] = useState<string>('');
   const { isSaved, markSaved } = useAdminSaveState({ isGlobalActive, posters });
 
@@ -81,16 +81,10 @@ export default function PromoAdmin() {
   useEffect(() => {
     refreshCookieStatus();
 
-    if (isQuotaExhausted()) return;
-
     // 1. Dengarkan doc settings/promoPosters secara realtime
     const unsubPromo = onSnapshot(doc(db, 'settings', 'promoPosters'), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        const current = getStoredSettings();
-        const cloudSaved = Number(data.savedAt || 0);
-        const localSaved = Number(current.savedAt || 0);
-        if (localSaved > 0 && cloudSaved > 0 && cloudSaved < localSaved) return;
         if (Array.isArray(data.posters) && data.posters.length > 0) {
           setPosters(normalizeSlots(data.posters));
         }
@@ -99,7 +93,6 @@ export default function PromoAdmin() {
         }
       }
     }, (err) => {
-      if (isQuotaError(err)) markQuotaExhausted();
       logFirestoreError(err, OperationType.GET, 'settings/promoPosters');
     });
 
@@ -117,7 +110,6 @@ export default function PromoAdmin() {
         }
       }
     }, (err) => {
-      if (isQuotaError(err)) markQuotaExhausted();
       logFirestoreError(err, OperationType.GET, 'settings/global');
     });
 
@@ -127,7 +119,7 @@ export default function PromoAdmin() {
     };
   }, []);
 
-  const showNotification = (message: string, type: 'success' | 'info' = 'success') => {
+  const showNotification = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setNotification({ type, message });
     setTimeout(() => {
       setNotification(null);
@@ -181,7 +173,7 @@ export default function PromoAdmin() {
     if (!file) return;
 
     if (file.size > 25 * 1024 * 1024) {
-      showNotification("Ukuran file terlalu besar! Silakan pilih file di bawah 25MB.", "info");
+      showNotification("Ukuran file terlalu besar! Silakan pilih file di bawah 25MB.", "error");
       return;
     }
 
@@ -193,23 +185,21 @@ export default function PromoAdmin() {
       const cleanFileName = `promo_poster_${Date.now()}_slot${index + 1}.webp`;
       const blob = base64ToBlob(dataUrl);
 
-      // 2. Unggah langsung ke storage/aset website
-      const rawUrl = await uploadImageToStorage(blob, cleanFileName, undefined, 'promos');
-      const uploadedUrl = await ensurePersistedAssetUrl(rawUrl, 'promos');
+      // 2. Unggah ke Vercel Blob (folder posters)
+      const rawUrl = await uploadImageToStorage(blob, cleanFileName, undefined, 'posters');
+      const uploadedUrl = await ensurePersistedAssetUrl(rawUrl, 'posters');
       if (!uploadedUrl || uploadedUrl.startsWith('blob:')) {
-        throw new Error("Gagal memperoleh URL permanen aset poster.");
+        throw new Error("Gagal memperoleh URL permanen poster dari Vercel Blob.");
       }
 
-      // 3. Simpan dan perbarui UI seketika
+      // 3. Simpan ke Cloud Firestore terlebih dahulu sebelum memperbarui UI/status sukses
       const updated = [...posters];
-      updated[index] = { 
-        ...updated[index], 
+      updated[index] = {
+        ...updated[index],
         image: uploadedUrl,
-        active: true 
+        active: true
       };
-      setPosters(updated);
 
-      // 4. Perbarui data settings lokal & umumkan event
       const currentStored = getStoredSettings();
       const updatedSettings: SiteSettings = {
         ...currentStored,
@@ -220,19 +210,21 @@ export default function PromoAdmin() {
         promoWidgetCtaText: updated.find(p => p.ctaText)?.ctaText || 'Ambil Diskon',
       };
 
+      await saveStoredSettings(updatedSettings);
+      setPosters(updated);
       setSettings(updatedSettings);
-      saveStoredSettings(updatedSettings).catch(() => {});
-      window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
+      markSaved({ isGlobalActive, posters: updated });
 
-      // 5. Catat media secara permanen di database
-      recordMediaPermanently(uploadedUrl, cleanFileName, blob.size, 'promos').catch(() => {});
+      // 4. Catat media secara permanen di Firestore uploadedMedia
+      recordMediaPermanently(uploadedUrl, cleanFileName, blob.size, 'posters').catch(() => {});
 
-      showNotification(`Poster #${index + 1} berhasil diunggah permanen ke Firebase Storage!`);
+      showNotification(`Poster #${index + 1} berhasil diunggah ke Vercel Blob & disimpan ke Cloud Firestore!`);
     } catch (err: any) {
       console.error("Upload poster error:", err);
-      showNotification(err?.message || "Gagal mengunggah gambar poster ke Firebase Storage.", "info");
+      showNotification(err?.message || "Gagal mengunggah atau menyimpan gambar poster.", "error");
     } finally {
       setUploadingIndex(null);
+      e.target.value = '';
     }
   };
 
@@ -258,7 +250,6 @@ export default function PromoAdmin() {
   const handleSaveAll = async () => {
     setSaving(true);
     try {
-      // Pastikan semua poster berformat URL bersih
       const updatedSettings: SiteSettings = {
         ...settings,
         promoWidgetActive: isGlobalActive,
@@ -268,41 +259,33 @@ export default function PromoAdmin() {
         promoWidgetCtaText: posters.find(p => p.ctaText)?.ctaText || 'Ambil Diskon',
       };
 
-      setSettings(updatedSettings);
       await saveStoredSettings(updatedSettings);
+      setSettings(updatedSettings);
 
-      // Simpan dokumen terpisah settings/promoPosters yang ringkas (hanya link & info penting)
-      if (!isQuotaExhausted()) {
-        try {
-          const lightweightPosters = posters.map(p => ({
-            id: p.id,
-            title: p.title || '',
-            image: p.image || '',
-            ctaText: p.ctaText || 'Ambil Diskon',
-            link: p.link || '#store',
-            active: p.active !== false
-          }));
+      const lightweightPosters = posters.map(p => ({
+        id: p.id,
+        title: p.title || '',
+        image: p.image || '',
+        ctaText: p.ctaText || 'Ambil Diskon',
+        link: p.link || '#store',
+        active: p.active !== false
+      }));
 
-          await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
-            posters: lightweightPosters,
-            active: isGlobalActive,
-            updatedAt: new Date().toISOString(),
-            savedAt: Date.now(),
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true
-          }), { merge: true });
-        } catch (cloudErr: any) {
-          if (isQuotaError(cloudErr)) markQuotaExhausted();
-          else logFirestoreError(cloudErr, OperationType.WRITE, 'settings/promoPosters');
-        }
-      }
+      await setDoc(doc(db, 'settings', 'promoPosters'), cleanForFirestore({
+        posters: lightweightPosters,
+        active: isGlobalActive,
+        updatedAt: new Date().toISOString(),
+        savedAt: Date.now(),
+        _adminAuth: 'alfreelnc_admin_auth_verified',
+        updatedByAdmin: true
+      }), { merge: true });
 
       markSaved({ isGlobalActive, posters });
-      window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updatedSettings }));
-      showNotification('Semua pengaturan 3 poster promosi berhasil disimpan & aktif!');
-    } catch (err) {
+      showNotification('Semua pengaturan 3 poster promosi berhasil disimpan ke Cloud Firestore & aktif!');
+    } catch (err: any) {
       console.error("Save promo settings error:", err);
-      showNotification('Pengaturan tersimpan di penyimpanan lokal dan server disk.', 'info');
+      logFirestoreError(err, OperationType.WRITE, 'settings/promoPosters');
+      showNotification(err?.message || 'Gagal menyimpan pengaturan poster promosi ke Cloud Firestore.', 'error');
     } finally {
       setSaving(false);
     }
@@ -371,11 +354,17 @@ export default function PromoAdmin() {
       {/* Notifikasi Toast Mengambang di Atas Layar */}
       {notification && (
         <div className={`fixed top-20 sm:top-24 left-1/2 -translate-x-1/2 z-[999] px-6 py-3 rounded-full text-xs font-bold flex items-center gap-2.5 shadow-2xl backdrop-blur-md border animate-fadeIn ${
-          notification.type === 'info'
+          notification.type === 'error'
+            ? 'bg-red-500/95 text-white border-red-400'
+            : notification.type === 'info'
             ? 'bg-blue-600/95 text-white border-blue-400'
             : 'bg-zinc-900/95 text-white dark:bg-white/95 dark:text-black border-zinc-700/50 dark:border-zinc-300'
         }`}>
-          <Check size={16} className="text-emerald-400 dark:text-emerald-600 stroke-[3] flex-shrink-0" />
+          {notification.type === 'error' ? (
+            <AlertCircle size={16} className="text-white flex-shrink-0" />
+          ) : (
+            <Check size={16} className="text-emerald-400 dark:text-emerald-600 stroke-[3] flex-shrink-0" />
+          )}
           <span>{notification.message}</span>
         </div>
       )}

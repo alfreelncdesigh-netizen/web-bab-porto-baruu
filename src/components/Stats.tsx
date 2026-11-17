@@ -6,8 +6,8 @@ import { Eye, Image as ImageIcon, ShoppingCart, FileText, Mail, BarChart3, Downl
 import { toPng } from 'html-to-image';
 import { motion, AnimatePresence } from 'framer-motion';
 import BrandLogo from './BrandLogo';
-import { cleanProjects, cleanBlogs, mergeProjects, mergeBlogs, syncDeletedIdsFromServer, getStoredProjects, getStoredBlogs } from '../lib/contentStorage';
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { cleanProjects, cleanBlogs, getStoredProjects, getStoredBlogs, subscribeProjectsRealtime, subscribeBlogsRealtime } from '../lib/contentStorage';
+import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { MASTER_ADMINS } from './AdminDashboard';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -162,26 +162,14 @@ export default function Stats({
     }
   };
 
-  const [pageViews, setPageViews] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('stats_views');
-      if (saved) return parseInt(saved, 10) || 128;
-    } catch (e) {}
-    return 128;
-  });
+  const [pageViews, setPageViews] = useState<number>(128);
 
   const [projects, setProjects] = useState<any[]>(() => {
     const stored = getStoredProjects();
     return cleanProjects(stored as any);
   });
 
-  const [orders, setOrders] = useState<any[]>(() => {
-    try {
-      const saved = localStorage.getItem('orders');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [];
-  });
+  const [orders, setOrders] = useState<any[]>([]);
 
   const [blogs, setBlogs] = useState<any[]>(() => {
     const stored = getStoredBlogs();
@@ -208,143 +196,78 @@ export default function Stats({
     window.addEventListener('user_projects_updated', handleProjectsUpdate);
     window.addEventListener('blog_posts_updated', handleBlogsUpdate);
 
-    (async () => {
-      await syncDeletedIdsFromServer();
-      try {
-        const [projRes, blogRes, ordRes] = await Promise.all([
-          fetch('/api/projects').catch(() => null),
-          fetch('/api/blogs').catch(() => null),
-          isEffectiveAdmin ? fetch('/api/orders').catch(() => null) : Promise.resolve(null),
-        ]);
-        if (projRes?.ok && isSubscribed) {
-          const apiProjs = await projRes.json();
-          if (Array.isArray(apiProjs)) setProjects(mergeProjects(getStoredProjects(), apiProjs));
-        }
-        if (blogRes?.ok && isSubscribed) {
-          const apiBlogs = await blogRes.json();
-          if (Array.isArray(apiBlogs)) setBlogs(mergeBlogs(getStoredBlogs(), apiBlogs));
-        }
-        if (ordRes?.ok && isSubscribed) {
-          const apiOrds = await ordRes.json();
-          if (Array.isArray(apiOrds)) setOrders(apiOrds);
-        }
-      } catch {}
-    })();
-
-    let unsubViews = () => {};
-    let unsubProjects = () => {};
-    let unsubBlogs = () => {};
-
-    if (!isQuotaExhausted()) {
-      // 1. Data Agregat Publik: Jumlah Pengunjung (stats/views)
-      unsubViews = onSnapshot(
-        doc(db, 'stats', 'views'),
-        (docSnap) => {
-          if (!isSubscribed) return;
-          if (docSnap.exists()) {
-            const c = docSnap.data().count;
-            if (typeof c === 'number' && c > 0) {
-              setPageViews(c);
-              try { localStorage.setItem('stats_views', String(c)); } catch (e) {}
-            }
+    // 1. Data Agregat Publik: Jumlah Pengunjung (stats/views) langsung dari Cloud Firestore
+    const unsubViews = onSnapshot(
+      doc(db, 'stats', 'views'),
+      (docSnap) => {
+        if (!isSubscribed) return;
+        if (docSnap.exists()) {
+          const c = docSnap.data().count;
+          if (typeof c === 'number' && c > 0) {
+            setPageViews(c);
           }
-          setLoading(false);
-        },
-        (err) => {
-          if (!isSubscribed) return;
-          if (isQuotaError(err)) markQuotaExhausted();
-          if (err.code !== 'permission-denied') {
-            logFirestoreError(err, OperationType.GET, 'stats/views');
-          }
-          setLoading(false);
         }
-      );
-
-      // 2. Data Publik: Portofolio Proyek (projects)
-      unsubProjects = onSnapshot(
-        collection(db, 'projects'),
-        (snapshot) => {
-          if (!isSubscribed) return;
-          const rawProjects = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          const merged = mergeProjects(getStoredProjects(), rawProjects as any);
-          setProjects(merged);
-          setLoading(false);
-        },
-        (err) => {
-          if (!isSubscribed) return;
-          if (isQuotaError(err)) markQuotaExhausted();
-          setProjects(cleanProjects(getStoredProjects() as any));
-          setLoading(false);
+        setLoading(false);
+      },
+      (err) => {
+        if (!isSubscribed) return;
+        if (err.code !== 'permission-denied') {
+          logFirestoreError(err, OperationType.GET, 'stats/views');
         }
-      );
-
-      // 3. Data Publik: Artikel Blog (blogPosts)
-      unsubBlogs = onSnapshot(
-        collection(db, 'blogPosts'),
-        (snapshot) => {
-          if (!isSubscribed) return;
-          const rawBlogs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-          const merged = mergeBlogs(getStoredBlogs(), rawBlogs as any);
-          setBlogs(merged);
-          setLoading(false);
-        },
-        (err) => {
-          if (!isSubscribed) return;
-          if (isQuotaError(err)) markQuotaExhausted();
-          setBlogs(cleanBlogs(getStoredBlogs() as any));
-          setLoading(false);
-        }
-      );
-
-      // 4. Data Privat: Pesanan (orders) & Pesan Masuk (messages)
-      if (isEffectiveAdmin) {
-        unsubOrders = onSnapshot(
-          collection(db, 'orders'),
-          (snapshot) => {
-            if (!isSubscribed) return;
-            const loaded = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter((o: any) => o.isArchived !== true);
-            setOrders(loaded);
-            try { localStorage.setItem('orders', JSON.stringify(loaded)); } catch (e) {}
-          },
-          (err) => {
-            if (!isSubscribed) return;
-            if (isQuotaError(err)) markQuotaExhausted();
-            if (err.code === 'permission-denied') {
-              if (unsubOrders) { unsubOrders(); unsubOrders = null; }
-            }
-          }
-        );
-
-        unsubMsgs = onSnapshot(
-          collection(db, 'messages'),
-          (snapshot) => {
-            if (!isSubscribed) return;
-            const activeMsgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter((m: any) => m.isArchived !== true);
-            setMessages(activeMsgs);
-          },
-          (err) => {
-            if (!isSubscribed) return;
-            if (isQuotaError(err)) markQuotaExhausted();
-            if (err.code === 'permission-denied') {
-              if (unsubMsgs) { unsubMsgs(); unsubMsgs = null; }
-            }
-          }
-        );
+        setLoading(false);
       }
-    } else {
-      setLoading(false);
-    }
+    );
 
-    if (!isEffectiveAdmin) {
-      try {
-        const saved = localStorage.getItem('orders');
-        if (saved) setOrders(JSON.parse(saved));
-      } catch (e) {}
+    // 2. Data Publik: Portofolio Proyek (projects) melalui singleton shared subscription
+    const unsubProjects = subscribeProjectsRealtime((sorted) => {
+      if (!isSubscribed) return;
+      setProjects(sorted as any);
+      setLoading(false);
+    });
+
+    // 3. Data Publik: Artikel Blog (blogPosts) melalui singleton shared subscription
+    const unsubBlogs = subscribeBlogsRealtime((sorted) => {
+      if (!isSubscribed) return;
+      setBlogs(sorted as any);
+      setLoading(false);
+    });
+
+    // 4. Data Privat Admin: Pesanan (orders) & Pesan Masuk (messages)
+    if (isEffectiveAdmin) {
+      unsubOrders = onSnapshot(
+        collection(db, 'orders'),
+        (snapshot) => {
+          if (!isSubscribed) return;
+          const loaded = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter((o: any) => o.isArchived !== true);
+          setOrders(loaded);
+        },
+        (err) => {
+          if (!isSubscribed) return;
+          if (err.code === 'permission-denied') {
+            if (unsubOrders) { unsubOrders(); unsubOrders = null; }
+          }
+        }
+      );
+
+      unsubMsgs = onSnapshot(
+        collection(db, 'messages'),
+        (snapshot) => {
+          if (!isSubscribed) return;
+          const activeMsgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })).filter((m: any) => m.isArchived !== true);
+          setMessages(activeMsgs);
+        },
+        (err) => {
+          if (!isSubscribed) return;
+          if (err.code === 'permission-denied') {
+            if (unsubMsgs) { unsubMsgs(); unsubMsgs = null; }
+          }
+        }
+      );
     }
 
     const safetyTimer = setTimeout(() => {
       if (isSubscribed) setLoading(false);
-    }, 400);
+    }, 1500);
 
     return () => {
       isSubscribed = false;

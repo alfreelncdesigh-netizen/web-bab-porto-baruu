@@ -4,14 +4,14 @@ import ConfirmModal from './ConfirmModal';
 import { motion } from 'motion/react';
 import { BlogPost } from '../types/blog';
 import { Edit, Trash, Plus, X, Check, Cloud, Upload, Loader2, Image as ImageIcon, Archive, AlertCircle, Handshake } from 'lucide-react';
-import { db, ensureFreshAuthToken } from '../lib/firebase';
+import { db } from '../lib/firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { getStoredBlogs, saveStoredBlogs, cleanBlogs, mergeBlogs, markDeletedIds, unmarkDeletedIds, syncDeletedIdsFromServer, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
+import { getStoredBlogs, saveStoredBlogs, cleanBlogs, sortBlogsByRecency, getStoredSettings, saveStoredSettings } from '../lib/contentStorage';
 import { SiteSettings } from '../data/settings';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
-import { withTimeout, compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
+import { compressAndUpload, uploadMultipleImagesInParallel, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
-import { isQuotaExhausted, markQuotaExhausted, isQuotaError, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function BlogAdmin() {
@@ -38,42 +38,25 @@ export default function BlogAdmin() {
     };
     window.addEventListener('blog_posts_updated', handleUpdate);
 
-    (async () => {
-      await syncDeletedIdsFromServer();
-      try {
-        const res = await fetch('/api/blogs');
-        if (res.ok) {
-          const apiBlogs = await res.json();
-          if (Array.isArray(apiBlogs) && isMounted) {
-            const merged = mergeBlogs(getStoredBlogs(), apiBlogs);
-            setPosts(merged);
-            await saveStoredBlogs(merged);
-          }
+    const unsubscribe = onSnapshot(
+      collection(db, 'blogPosts'),
+      (snapshot) => {
+        if (!isMounted) return;
+        const loadedPosts: BlogPost[] = [];
+        snapshot.forEach((docSnap) => {
+          loadedPosts.push({ id: docSnap.id, ...docSnap.data() } as BlogPost);
+        });
+        const sorted = sortBlogsByRecency(cleanBlogs(loadedPosts));
+        setPosts(sorted);
+        saveStoredBlogs(sorted);
+      },
+      (error) => {
+        logFirestoreError(error, OperationType.LIST, 'blogPosts');
+        if (isMounted) {
+          showToast(error?.message || 'Gagal memuat daftar blog dari Cloud Firestore.', 'error');
         }
-      } catch {}
-    })();
-
-    let unsubscribe = () => {};
-    if (!isQuotaExhausted()) {
-      unsubscribe = onSnapshot(
-        collection(db, 'blogPosts'),
-        (snapshot) => {
-          if (!isMounted) return;
-          const loadedPosts: BlogPost[] = [];
-          snapshot.forEach((docSnap) => {
-            loadedPosts.push({ id: docSnap.id, ...docSnap.data() } as BlogPost);
-          });
-          const merged = mergeBlogs(getStoredBlogs(), loadedPosts);
-          setPosts(merged);
-          saveStoredBlogs(merged);
-        },
-        (error) => {
-          if (isQuotaError(error)) markQuotaExhausted();
-          logFirestoreError(error, OperationType.LIST, 'blogPosts');
-          if (isMounted) setPosts(getStoredBlogs());
-        }
-      );
-    }
+      }
+    );
 
     return () => {
       isMounted = false;
@@ -83,8 +66,9 @@ export default function BlogAdmin() {
   }, []);
 
   const savePosts = async (newPosts: BlogPost[]) => {
-    setPosts(newPosts);
-    await saveStoredBlogs(newPosts);
+    const sorted = sortBlogsByRecency(cleanBlogs(newPosts));
+    setPosts(sorted);
+    await saveStoredBlogs(sorted);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -99,37 +83,38 @@ export default function BlogAdmin() {
     const nowMs = Date.now();
     const docId = String(editingPost.id);
 
-    const cleanImage = await ensurePersistedAssetUrl(editingPost.image || '', 'blogs');
-    const persistedCollabLogo = editingPost.collaborationLogo
-      ? await ensurePersistedAssetUrl(editingPost.collaborationLogo, 'collaboration')
-      : '';
+    try {
+      const cleanImage = editingPost.image ? await ensurePersistedAssetUrl(editingPost.image, 'blogs') : '';
+      const persistedCollabLogo = editingPost.collaborationLogo
+        ? await ensurePersistedAssetUrl(editingPost.collaborationLogo, 'collaboration')
+        : '';
 
-    const payloadToSave: BlogPost = {
-      id: docId,
-      title: editingPost.title.trim(),
-      content: editingPost.content || '',
-      image: cleanImage.startsWith('blob:') ? '' : cleanImage,
-      date: editingPost.date || new Date(nowMs).toISOString(),
-      category: editingPost.category || 'Umum',
-      published: Boolean(editingPost.published),
-      isCollaboration: Boolean(editingPost.isCollaboration),
-      collaborationPartner: (editingPost.collaborationPartner || '').trim(),
-      collaborationLogo: persistedCollabLogo,
-      collaborationText: (editingPost.collaborationText || '').trim(),
-      createdAt: editingPost.createdAt || nowMs,
-      updatedAt: nowMs,
-      isArchived: false,
-      archiveFolderId: null,
-    };
+      const payloadToSave: BlogPost = {
+        id: docId,
+        title: editingPost.title.trim(),
+        content: editingPost.content || '',
+        image: cleanImage.startsWith('blob:') ? '' : cleanImage,
+        date: editingPost.date || new Date(nowMs).toISOString(),
+        category: editingPost.category || 'Umum',
+        published: Boolean(editingPost.published),
+        isCollaboration: Boolean(editingPost.isCollaboration),
+        collaborationPartner: (editingPost.collaborationPartner || '').trim(),
+        collaborationLogo: persistedCollabLogo,
+        collaborationText: (editingPost.collaborationText || '').trim(),
+        createdAt: editingPost.createdAt || nowMs,
+        updatedAt: nowMs,
+        isArchived: false,
+        archiveFolderId: null,
+      };
 
-    await unmarkDeletedIds('blogPosts', [docId]);
+      await setDoc(doc(db, 'blogPosts', payloadToSave.id), {
+        ...payloadToSave,
+        _adminAuth: 'alfreelnc_admin_auth_verified',
+        updatedByAdmin: true,
+        updatedAt: new Date(nowMs).toISOString()
+      }, { merge: true });
 
-    const newPosts = mergeBlogs([payloadToSave], posts);
-    await savePosts(newPosts);
-
-    // Jika kolaborasi aktif pada blog ini, langsung terapkan ke pengaturan website agar logo langsung tampil di header & website
-    if (payloadToSave.isCollaboration) {
-      try {
+      if (payloadToSave.isCollaboration) {
         const siteSettings = getStoredSettings();
         const partnerLogo = payloadToSave.collaborationLogo || siteSettings.collaboration?.partnerLogo || '';
         const partnerName = payloadToSave.collaborationPartner || siteSettings.collaboration?.partnerName || '';
@@ -148,49 +133,31 @@ export default function BlogAdmin() {
           savedAt: Date.now()
         };
         await saveStoredSettings(updatedSettings);
-      } catch (collabErr) {
-        console.warn("Notice: Syncing blog collaboration to settings:", collabErr);
       }
-    }
 
-    // Simpan state & tandai tersimpan tanpa menutup editor sehingga tombol berubah menjadi "Tersimpan" & disable
-    setEditingPost(payloadToSave);
-    markSaved(payloadToSave);
-    showToast("Postingan berhasil disimpan & tampil di website!");
-    setSavingPost(false);
+      const nextPosts = [payloadToSave, ...posts.filter(p => p.id !== docId)];
+      await savePosts(nextPosts);
 
-    // Lacak aktivitas kolaborator secara realtime jika sesi aktif adalah kolaborator
-    try {
-      const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
-      if (u.role === 'collaborator') {
-        const isNew = !posts.some(p => p.id === payloadToSave.id);
-        recordCollaboratorActivity(
-          isNew ? 'Menambahkan Artikel Blog' : 'Memperbarui Artikel Blog',
-          `Kolaborator ${isNew ? 'menulis artikel baru' : 'memperbarui artikel'} "${payloadToSave.title}".`,
-          '/admin#blog'
-        );
-      }
-    } catch {}
+      setEditingPost(payloadToSave);
+      markSaved(payloadToSave);
+      showToast("Postingan berhasil disimpan ke Cloud Firestore & tampil di website!");
 
-    if (!isQuotaExhausted()) {
       try {
-        await withTimeout(
-          setDoc(doc(db, 'blogPosts', payloadToSave.id), {
-            ...payloadToSave,
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true,
-            updatedAt: new Date(nowMs).toISOString()
-          }, { merge: true }),
-          4000,
-          "Database cloud disinkronkan di latar belakang."
-        );
-      } catch (err: any) {
-        if (isQuotaError(err)) {
-          markQuotaExhausted();
-        } else {
-          logFirestoreError(err, OperationType.WRITE, `blogPosts/${payloadToSave.id}`);
+        const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
+        if (u.role === 'collaborator') {
+          const isNew = !posts.some(p => p.id === payloadToSave.id);
+          recordCollaboratorActivity(
+            isNew ? 'Menambahkan Artikel Blog' : 'Memperbarui Artikel Blog',
+            `Kolaborator ${isNew ? 'menulis artikel baru' : 'memperbarui artikel'} "${payloadToSave.title}".`,
+            '/admin#blog'
+          );
         }
-      }
+      } catch {}
+    } catch (err: any) {
+      logFirestoreError(err, OperationType.WRITE, `blogPosts/${docId}`);
+      showToast(err?.message || "Gagal menyimpan postingan ke Cloud Firestore.", "error");
+    } finally {
+      setSavingPost(false);
     }
   };
 
@@ -203,41 +170,30 @@ export default function BlogAdmin() {
     setIsDeleting(true);
     const id = postToDelete.id;
 
-    await markDeletedIds('blogPosts', [id]);
-
-    // 1. Langsung hapus dari state & local storage seketika (optimistic update)
-    const updated = posts.filter(p => p.id !== id);
-    await savePosts(updated);
-    showToast(`"${postToDelete.title || 'Postingan'}" berhasil dihapus permanen.`);
-    
-    // Lacak aktivitas penghapusan artikel oleh kolaborator
     try {
-      const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
-      if (u.role === 'collaborator') {
-        recordCollaboratorActivity(
-          'Menghapus Artikel Blog',
-          `Kolaborator menghapus artikel "${postToDelete.title || 'Tanpa Judul'}".`,
-          '/admin#blog'
-        );
-      }
-    } catch {}
+      await deleteDoc(doc(db, 'blogPosts', id));
+      const updated = posts.filter(p => p.id !== id);
+      await savePosts(updated);
+      showToast(`"${postToDelete.title || 'Postingan'}" berhasil dihapus permanen dari Cloud Firestore.`);
 
-    setPostToDelete(null);
-
-    // 2. Eksekusi penghapusan di cloud
-    if (!isQuotaExhausted()) {
       try {
-        await withTimeout(
-          deleteDoc(doc(db, 'blogPosts', id)),
-          6000,
-          "Database cloud selesai diperbarui."
-        );
-      } catch (err: any) {
-        if (isQuotaError(err)) markQuotaExhausted();
-        else logFirestoreError(err, OperationType.DELETE, `blogPosts/${id}`);
-      }
+        const u = JSON.parse(sessionStorage.getItem('admin_auth_user') || '{}');
+        if (u.role === 'collaborator') {
+          recordCollaboratorActivity(
+            'Menghapus Artikel Blog',
+            `Kolaborator menghapus artikel "${postToDelete.title || 'Tanpa Judul'}".`,
+            '/admin#blog'
+          );
+        }
+      } catch {}
+
+      setPostToDelete(null);
+    } catch (err: any) {
+      logFirestoreError(err, OperationType.DELETE, `blogPosts/${id}`);
+      showToast(err?.message || `Gagal menghapus postingan dari Cloud Firestore.`, "error");
+    } finally {
+      setIsDeleting(false);
     }
-    setIsDeleting(false);
   };
 
   const togglePublish = async (id: string) => {
@@ -245,25 +201,18 @@ export default function BlogAdmin() {
     if (!targetPost) return;
     const nowMs = Date.now();
     const updatedPost = { ...targetPost, published: !targetPost.published, updatedAt: nowMs };
-    await savePosts(posts.map(p => p.id === id ? updatedPost : p));
-    showToast(updatedPost.published ? "Postingan dipublikasikan!" : "Postingan dijadikan Draft.");
-
-    if (!isQuotaExhausted()) {
-      try {
-        await withTimeout(
-          setDoc(doc(db, 'blogPosts', id), {
-            ...updatedPost,
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true,
-            updatedAt: new Date(nowMs).toISOString()
-          }, { merge: true }),
-          5000,
-          "Waktu update status habis."
-        );
-      } catch (err: any) {
-        if (isQuotaError(err)) markQuotaExhausted();
-        else logFirestoreError(err, OperationType.WRITE, `blogPosts/${id}`);
-      }
+    try {
+      await setDoc(doc(db, 'blogPosts', id), {
+        ...updatedPost,
+        _adminAuth: 'alfreelnc_admin_auth_verified',
+        updatedByAdmin: true,
+        updatedAt: new Date(nowMs).toISOString()
+      }, { merge: true });
+      await savePosts(posts.map(p => p.id === id ? updatedPost : p));
+      showToast(updatedPost.published ? "Postingan dipublikasikan!" : "Postingan dijadikan Draft.");
+    } catch (err: any) {
+      logFirestoreError(err, OperationType.WRITE, `blogPosts/${id}`);
+      showToast(err?.message || "Gagal mengubah status postingan di Cloud Firestore.", "error");
     }
   };
 
@@ -276,24 +225,20 @@ export default function BlogAdmin() {
 
     try {
       if (fileList.length === 1) {
-        setUploadStatusText("Mengompres & Mengunggah Gambar ke Firebase Storage (/blogs/)...");
+        setUploadStatusText("Mengompres & Mengunggah Gambar ke Vercel Blob (/blogs/)...");
         const rawUrl = await compressAndUpload(fileList[0], 'blogs', 1200, 0.75, 25000);
         const cleanUrl = await ensurePersistedAssetUrl(rawUrl, 'blogs');
-        setEditingPost(prev => prev ? ({ ...prev, image: cleanUrl }) : null);
 
-        if (editingPost?.id && !isQuotaExhausted() && !cleanUrl.startsWith('data:')) {
-          try {
-            const docRef = doc(db, 'blogPosts', editingPost.id);
-            await updateDoc(docRef, {
-              image: cleanUrl,
-              updatedAt: new Date().toISOString()
-            });
-          } catch (syncErr: any) {
-            if (isQuotaError(syncErr)) markQuotaExhausted();
-          }
+        if (editingPost?.id && posts.some(p => p.id === editingPost.id) && !cleanUrl.startsWith('data:')) {
+          const docRef = doc(db, 'blogPosts', editingPost.id);
+          await updateDoc(docRef, {
+            image: cleanUrl,
+            updatedAt: new Date().toISOString()
+          });
         }
 
-        showToast("Gambar berhasil diunggah!");
+        setEditingPost(prev => prev ? ({ ...prev, image: cleanUrl }) : null);
+        showToast("Gambar berhasil diunggah ke Vercel Blob!");
       } else {
         setUploadStatusText(`Mengunggah Gambar (${0}/${fileList.length})...`);
         const rawUrls = await uploadMultipleImagesInParallel(
@@ -306,26 +251,21 @@ export default function BlogAdmin() {
         );
         const cleanUrls = await Promise.all(rawUrls.map(u => ensurePersistedAssetUrl(u, 'blogs')));
         if (cleanUrls.length > 0) {
-          setEditingPost(prev => prev ? ({ ...prev, image: cleanUrls[0] }) : null);
-
-          if (editingPost?.id && !isQuotaExhausted() && !cleanUrls[0].startsWith('data:')) {
-            try {
-              const docRef = doc(db, 'blogPosts', editingPost.id);
-              await updateDoc(docRef, {
-                image: cleanUrls[0],
-                updatedAt: new Date().toISOString()
-              });
-            } catch (syncErr: any) {
-              if (isQuotaError(syncErr)) markQuotaExhausted();
-            }
+          if (editingPost?.id && posts.some(p => p.id === editingPost.id) && !cleanUrls[0].startsWith('data:')) {
+            const docRef = doc(db, 'blogPosts', editingPost.id);
+            await updateDoc(docRef, {
+              image: cleanUrls[0],
+              updatedAt: new Date().toISOString()
+            });
           }
 
-          showToast(`${cleanUrls.length} gambar berhasil diunggah!`);
+          setEditingPost(prev => prev ? ({ ...prev, image: cleanUrls[0] }) : null);
+          showToast(`${cleanUrls.length} gambar berhasil diunggah ke Vercel Blob!`);
         }
       }
     } catch (err: any) {
       console.error("Upload blog image error:", err);
-      showToast(err?.message || "Gagal mengunggah gambar.", "error");
+      showToast(err?.message || "Gagal mengunggah gambar ke Vercel Blob.", "error");
     } finally {
       setUploadingImage(false);
       setUploadStatusText('');

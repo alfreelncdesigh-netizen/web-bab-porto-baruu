@@ -1,75 +1,42 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db } from '../lib/firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { SiteSettings, defaultSettings, HeroBanner } from '../data/settings';
-import { getStoredSettings, saveStoredSettings, cleanSettings } from '../lib/contentStorage';
-import { uploadImageToStorage, compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
-import { Loader2, Check, Upload, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { getStoredSettings, saveStoredSettings, fetchSettingsFromFirestore } from '../lib/contentStorage';
+import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { renderPdfFirstPageToImage } from '../lib/pdfHelper';
+import { Loader2, Check, Upload, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Sparkles, Image as ImageIcon } from 'lucide-react';
 import { resolveImageUrl } from '../lib/imageResolver';
-import { isQuotaExhausted, isQuotaError, markQuotaExhausted, logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { logFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
 export default function SettingsAdmin() {
  const [settings, setSettings] = useState<SiteSettings>(() => getStoredSettings());
- const [loading, setLoading] = useState(false);
+ const [loading, setLoading] = useState(true);
  const [saving, setSaving] = useState(false);
  const [uploading, setUploading] = useState(false);
  const [toast, setToast] = useState<{msg: string, type: 'success' | 'error'} | null>(null);
  const { isSaved, markSaved } = useAdminSaveState(settings);
 
  useEffect(() => {
-  const fetchSettings = async () => {
-    // 1. Initial dari local storage
-    const currentLocal = getStoredSettings();
-    setSettings(currentLocal);
-
-    // 2. Cek sinkronisasi server disk
-    try {
-      const serverRes = await fetch('/api/settings');
-      if (serverRes.ok) {
-        const serverData = await serverRes.json();
-        if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
-          const serverSavedAt = serverData.savedAt || 0;
-          const localSavedAt = currentLocal.savedAt || 0;
-          if (serverSavedAt >= localSavedAt) {
-            const merged = { ...defaultSettings, ...cleanSettings(serverData) };
-            setSettings(merged);
-            try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
-          }
-        }
-      }
-    } catch {}
-
-    // 3. Cek Firestore (hanya timpa jika Firestore memiliki data tersimpan yang lebih baru & kuota tersedia)
-    if (!isQuotaExhausted()) {
-      try {
-        const docRef = doc(db, 'settings', 'global');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const cloudData = docSnap.data() as Partial<SiteSettings>;
-          const local = getStoredSettings();
-          const cloudSavedAt = cloudData?.savedAt || 0;
-          const localSavedAt = local?.savedAt || 0;
-          if (cloudSavedAt >= localSavedAt) {
-            const cleaned = cleanSettings(cloudData);
-            const merged = { ...defaultSettings, ...cleaned };
-            setSettings(merged);
-            try { localStorage.setItem('app_settings', JSON.stringify(merged)); } catch (e) {}
-          }
-        }
-      } catch (e: any) {
-        if (isQuotaError(e)) markQuotaExhausted();
-        logFirestoreError(e, OperationType.GET, 'settings/global');
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      setLoading(false);
+  let isMounted = true;
+  const loadSettings = async () => {
+   setLoading(true);
+   try {
+    const cloudSettings = await fetchSettingsFromFirestore();
+    if (isMounted) {
+     setSettings(cloudSettings);
     }
+   } catch (e: any) {
+    logFirestoreError(e, OperationType.GET, 'settings/global');
+    if (isMounted) {
+     showToast(e?.message || 'Gagal memuat pengaturan dari Cloud Firestore.', 'error');
+    }
+   } finally {
+    if (isMounted) setLoading(false);
+   }
   };
-  fetchSettings();
+  loadSettings();
+  return () => { isMounted = false; };
  }, []);
 
  const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -82,18 +49,12 @@ export default function SettingsAdmin() {
   setSaving(true);
   
   try {
-   const success = await saveStoredSettings(settings);
+   await saveStoredSettings(settings);
    markSaved(settings);
-   // Kirim event broadcast agar seluruh halaman website seketika terupdate tanpa refresh
-   window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: settings }));
-   if (success) {
-     showToast('Perubahan berhasil disimpan & langsung tampil di website!');
-   } else {
-     showToast('Perubahan disimpan di penyimpanan lokal & server.', 'success');
-   }
+   showToast('Perubahan berhasil disimpan ke Cloud Firestore & langsung tampil di website!');
   } catch (err: any) {
-   console.warn("Save error:", err);
-   showToast(err?.message || 'Gagal menyimpan perubahan', 'error');
+   console.error("Save error:", err);
+   showToast(err?.message || 'Gagal menyimpan perubahan ke Cloud Firestore.', 'error');
   } finally {
    setSaving(false);
   }
@@ -157,26 +118,15 @@ export default function SettingsAdmin() {
     if (!e.target.files || e.target.files.length === 0) return;
     const fileToUpload = e.target.files[0];
     setUploading(true);
+    const previousValue = settings[field];
 
     try {
-      // Tampilkan preview instan lokal saat mengunggah agar visual langsung terisi
-      const previewUrl = URL.createObjectURL(fileToUpload);
-      if (field === 'aboutImage') {
-        setSettings(prev => ({ ...prev, aboutImage: previewUrl }));
-      }
-
-      const targetFolder = field === 'aboutImage' ? 'about' : 'settings';
+      const targetFolder = field === 'aboutImage' ? 'about' : (field === 'heroImage' ? 'hero' : 'posters');
       const rawUrl = await compressAndUpload(fileToUpload, targetFolder, 1400, 0.85);
       const finalUrl = await ensurePersistedAssetUrl(rawUrl, targetFolder);
 
       if (!finalUrl || finalUrl.startsWith('blob:')) {
-        throw new Error("Gagal memperoleh tautan publik aset website.");
-      }
-
-      if (field === 'heroImage') {
-        try {
-          localStorage.setItem('app_custom_hero_image', finalUrl);
-        } catch {}
+        throw new Error("Gagal memperoleh tautan publik dari Vercel Blob.");
       }
 
       const updated: SiteSettings = {
@@ -184,32 +134,16 @@ export default function SettingsAdmin() {
         [field]: finalUrl,
         savedAt: Date.now()
       };
-      setSettings(updated);
-      
-      // Auto-save instan ke database Firestore & server
+
       await saveStoredSettings(updated);
+      setSettings(updated);
+      markSaved(updated);
 
-      if (field === 'heroImage' && !isQuotaExhausted()) {
-        try {
-          const heroPayload: Record<string, any> = {
-            heroImage: finalUrl,
-            savedAt: Date.now(),
-            updatedAt: new Date().toISOString(),
-            _adminAuth: 'alfreelnc_admin_auth_verified',
-            updatedByAdmin: true
-          };
-          await setDoc(doc(db, 'settings', 'hero'), heroPayload, { merge: true });
-        } catch (hErr: any) {
-          if (isQuotaError(hErr)) markQuotaExhausted();
-          else logFirestoreError(hErr, OperationType.WRITE, 'settings/hero');
-        }
-      }
-
-      window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-      showToast(field === 'aboutImage' ? "Gambar profil berhasil diunggah & tersimpan di aset website!" : "Foto berhasil diunggah & tersimpan di aset website!");
+      showToast(field === 'aboutImage' ? "Gambar profil berhasil diunggah ke Vercel Blob & tersimpan di Cloud Firestore!" : "Foto berhasil diunggah ke Vercel Blob & tersimpan di Cloud Firestore!");
     } catch (err: any) {
       console.error("Upload settings image failed:", err);
-      showToast(err.message || "Gagal mengunggah gambar ke aset website.", "error");
+      setSettings(prev => ({ ...prev, [field]: previousValue }));
+      showToast(err?.message || "Gagal mengunggah gambar ke Vercel Blob / Cloud Firestore.", "error");
     } finally {
       setUploading(false);
       if (e.target) e.target.value = '';
@@ -281,10 +215,13 @@ export default function SettingsAdmin() {
     const list = settings.heroBanners ? [...settings.heroBanners] : [];
     const updatedBanners = [newBanner, ...list];
     const updated = { ...settings, heroBanners: updatedBanners, savedAt: Date.now() };
-    setSettings(updated);
-    await saveStoredSettings(updated);
-    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-    showToast('Banner baru ditambahkan & tersimpan.');
+    try {
+      await saveStoredSettings(updated);
+      setSettings(updated);
+      showToast('Banner baru ditambahkan & tersimpan di Cloud Firestore.');
+    } catch (err: any) {
+      showToast(err?.message || 'Gagal menyimpan banner baru ke Cloud Firestore.', 'error');
+    }
   };
 
   const handleUpdateBanner = async (id: string, updates: Partial<HeroBanner>) => {
@@ -293,18 +230,23 @@ export default function SettingsAdmin() {
     );
     const updated = { ...settings, heroBanners: updatedBanners, savedAt: Date.now() };
     setSettings(updated);
-    // Simpan otomatis pembaruan banner
-    await saveStoredSettings(updated);
-    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
+    try {
+      await saveStoredSettings(updated);
+    } catch (err: any) {
+      showToast(err?.message || 'Gagal menyimpan pembaruan banner ke Cloud Firestore.', 'error');
+    }
   };
 
   const handleDeleteBanner = async (id: string) => {
     const updatedBanners = (settings.heroBanners || []).filter((b) => b.id !== id);
     const updated = { ...settings, heroBanners: updatedBanners, savedAt: Date.now() };
-    setSettings(updated);
-    await saveStoredSettings(updated);
-    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-    showToast('Banner dihapus secara permanen.');
+    try {
+      await saveStoredSettings(updated);
+      setSettings(updated);
+      showToast('Banner dihapus secara permanen dari Cloud Firestore.');
+    } catch (err: any) {
+      showToast(err?.message || 'Gagal menghapus banner dari Cloud Firestore.', 'error');
+    }
   };
 
   const handleMoveBanner = async (index: number, direction: 'up' | 'down') => {
@@ -315,9 +257,12 @@ export default function SettingsAdmin() {
     banners[index] = banners[targetIndex];
     banners[targetIndex] = temp;
     const updated = { ...settings, heroBanners: banners, savedAt: Date.now() };
-    setSettings(updated);
-    await saveStoredSettings(updated);
-    window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
+    try {
+      await saveStoredSettings(updated);
+      setSettings(updated);
+    } catch (err: any) {
+      showToast(err?.message || 'Gagal memperbarui urutan banner di Cloud Firestore.', 'error');
+    }
   };
 
   const handleBannerImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, bannerId: string) => {
@@ -330,14 +275,19 @@ export default function SettingsAdmin() {
       const finalUrl = await ensurePersistedAssetUrl(rawUrl, 'banners');
 
       if (!finalUrl || finalUrl.startsWith('blob:')) {
-        throw new Error("Gagal memperoleh tautan publik aset banner.");
+        throw new Error("Gagal memperoleh tautan publik aset banner dari Vercel Blob.");
       }
 
-      await handleUpdateBanner(bannerId, { image: finalUrl });
-      showToast("Gambar banner berhasil diunggah & tersimpan di aset website!");
+      const updatedBanners = (settings.heroBanners || []).map((b) =>
+        b.id === bannerId ? { ...b, image: finalUrl } : b
+      );
+      const updated = { ...settings, heroBanners: updatedBanners, savedAt: Date.now() };
+      await saveStoredSettings(updated);
+      setSettings(updated);
+      showToast("Gambar banner berhasil diunggah ke Vercel Blob & tersimpan di Cloud Firestore!");
     } catch (err: any) {
       console.error("Upload banner failed:", err);
-      showToast(err.message || "Gagal mengunggah banner ke aset website.", "error");
+      showToast(err?.message || "Gagal mengunggah atau menyimpan gambar banner.", "error");
     } finally {
       setUploading(false);
       if (e.target) e.target.value = '';
@@ -466,18 +416,13 @@ export default function SettingsAdmin() {
          }} 
          onBlur={async (e) => {
            const val = e.target.value.trim();
-           if (val) {
-             localStorage.setItem('app_custom_hero_image', val);
-             fetch('/api/hero-image', {
-               method: 'POST',
-               headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({ heroImage: val })
-             }).catch(() => {});
-           }
            const updated = { ...settings, heroImage: val, savedAt: Date.now() };
-           setSettings(updated);
-           await saveStoredSettings(updated);
-           window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
+           try {
+             await saveStoredSettings(updated);
+             setSettings(updated);
+           } catch (err: any) {
+             showToast(err?.message || 'Gagal menyimpan URL gambar utama ke Cloud Firestore.', 'error');
+           }
          }}
          placeholder="URL gambar (https://... atau hasil unggahan)" 
          className="w-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-3 py-2 text-xs rounded-xl text-black dark:text-white outline-none focus:border-black dark:focus:border-white transition-all font-mono"
@@ -486,19 +431,15 @@ export default function SettingsAdmin() {
          type="button"
          onClick={async () => {
            const val = (settings.heroImage || '').trim();
-           if (val) {
-             localStorage.setItem('app_custom_hero_image', val);
-             fetch('/api/hero-image', {
-               method: 'POST',
-               headers: { 'Content-Type': 'application/json' },
-               body: JSON.stringify({ heroImage: val })
-             }).catch(() => {});
-           }
            const updated = { ...settings, heroImage: val, savedAt: Date.now() };
-           setSettings(updated);
-           await saveStoredSettings(updated);
-           window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: updated }));
-           showToast('Link gambar utama berhasil disimpan permanen ke Firebase & website!');
+           try {
+             await saveStoredSettings(updated);
+             setSettings(updated);
+             markSaved(updated);
+             showToast('Link gambar utama berhasil disimpan permanen ke Cloud Firestore & website!');
+           } catch (err: any) {
+             showToast(err?.message || 'Gagal menyimpan URL gambar utama ke Cloud Firestore.', 'error');
+           }
          }}
          title="Terapkan dan simpan permanen ke Firebase"
          className="px-3.5 py-2 text-xs font-semibold bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900 hover:opacity-85 rounded-xl transition-all shrink-0 cursor-pointer flex items-center gap-1.5"
@@ -510,17 +451,15 @@ export default function SettingsAdmin() {
           type="button"
           onClick={async () => {
             const updated = { ...settings, heroImage: '__RESET_DEFAULT__', savedAt: Date.now() };
-            localStorage.removeItem('app_custom_hero_image');
-            localStorage.removeItem('app_custom_hero_image_backup');
-            fetch('/api/hero-image', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ heroImage: '' })
-            }).catch(() => {});
-            setSettings({ ...settings, heroImage: '' });
-            await saveStoredSettings(updated);
-            window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: { ...settings, heroImage: '' } }));
-            showToast('Foto utama beranda dikembalikan ke default bawaan.');
+            try {
+              await saveStoredSettings(updated);
+              const resetState = { ...settings, heroImage: defaultSettings.heroImage };
+              setSettings(resetState);
+              markSaved(resetState);
+              showToast('Foto utama beranda dikembalikan ke default bawaan.');
+            } catch (err: any) {
+              showToast(err?.message || 'Gagal mereset foto utama di Cloud Firestore.', 'error');
+            }
           }}
           title="Reset gambar ke default bawaan"
           className="p-2 text-xs text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-900/40 transition-colors shrink-0 cursor-pointer"

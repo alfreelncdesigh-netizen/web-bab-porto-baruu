@@ -8,15 +8,78 @@ export const config = {
   },
 };
 
-const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_PDF_BYTES = 10 * 1024 * 1024; // 10 MB
+
+const FOLDER_MAP: Record<string, string> = {
+  portfolio: 'portfolio',
+  portofolio: 'portfolio',
+  works: 'portfolio',
+  work: 'portfolio',
+  karya: 'portfolio',
+  cv: 'cv',
+  resume: 'cv',
+  hero: 'hero',
+  about: 'about',
+  profile: 'about',
+  banners: 'banners',
+  banner: 'banners',
+  posters: 'posters',
+  poster: 'posters',
+  promos: 'posters',
+  promo: 'posters',
+  experiences: 'experiences',
+  experience: 'experiences',
+  pengalaman: 'experiences',
+  blogs: 'blogs',
+  blog: 'blogs',
+  collaboration: 'collaboration',
+  insight: 'insight',
+  insights: 'insight',
+  orders: 'orders',
+  settings: 'settings',
+};
+
+function sanitizeFolder(raw?: string | string[]): string {
+  const val = Array.isArray(raw) ? raw[0] : raw;
+  const key = String(val || 'portfolio')
+    .toLowerCase()
+    .trim()
+    .replace(/^\/+|\/+$/g, '');
+  return FOLDER_MAP[key] || 'portfolio';
+}
+
+function getExtAndMime(filename: string, rawMime?: string): { ext: string; mime: string } | null {
+  const lower = filename.toLowerCase();
+  const ext = path.extname(lower);
+  const mimeLower = (rawMime || '').toLowerCase();
+
+  if (ext === '.pdf' || mimeLower === 'application/pdf') {
+    return { ext: '.pdf', mime: 'application/pdf' };
+  }
+  if (ext === '.svg' || mimeLower === 'image/svg+xml') {
+    return { ext: '.svg', mime: 'image/svg+xml' };
+  }
+  if (ext === '.png' || mimeLower === 'image/png') {
+    return { ext: '.png', mime: 'image/png' };
+  }
+  if (ext === '.jpg' || ext === '.jpeg' || mimeLower === 'image/jpeg' || mimeLower === 'image/jpg') {
+    return { ext: ext === '.jpeg' ? '.jpeg' : '.jpg', mime: 'image/jpeg' };
+  }
+  if (ext === '.webp' || mimeLower === 'image/webp' || !ext) {
+    return { ext: '.webp', mime: 'image/webp' };
+  }
+  return null;
+}
 
 function parseMultipartOrRaw(
   fullBuffer: Buffer,
   contentType: string,
   headerFilename: string
-): { fileBuffer: Buffer | null; filename: string } {
-  let filename = headerFilename || 'karya.webp';
+): { fileBuffer: Buffer | null; filename: string; partContentType?: string } {
+  let filename = headerFilename || 'asset.webp';
   let fileBuffer: Buffer | null = null;
+  let partContentType = '';
 
   if (contentType.includes('multipart/form-data')) {
     const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
@@ -41,6 +104,8 @@ function parseMultipartOrRaw(
           if (headerStr.includes('filename="')) {
             const fnMatch = headerStr.match(/filename="([^"]+)"/);
             if (fnMatch) filename = fnMatch[1];
+            const ctMatch = headerStr.match(/Content-Type:\s*([^\r\n]+)/i);
+            if (ctMatch) partContentType = ctMatch[1].trim();
             const dataStart = headerEndIdx + headerOffset;
             let dataEnd = part.length;
             if (part.slice(dataEnd - 2).equals(Buffer.from('\r\n'))) {
@@ -55,11 +120,23 @@ function parseMultipartOrRaw(
         startIdx = nextIdx;
       }
     }
+  } else if (contentType.includes('application/json')) {
+    try {
+      const json = JSON.parse(fullBuffer.toString('utf-8'));
+      if (json && (json.data || json.file)) {
+        if (json.filename) filename = String(json.filename);
+        const rawData = String(json.data || json.file);
+        const mimeMatch = rawData.match(/^data:([^;]+);base64,/);
+        if (mimeMatch) partContentType = mimeMatch[1];
+        const base64Data = rawData.replace(/^data:[^;]+;base64,/, '');
+        fileBuffer = Buffer.from(base64Data, 'base64');
+      }
+    } catch {}
   } else if (fullBuffer.length > 0) {
     fileBuffer = fullBuffer;
   }
 
-  return { fileBuffer, filename };
+  return { fileBuffer, filename, partContentType };
 }
 
 export default async function handler(
@@ -74,7 +151,13 @@ export default async function handler(
   }
 
   const adminToken = req.headers['x-admin-token'] || req.headers['authorization'];
+  const requestedFolder = sanitizeFolder(
+    (req.headers['x-blob-folder'] as string | undefined) || req.query?.folder
+  );
+
+  // Public store order reference uploads may use folder=orders without admin login
   if (
+    requestedFolder !== 'orders' &&
     adminToken !== 'alfreelnc_admin_auth_verified' &&
     adminToken !== 'Bearer alfreelnc_admin_auth_verified'
   ) {
@@ -103,21 +186,31 @@ export default async function handler(
     }
     const fullBuffer = Buffer.concat(chunks);
     const contentType = String(req.headers['content-type'] || '');
-    const rawHeaderFn = String(req.headers['x-filename'] || req.query?.filename || 'karya.webp');
+    const rawHeaderFn = String(req.headers['x-filename'] || req.query?.filename || 'asset.webp');
 
-    const { fileBuffer, filename } = parseMultipartOrRaw(fullBuffer, contentType, rawHeaderFn);
+    const { fileBuffer, filename, partContentType } = parseMultipartOrRaw(fullBuffer, contentType, rawHeaderFn);
 
     if (!fileBuffer || fileBuffer.length === 0) {
       res.statusCode = 400;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: 'File gambar kosong atau tidak diterima oleh server.' }));
+      res.end(JSON.stringify({ error: 'File kosong atau tidak diterima oleh server.' }));
       return;
     }
 
-    if (fileBuffer.length > MAX_BYTES) {
+    const typeInfo = getExtAndMime(filename, partContentType || (contentType.startsWith('image/') || contentType === 'application/pdf' ? contentType : ''));
+    if (!typeInfo) {
       res.statusCode = 400;
       res.setHeader('Content-Type', 'application/json');
-      res.end(JSON.stringify({ error: 'Ukuran file gambar melebihi batas maksimal 5 MB.' }));
+      res.end(JSON.stringify({ error: `Format file "${filename}" tidak didukung. Gunakan JPG, PNG, WebP, SVG, atau PDF.` }));
+      return;
+    }
+
+    const maxBytes = typeInfo.ext === '.pdf' ? MAX_PDF_BYTES : MAX_IMAGE_BYTES;
+    if (fileBuffer.length > maxBytes) {
+      const maxMb = maxBytes / (1024 * 1024);
+      res.statusCode = 400;
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ error: `Ukuran file melebihi batas maksimal ${maxMb} MB.` }));
       return;
     }
 
@@ -127,13 +220,13 @@ export default async function handler(
         .toLowerCase()
         .replace(/[^a-z0-9_-]+/g, '-')
         .replace(/^-+|-+$/g, '')
-        .slice(0, 60) || 'karya';
+        .slice(0, 60) || 'asset';
 
-    const blobPathname = `portfolio/${Date.now()}-${rawBase}.webp`;
+    const blobPathname = `${requestedFolder}/${Date.now()}-${rawBase}${typeInfo.ext}`;
 
     const blob = await put(blobPathname, fileBuffer, {
       access: 'public',
-      contentType: 'image/webp',
+      contentType: typeInfo.mime,
       addRandomSuffix: false,
       token,
     });
@@ -145,10 +238,11 @@ export default async function handler(
         url: blob.url,
         pathname: blob.pathname,
         size: fileBuffer.length,
+        storage: 'vercel-blob',
       })
     );
   } catch (err: any) {
-    const msg = err?.message || String(err) || 'Upload gambar ke Vercel Blob gagal.';
+    const msg = err?.message || String(err) || 'Upload ke Vercel Blob gagal.';
     console.error('[VERCEL BLOB UPLOAD ERROR]', err);
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
