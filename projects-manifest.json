@@ -1,0 +1,86 @@
+{
+  "totalCount": 8,
+  "publicCount": 8,
+  "draftCount": 0,
+  "updatedAt": "2026-11-17T09:00:34.680Z",
+  "items": [
+    {
+      "id": "1",
+      "title": "Idul Fitri",
+      "category": "Postingan Instagram",
+      "image": "/uploads/project_1_1793923223575.png",
+      "imageWidth": 808,
+      "imageHeight": 1145,
+      "draft": false,
+      "orderIndex": 0
+    },
+    {
+      "id": "2",
+      "title": "Nike Air Max 270 React",
+      "category": "Poster",
+      "image": "/uploads/project_2_1793923223577.png",
+      "imageWidth": 878,
+      "imageHeight": 1098,
+      "draft": false,
+      "orderIndex": 1
+    },
+    {
+      "id": "5",
+      "title": "Idul Fitri",
+      "category": "story instagram",
+      "image": "/uploads/project_5_1793923223580.png",
+      "imageWidth": 222,
+      "imageHeight": 295,
+      "draft": false,
+      "orderIndex": 2
+    },
+    {
+      "id": "6",
+      "title": "Food poster design",
+      "category": "poster kuliner",
+      "image": "/uploads/project_6_1793923223581.png",
+      "imageWidth": 1080,
+      "imageHeight": 1350,
+      "draft": false,
+      "orderIndex": 3
+    },
+    {
+      "id": "7",
+      "title": "Poster Minuman Teh Hijau",
+      "category": "poster kuliner",
+      "image": "https://ais-dev-yorttlileq6ppl6ub5mkov-535307665475.asia-southeast1.run.app/uploads/Teh_Hijau_1790560458614.png",
+      "draft": false,
+      "orderIndex": 4
+    },
+    {
+      "id": "4",
+      "title": "Simple Design but impact",
+      "category": "Postingan Instagram",
+      "image": "/uploads/project_4_1793923223580.png",
+      "imageWidth": 238,
+      "imageHeight": 295,
+      "draft": false,
+      "orderIndex": 5
+    },
+    {
+      "id": "0",
+      "title": "HUT RI-81 ",
+      "category": "Poster",
+      "image": "/uploads/project_0_1793923223558.png",
+      "imageWidth": 678,
+      "imageHeight": 1206,
+      "draft": false,
+      "orderIndex": 6
+    },
+    {
+      "id": "3",
+      "title": "TRAVEL TO INDONESIA",
+      "category": "Poster",
+      "image": "/uploads/project_3_1793923223579.png",
+      "imageWidth": 878,
+      "imageHeight": 1098,
+      "draft": false,
+      "orderIndex": 7
+    }
+  ]
+}

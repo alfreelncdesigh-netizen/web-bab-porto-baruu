@@ -103,7 +103,7 @@ export default function PortfolioAdmin() {
     e.preventDefault();
     if (!editingProject) return;
     if (uploading) {
-      showToast("Tunggu hingga proses upload gambar ke Vercel Blob selesai.", "error");
+      showToast("Tunggu hingga proses upload gambar selesai.", "error");
       return;
     }
     if (uploadError) {
@@ -121,26 +121,41 @@ export default function PortfolioAdmin() {
 
     const rawMain = (editingProject.image || '').trim();
     if (
-      rawMain.startsWith('data:') ||
       rawMain.startsWith('blob:') ||
-      rawImages.some((u) => typeof u === 'string' && (u.trim().startsWith('data:') || u.trim().startsWith('blob:')))
+      rawImages.some((u) => typeof u === 'string' && u.trim().startsWith('blob:'))
     ) {
-      showToast("Gambar tidak boleh berupa base64/blob. Silakan unggah gambar ke Vercel Blob.", "error");
+      showToast("Gambar masih berupa blob sementara. Silakan unggah ulang gambar.", "error");
       return;
     }
 
-    const cleanImages = rawImages
-      .map((u) => (typeof u === 'string' ? u.trim() : ''))
-      .filter((u) => u.length > 0 && !u.startsWith('data:') && !u.startsWith('blob:'));
+    setSaving(true);
 
-    const cleanMainImage = rawMain || cleanImages[0] || '';
+    const persistedMain = rawMain.startsWith('data:image/')
+      ? await ensurePersistedAssetUrl(rawMain, 'works')
+      : rawMain;
+
+    const persistedImages: string[] = [];
+    for (const img of rawImages) {
+      if (typeof img !== 'string') continue;
+      const trimmed = img.trim();
+      if (!trimmed || trimmed.startsWith('blob:')) continue;
+      if (trimmed.startsWith('data:image/')) {
+        const persisted = await ensurePersistedAssetUrl(trimmed, 'works');
+        if (persisted && !persisted.startsWith('blob:')) persistedImages.push(persisted);
+      } else {
+        persistedImages.push(trimmed);
+      }
+    }
+
+    const cleanMainImage = persistedMain || persistedImages[0] || '';
     if (!cleanMainImage) {
+      setSaving(false);
       showToast("Pilih dan unggah gambar karya terlebih dahulu.", "error");
       return;
     }
-    const finalImages = cleanImages.length > 0 ? cleanImages : [cleanMainImage];
-
-    setSaving(true);
+    const finalImages = persistedImages.length > 0
+      ? (persistedImages.includes(cleanMainImage) ? persistedImages : [cleanMainImage, ...persistedImages])
+      : [cleanMainImage];
 
     const docId = editingProject.id.toString();
     const nowMs = Date.now();
@@ -176,7 +191,14 @@ export default function PortfolioAdmin() {
       archiveFolderId: null,
     };
 
-    // Simpan ke Cloud Firestore terlebih dahulu
+    // 1. Simpan permanen ke LocalStorage & Server Disk (/api/projects) terlebih dahulu
+    await unmarkDeletedIds('projects', [docId]);
+
+    const mergedUpdated = mergeProjects([savedProj], projects);
+    setProjects(mergedUpdated);
+    await saveStoredProjects(mergedUpdated);
+
+    // 2. Sinkronkan ke Cloud Firestore secara non-blocking agar tidak menghalangi penyimpanan utama
     if (!isQuotaExhausted()) {
       try {
         const projectRef = doc(db, 'projects', docId);
@@ -208,26 +230,17 @@ export default function PortfolioAdmin() {
             updatedByAdmin: true,
             updatedAt: new Date(nowMs).toISOString()
           }, { merge: true }),
-          8000,
-          "Waktu penyimpanan ke Cloud Firestore habis."
+          5000,
+          "Waktu sinkronisasi Cloud Firestore habis."
         );
       } catch (err: any) {
         if (isQuotaError(err)) {
           markQuotaExhausted();
         } else {
           logFirestoreError(err, OperationType.WRITE, `projects/${docId}`);
-          showToast(err?.message || "Gagal menyimpan karya ke Firestore.", "error");
-          setSaving(false);
-          return;
         }
       }
     }
-
-    await unmarkDeletedIds('projects', [docId]);
-
-    const mergedUpdated = mergeProjects([savedProj], projects);
-    setProjects(mergedUpdated);
-    await saveStoredProjects(mergedUpdated);
 
     // Jika kolaborasi aktif pada karya ini, langsung terapkan ke pengaturan website agar logo langsung tampil di header & website
     if (savedProj.isCollaboration) {
@@ -432,7 +445,7 @@ export default function PortfolioAdmin() {
       }
 
       if (uploadedResults.length === 0) {
-        throw new Error('Tidak ada URL gambar yang dikembalikan oleh Vercel Blob.');
+        throw new Error('Tidak ada URL gambar yang dikembalikan oleh server.');
       }
 
       const uploadedUrls = uploadedResults.map((r) => r.url);
@@ -441,7 +454,7 @@ export default function PortfolioAdmin() {
       setEditingProject((prev) => {
         if (!prev) return null;
         const prevImages = (prev.images || []).filter(
-          (img) => typeof img === 'string' && !img.startsWith('blob:') && !img.startsWith('data:')
+          (img) => typeof img === 'string' && !img.startsWith('blob:')
         );
         const mergedImages =
           fileList.length === 1
@@ -450,7 +463,7 @@ export default function PortfolioAdmin() {
 
         return {
           ...prev,
-          image: fileList.length === 1 ? primary.url : (prev.image && !prev.image.startsWith('blob:') && !prev.image.startsWith('data:') ? prev.image : primary.url),
+          image: fileList.length === 1 ? primary.url : (prev.image && !prev.image.startsWith('blob:') ? prev.image : primary.url),
           images: mergedImages,
           imageWidth: primary.width,
           imageHeight: primary.height,
@@ -459,12 +472,12 @@ export default function PortfolioAdmin() {
 
       showToast(
         fileList.length === 1
-          ? "Gambar WebP berhasil diunggah ke Vercel Blob! Klik Simpan untuk memperbarui karya."
-          : `${uploadedResults.length} gambar WebP berhasil diunggah ke Vercel Blob! Klik Simpan untuk memperbarui karya.`
+          ? "Gambar WebP berhasil diunggah! Klik Simpan untuk memperbarui karya."
+          : `${uploadedResults.length} gambar WebP berhasil diunggah! Klik Simpan untuk memperbarui karya.`
       );
     } catch (err: any) {
-      const realErrorMsg = err?.message || String(err) || 'Gagal mengunggah gambar ke Vercel Blob.';
-      console.error("Vercel Blob portfolio upload error:", err);
+      const realErrorMsg = err?.message || String(err) || 'Gagal mengunggah gambar karya.';
+      console.error("Portfolio image upload error:", err);
       setUploadError(realErrorMsg);
       showToast(realErrorMsg, "error");
     } finally {
@@ -650,14 +663,20 @@ export default function PortfolioAdmin() {
             <div className="h-full flex flex-col">
               <div className="flex justify-between items-center mb-2">
                 <label className="text-[10px] font-bold text-black dark:text-zinc-400 block">
-                  Gambar Karya (Otomatis WebP &lt; 300 KB • Vercel Blob)
+                  Gambar Karya (Otomatis WebP &lt; 300 KB)
                 </label>
                 {editingProject.image && (
                   <button
                     type="button"
                     onClick={() => {
                       setUploadError(null);
-                      setEditingProject({ ...editingProject, image: '' });
+                      setEditingProject({
+                        ...editingProject,
+                        image: '',
+                        images: [],
+                        imageWidth: undefined,
+                        imageHeight: undefined
+                      });
                     }}
                     className="text-red-500 text-[10px] hover:underline"
                   >
@@ -685,7 +704,7 @@ export default function PortfolioAdmin() {
                   <div className="flex flex-col items-center text-black dark:text-white p-4 text-center">
                     <Loader2 size={32} className="animate-spin mb-3 text-orange-500" />
                     <span className="text-[10px] font-semibold">
-                      {uploadStatusText || "Mengompres & Mengunggah ke Vercel Blob..."}
+                      {uploadStatusText || "Mengompres & Mengunggah Gambar..."}
                     </span>
                   </div>
                 ) : editingProject.image ? (

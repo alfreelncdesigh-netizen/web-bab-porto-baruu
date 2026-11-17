@@ -2010,14 +2010,71 @@ app.post('/api/upload', (req: Request, res: Response): void => {
   });
 });
 
-// Dedicated endpoint untuk upload gambar karya WebP langsung ke Vercel Blob
+// Dedicated endpoint untuk upload gambar karya WebP (Vercel Blob jika dikonfigurasi, fallback otomatis ke /public/uploads/)
 app.post('/api/blob-upload', requireAdminAuth, (req: Request, res: Response): void => {
   const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
-  if (!token) {
-    res.status(500).json({
-      error: 'Konfigurasi Vercel Blob belum diatur: environment variable BLOB_READ_WRITE_TOKEN tidak ditemukan di server.'
+
+  const saveToServerUploads = (fileBuffer: Buffer, rawFilename: string, fallbackReason?: string): void => {
+    const ext = path.extname(rawFilename).toLowerCase();
+    const cleanExt = ['.webp', '.png', '.jpg', '.jpeg'].includes(ext) ? ext : '.webp';
+    const rawBase = path.basename(rawFilename, path.extname(rawFilename))
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'karya';
+    const randomSuffix = crypto.randomBytes(4).toString('hex');
+    const safeName = `portfolio_${Date.now()}_${randomSuffix}_${rawBase}${cleanExt}`;
+    const filePath = path.join(uploadsDir, safeName);
+
+    fs.writeFileSync(filePath, fileBuffer);
+    const publicUrl = `/uploads/${safeName}`;
+    const mime =
+      cleanExt === '.png' ? 'image/png'
+      : cleanExt === '.jpg' || cleanExt === '.jpeg' ? 'image/jpeg'
+      : 'image/webp';
+
+    registerUploadedMedia({
+      url: publicUrl,
+      filename: safeName,
+      size: fileBuffer.length,
+      mimeType: mime,
+      uploadedAt: new Date().toISOString(),
+      dataUrl: `data:${mime};base64,${fileBuffer.toString('base64')}`
     });
-    return;
+
+    if (fallbackReason) {
+      console.warn('[PORTFOLIO UPLOAD] Vercel Blob unavailable, saved locally to uploads:', fallbackReason);
+    }
+
+    res.status(200).json({
+      url: publicUrl,
+      pathname: `portfolio/${safeName}`,
+      size: fileBuffer.length,
+      storage: 'server'
+    });
+  };
+
+  // Dukungan payload JSON { data, filename } jika dipanggil sebagai JSON
+  if (req.body && (req.body.data || req.body.file)) {
+    try {
+      const rawFilename = String(req.body.filename || 'karya.webp');
+      const rawData = String(req.body.data || req.body.file);
+      const base64Data = rawData.replace(/^data:[^;]+;base64,/, '');
+      const fileBuffer = Buffer.from(base64Data, 'base64');
+      if (fileBuffer.length === 0) {
+        res.status(400).json({ error: 'File gambar kosong.' });
+        return;
+      }
+      if (fileBuffer.length > 5 * 1024 * 1024) {
+        res.status(400).json({ error: 'Ukuran file gambar melebihi batas maksimal 5 MB.' });
+        return;
+      }
+      saveToServerUploads(fileBuffer, rawFilename);
+      return;
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Gagal memproses file upload.' });
+      return;
+    }
   }
 
   const chunks: Buffer[] = [];
@@ -2080,29 +2137,45 @@ app.post('/api/blob-upload', requireAdminAuth, (req: Request, res: Response): vo
         return;
       }
 
-      const rawBase = path.basename(filename, path.extname(filename))
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 60) || 'karya';
+      if (token) {
+        try {
+          const rawBase = path.basename(filename, path.extname(filename))
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 60) || 'karya';
+          const ext = path.extname(filename).toLowerCase();
+          const cleanExt = ['.webp', '.png', '.jpg', '.jpeg'].includes(ext) ? ext : '.webp';
+          const mime =
+            cleanExt === '.png' ? 'image/png'
+            : cleanExt === '.jpg' || cleanExt === '.jpeg' ? 'image/jpeg'
+            : 'image/webp';
+          const blobPathname = `portfolio/${Date.now()}-${rawBase}${cleanExt}`;
 
-      const blobPathname = `portfolio/${Date.now()}-${rawBase}.webp`;
+          const blob = await put(blobPathname, fileBuffer, {
+            access: 'public',
+            contentType: mime,
+            addRandomSuffix: false,
+            token
+          });
 
-      const blob = await put(blobPathname, fileBuffer, {
-        access: 'public',
-        contentType: 'image/webp',
-        addRandomSuffix: false,
-        token
-      });
+          res.status(200).json({
+            url: blob.url,
+            pathname: blob.pathname,
+            size: fileBuffer.length,
+            storage: 'vercel-blob'
+          });
+          return;
+        } catch (blobErr: any) {
+          saveToServerUploads(fileBuffer, filename, blobErr?.message || String(blobErr));
+          return;
+        }
+      }
 
-      res.status(200).json({
-        url: blob.url,
-        pathname: blob.pathname,
-        size: fileBuffer.length
-      });
+      saveToServerUploads(fileBuffer, filename);
     } catch (err: any) {
-      const msg = err?.message || String(err) || 'Upload ke Vercel Blob gagal.';
-      console.error('[VERCEL BLOB UPLOAD ERROR]', err);
+      const msg = err?.message || String(err) || 'Upload gambar gagal diproses.';
+      console.error('[PORTFOLIO UPLOAD ERROR]', err);
       res.status(500).json({ error: msg });
     }
   });

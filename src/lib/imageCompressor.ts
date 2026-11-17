@@ -244,12 +244,16 @@ export async function compressPortfolioImageToWebP(
       }
     }
 
-    if (!bestBlob || bestBlob.size === 0 || bestBlob.type !== 'image/webp') {
-      throw new Error('Browser gagal mengonversi gambar ke format WebP.');
+    if (!bestBlob || bestBlob.size === 0) {
+      throw new Error('Browser gagal memproses gambar menjadi file upload.');
     }
 
-    const webpFile = new File([bestBlob], webpFileName, {
-      type: 'image/webp',
+    const actualType = bestBlob.type || 'image/webp';
+    const actualExt = actualType === 'image/png' ? '.png' : actualType === 'image/jpeg' ? '.jpg' : '.webp';
+    const finalFileName = actualExt === '.webp' ? webpFileName : `${baseName}${actualExt}`;
+
+    const webpFile = new File([bestBlob], finalFileName, {
+      type: actualType,
       lastModified: Date.now()
     });
 

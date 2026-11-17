@@ -50,13 +50,12 @@ export async function uploadPortfolioImageToVercelBlob(
   onStage?.(`Mengonversi "${file.name}" ke WebP (maks. 1600px, < 300 KB)...`);
   const compressed = await compressPortfolioImageToWebP(file, 1600, 300 * 1024);
 
-  onStage?.(`Mengunggah "${compressed.file.name}" ke Vercel Blob...`);
+  onStage?.(`Mengunggah "${compressed.file.name}" ke server & cloud...`);
   const formData = new FormData();
   formData.append('file', compressed.file, compressed.file.name);
 
-  let response: Response;
   try {
-    response = await withTimeout(
+    const response = await withTimeout(
       fetch('/api/blob-upload', {
         method: 'POST',
         headers: {
@@ -65,41 +64,50 @@ export async function uploadPortfolioImageToVercelBlob(
         },
         body: formData,
       }),
-      35000,
-      'Batas waktu upload ke Vercel Blob terlampaui. Silakan coba lagi.'
+      25000,
+      'Batas waktu upload server terlampaui.'
     );
-  } catch (netErr: any) {
-    throw new Error(netErr?.message || 'Koneksi ke endpoint upload Vercel Blob gagal.');
+
+    if (response.ok) {
+      const data = await response.json().catch(() => null);
+      const publicUrl = typeof data?.url === 'string' ? data.url.trim() : '';
+      if (publicUrl && (publicUrl.startsWith('/uploads/') || /^https?:\/\//i.test(publicUrl))) {
+        recordMediaPermanently(
+          publicUrl,
+          data?.pathname || compressed.file.name,
+          compressed.size,
+          'works'
+        ).catch(() => {});
+
+        return {
+          url: publicUrl,
+          pathname: data?.pathname || compressed.file.name,
+          width: compressed.width,
+          height: compressed.height,
+          size: compressed.size,
+        };
+      }
+    }
+  } catch (blobErr: any) {
+    console.warn('[Portfolio Upload] Jalur /api/blob-upload beralih ke jalur cadangan:', blobErr?.message || blobErr);
   }
 
-  let data: any = null;
-  try {
-    data = await response.json();
-  } catch {
-    data = null;
-  }
+  onStage?.(`Menyimpan "${compressed.file.name}" melalui jalur penyimpanan cadangan...`);
+  const fallbackUrl = await uploadImageToStorage(
+    compressed.blob,
+    compressed.file.name,
+    undefined,
+    'works',
+    25000
+  );
 
-  if (!response.ok) {
-    const serverMsg = data?.error || `Upload ke Vercel Blob gagal (HTTP ${response.status}).`;
-    throw new Error(serverMsg);
+  if (!fallbackUrl || typeof fallbackUrl !== 'string' || fallbackUrl.startsWith('blob:')) {
+    throw new Error('Gagal mengunggah gambar karya ke penyimpanan server maupun cloud.');
   }
-
-  const publicUrl = typeof data?.url === 'string' ? data.url.trim() : '';
-  if (!publicUrl || !/^https?:\/\//i.test(publicUrl)) {
-    throw new Error('Server tidak mengembalikan URL publik Vercel Blob yang valid.');
-  }
-
-  // Catat hanya metadata URL publik (tanpa base64)
-  recordMediaPermanently(
-    publicUrl,
-    data?.pathname || compressed.file.name,
-    compressed.size,
-    'works'
-  ).catch(() => {});
 
   return {
-    url: publicUrl,
-    pathname: data?.pathname || compressed.file.name,
+    url: fallbackUrl.trim(),
+    pathname: compressed.file.name,
     width: compressed.width,
     height: compressed.height,
     size: compressed.size,
