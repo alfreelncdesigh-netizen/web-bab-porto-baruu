@@ -119,13 +119,33 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
 
     if (method === 'POST' || method === 'PUT') {
       if (method === 'PUT' && Array.isArray(body?.items)) {
-        const { data } = await mutateJsonInBlob<PortfolioJsonData>(
+        const expectedVersion =
+          body?.expectedVersion !== undefined && Number.isFinite(Number(body.expectedVersion))
+            ? Number(body.expectedVersion)
+            : undefined;
+
+        const { data, etag } = await mutateJsonInBlob<PortfolioJsonData>(
           BLOB_PATHS.PORTFOLIO,
-          (current) => ({
-            items: body.items.map((item: any) => normalizeProjectRecord(item)),
-            updatedAt: new Date().toISOString(),
-            version: (current.version || 1) + 1,
-          }),
+          (current, ctx) => {
+            const currentVersion = current.version || 1;
+            if (expectedVersion !== undefined && currentVersion !== expectedVersion) {
+              console.warn('[API PORTFOLIO:VERSION_CONFLICT]', {
+                expectedVersion,
+                currentVersion,
+                attempt: ctx.attempt,
+              });
+              throw new BlobStoreError(
+                'Konflik versi: Daftar karya telah berubah di server sejak terakhir kali dimuat. Muat ulang daftar karya sebelum menyimpan ulang.',
+                409,
+                'PORTFOLIO_VERSION_CONFLICT'
+              );
+            }
+            return {
+              items: body.items.map((item: any) => normalizeProjectRecord(item)),
+              updatedAt: new Date().toISOString(),
+              version: currentVersion + 1,
+            };
+          },
           createInitialPortfolioSeed,
           3
         );
@@ -134,23 +154,49 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
           items: data.items.filter((p: any) => p.isArchived !== true),
           updatedAt: data.updatedAt,
           version: data.version,
+          etag,
         });
         return;
       }
 
-      const incoming = body?.project && typeof body.project === 'object' ? body.project : body;
-      if (!incoming || typeof incoming !== 'object' || (!incoming.title && !incoming.id)) {
+      const rawIncoming = body?.project && typeof body.project === 'object' ? body.project : body;
+      if (!rawIncoming || typeof rawIncoming !== 'object' || (!rawIncoming.title && !rawIncoming.id)) {
         sendJson(res, 400, { error: 'Data karya tidak valid.' });
         return;
       }
 
+      const baseUpdatedAtRaw = body?.baseUpdatedAt ?? rawIncoming?.baseUpdatedAt;
+      const baseUpdatedAt =
+        typeof baseUpdatedAtRaw === 'number' && Number.isFinite(baseUpdatedAtRaw) && baseUpdatedAtRaw > 0
+          ? baseUpdatedAtRaw
+          : undefined;
+      const { baseUpdatedAt: _dropBase, expectedVersion: _dropVer, ...incoming } = rawIncoming;
+
       let savedItem: any = null;
-      const { data } = await mutateJsonInBlob<PortfolioJsonData>(
+      const { data, etag } = await mutateJsonInBlob<PortfolioJsonData>(
         BLOB_PATHS.PORTFOLIO,
-        (current) => {
+        (current, ctx) => {
           const items = Array.isArray(current.items) ? [...current.items] : [];
           const targetId = String(incoming.id ?? Date.now()).trim();
           const idx = items.findIndex((p: any) => String(p?.id) === targetId);
+
+          if (idx >= 0 && baseUpdatedAt !== undefined) {
+            const existingUpdatedAt = Number(items[idx]?.updatedAt || 0);
+            if (existingUpdatedAt > baseUpdatedAt) {
+              console.warn('[API PORTFOLIO:EDIT_CONFLICT]', {
+                targetId,
+                baseUpdatedAt,
+                existingUpdatedAt,
+                attempt: ctx.attempt,
+              });
+              throw new BlobStoreError(
+                'Konflik penyimpanan: Karya ini baru saja diperbarui oleh sesi lain sejak terakhir Anda membukanya. Muat ulang data terbaru sebelum menyimpan ulang.',
+                409,
+                'PORTFOLIO_EDIT_CONFLICT'
+              );
+            }
+          }
+
           savedItem = normalizeProjectRecord({ ...incoming, id: targetId }, idx >= 0 ? items[idx] : undefined);
           if (idx >= 0) {
             items[idx] = savedItem;
@@ -173,6 +219,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
         items: data.items.filter((p: any) => p.isArchived !== true),
         updatedAt: data.updatedAt,
         version: data.version,
+        etag,
       });
       return;
     }

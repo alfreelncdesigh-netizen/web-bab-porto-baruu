@@ -4,7 +4,9 @@ import os from 'os';
 import path from 'path';
 import {
   get,
+  head,
   put,
+  BlobNotFoundError,
   BlobPreconditionFailedError,
   BlobAccessError,
   BlobStoreNotFoundError,
@@ -277,21 +279,43 @@ async function withPathLock<T>(pathname: string, fn: () => Promise<T>): Promise<
   }
 }
 
-function isRetryableBlobError(err: unknown): boolean {
+function normalizeStrongEtag(etag?: string | null): string {
+  const trimmed = String(etag || '').trim();
+  if (!trimmed) return '';
+  return trimmed.startsWith('W/') ? trimmed.slice(2).trim() : trimmed;
+}
+
+function safeEtagSummary(etag?: string | null): string {
+  const trimmed = String(etag || '').trim();
+  if (!trimmed) return 'none';
+  return trimmed.length > 18 ? `${trimmed.slice(0, 6)}...${trimmed.slice(-8)}` : trimmed;
+}
+
+function isConflictBlobError(err: unknown): boolean {
   if (err instanceof BlobPreconditionFailedError) return true;
   const msg = err instanceof Error ? err.message.toLowerCase() : String(err || '').toLowerCase();
   const status = (err as any)?.status || (err as any)?.statusCode;
   return (
     status === 409 ||
     status === 412 ||
+    msg.includes('precondition') ||
+    msg.includes('etag mismatch') ||
+    msg.includes('ifmatch') ||
+    msg.includes('already exists') ||
+    msg.includes('conflict')
+  );
+}
+
+function isRetryableBlobError(err: unknown): boolean {
+  if (isConflictBlobError(err)) return true;
+  if (err instanceof BlobStoreError && err.code === 'BLOB_STALE_READ') return true;
+  const msg = err instanceof Error ? err.message.toLowerCase() : String(err || '').toLowerCase();
+  const status = (err as any)?.status || (err as any)?.statusCode;
+  return (
     status === 429 ||
     status === 502 ||
     status === 503 ||
     status === 504 ||
-    msg.includes('precondition') ||
-    msg.includes('ifmatch') ||
-    msg.includes('already exists') ||
-    msg.includes('conflict') ||
     msg.includes('rate limit') ||
     msg.includes('timed out') ||
     msg.includes('econnreset')
@@ -300,6 +324,10 @@ function isRetryableBlobError(err: unknown): boolean {
 
 function normalizeBlobFailure(err: unknown, context: string): BlobStoreError {
   if (err instanceof BlobStoreError) return err;
+  if (isConflictBlobError(err)) {
+    const msg = err instanceof Error ? err.message : String(err || 'ETag conflict');
+    return new BlobStoreError(`${context}: ${msg}`, 409, 'BLOB_ETAG_CONFLICT');
+  }
   if (err instanceof BlobAccessError || err instanceof BlobStoreNotFoundError || err instanceof BlobStoreSuspendedError) {
     return new BlobStoreError(`${context}: ${err.message}`, 503, 'BLOB_ACCESS_ERROR');
   }
@@ -432,33 +460,107 @@ async function fetchBlobJsonDirect<T>(
   pathname: string,
   token: string
 ): Promise<{ data: T; etag: string } | null> {
-  const result = await get(pathname, {
-    access: 'public',
-    useCache: false,
-    token,
-  });
+  const maxReadSyncAttempts = 3;
+  let lastStaleInfo: Record<string, any> | null = null;
 
-  if (!result || result.statusCode !== 200 || !result.stream) {
-    return null;
+  for (let readAttempt = 0; readAttempt < maxReadSyncAttempts; readAttempt++) {
+    let headMeta: Awaited<ReturnType<typeof head>>;
+    try {
+      headMeta = await head(pathname, { token });
+    } catch (headErr: any) {
+      if (
+        headErr instanceof BlobNotFoundError ||
+        headErr?.status === 404 ||
+        headErr?.statusCode === 404
+      ) {
+        return null;
+      }
+      throw headErr;
+    }
+
+    const expectedStrongEtag = normalizeStrongEtag(headMeta.etag);
+    const targetUrl =
+      readAttempt % 2 === 0
+        ? headMeta.downloadUrl || headMeta.url || pathname
+        : headMeta.url || headMeta.downloadUrl || pathname;
+
+    const result = await get(targetUrl, {
+      access: 'public',
+      useCache: false,
+      headers: {
+        'accept-encoding': 'identity',
+        'cache-control': 'no-cache, no-store, max-age=0',
+        pragma: 'no-cache',
+      },
+      token,
+    });
+
+    if (!result || result.statusCode !== 200 || !result.stream) {
+      if (readAttempt < maxReadSyncAttempts - 1) {
+        await new Promise((r) => setTimeout(r, 80 * (readAttempt + 1)));
+        continue;
+      }
+      return null;
+    }
+
+    const fetchedEtag = normalizeStrongEtag(result.blob?.etag);
+    const rawText = await new Response(result.stream).text();
+    const byteLen = Buffer.byteLength(rawText, 'utf-8');
+
+    const etagMismatch =
+      Boolean(expectedStrongEtag) &&
+      Boolean(fetchedEtag) &&
+      fetchedEtag !== expectedStrongEtag;
+    const sizeMismatchWithoutEtag =
+      !fetchedEtag && typeof headMeta.size === 'number' && headMeta.size > 0 && byteLen !== headMeta.size;
+
+    if (etagMismatch || sizeMismatchWithoutEtag) {
+      lastStaleInfo = {
+        pathname,
+        readAttempt,
+        headEtag: safeEtagSummary(expectedStrongEtag),
+        bodyEtag: safeEtagSummary(fetchedEtag),
+        xVercelCache: result.headers?.get?.('x-vercel-cache') || 'unknown',
+        age: result.headers?.get?.('age') || 'none',
+      };
+      if (readAttempt < maxReadSyncAttempts - 1) {
+        await new Promise((r) => setTimeout(r, 100 * (readAttempt + 1)));
+        continue;
+      }
+      console.warn('[BlobJsonStore:STALE_READ]', lastStaleInfo);
+      throw new BlobStoreError(
+        `Data "${pathname}" yang diterima dari CDN belum sinkron dengan versi terbaru di Vercel Blob. Silakan coba lagi.`,
+        503,
+        'BLOB_STALE_READ'
+      );
+    }
+
+    if (!rawText || !rawText.trim()) {
+      throw new BlobStoreError(`File JSON "${pathname}" di Vercel Blob kosong atau tidak valid.`, 500, 'INVALID_BLOB_JSON');
+    }
+
+    let parsed: T;
+    try {
+      parsed = JSON.parse(rawText) as T;
+    } catch (parseErr: any) {
+      throw new BlobStoreError(
+        `Gagal mengurai JSON dari Vercel Blob (${pathname}): ${parseErr?.message || 'Format JSON rusak'}`,
+        500,
+        'INVALID_BLOB_JSON'
+      );
+    }
+
+    return {
+      data: parsed,
+      etag: expectedStrongEtag || fetchedEtag,
+    };
   }
 
-  const rawText = await new Response(result.stream).text();
-  if (!rawText || !rawText.trim()) {
-    throw new BlobStoreError(`File JSON "${pathname}" di Vercel Blob kosong atau tidak valid.`, 500, 'INVALID_BLOB_JSON');
-  }
-
-  let parsed: T;
-  try {
-    parsed = JSON.parse(rawText) as T;
-  } catch (parseErr: any) {
-    throw new BlobStoreError(
-      `Gagal mengurai JSON dari Vercel Blob (${pathname}): ${parseErr?.message || 'Format JSON rusak'}`,
-      500,
-      'INVALID_BLOB_JSON'
-    );
-  }
-
-  return { data: parsed, etag: result.blob.etag };
+  throw new BlobStoreError(
+    `Gagal menyinkronkan pembacaan terbaru "${pathname}" dari Vercel Blob.`,
+    503,
+    'BLOB_STALE_READ'
+  );
 }
 
 /**
@@ -518,22 +620,29 @@ export async function readJsonFromBlob<T>(
   }
 }
 
+export interface MutateContext {
+  attempt: number;
+  conflictRetry: boolean;
+  etag?: string;
+}
+
 /**
  * Mekanisme anti-race-condition:
- * Mutex lokal + Baca JSON terbaru -> Ubah data -> Validasi bebas base64 -> Tulis dengan ifMatch ETag.
- * Retry maksimal 3 kali jika gagal sementara atau bentrok ETag.
+ * Mutex lokal + Baca JSON & strong ETag terbaru -> Terapkan mutator pada data terbaru ->
+ * Validasi bebas base64 -> Tulis dengan ifMatch strong ETag.
+ * Jika terjadi BlobPreconditionFailedError, baca ulang data & ETag terbaru lalu terapkan ulang mutator.
  * Jika BLOB_READ_WRITE_TOKEN tidak diset, gunakan file JSON lokal terproteksi mutex.
  */
 export async function mutateJsonInBlob<T>(
   pathname: string,
-  mutator: (current: T) => T | Promise<T>,
+  mutator: (current: T, ctx: MutateContext) => T | Promise<T>,
   seedFactory: () => T,
   maxRetries = 3
 ): Promise<{ data: T; etag: string }> {
   const token = isVercelProduction() ? getBlobToken() : getOptionalBlobToken();
   if (!token) {
     try {
-      return await mutateJsonInLocal<T>(pathname, mutator, seedFactory);
+      return await mutateJsonInLocal<T>(pathname, (curr) => mutator(curr, { attempt: 0, conflictRetry: false }), seedFactory);
     } catch (err) {
       throw normalizeBlobFailure(err, `Gagal menyimpan ${pathname} ke penyimpanan JSON lokal`);
     }
@@ -541,14 +650,22 @@ export async function mutateJsonInBlob<T>(
 
   return await withPathLock(pathname, async () => {
     let lastError: unknown = null;
+    let lastAttemptedEtag: string | undefined;
+    let hadConflict = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      let currentEtag: string | undefined;
       try {
         const latest = await fetchBlobJsonDirect<T>(pathname, token);
         const currentData: T = latest ? latest.data : stripTransientFields(seedFactory());
-        const currentEtag = latest?.etag;
+        currentEtag = latest?.etag ? normalizeStrongEtag(latest.etag) : undefined;
+        lastAttemptedEtag = currentEtag;
 
-        const mutatedRaw = await mutator(structuredClone(currentData));
+        const mutatedRaw = await mutator(structuredClone(currentData), {
+          attempt,
+          conflictRetry: attempt > 0 && hadConflict,
+          etag: currentEtag,
+        });
         const nextData = stripTransientFields(mutatedRaw);
         assertNoBase64InJson(nextData, pathname);
 
@@ -562,19 +679,53 @@ export async function mutateJsonInBlob<T>(
           token,
         });
 
-        return { data: nextData, etag: putRes.etag };
+        if (attempt > 0) {
+          console.info('[BlobJsonStore:RETRY_RESOLVED]', {
+            pathname,
+            attempt,
+            hadConflict,
+            newEtag: safeEtagSummary(putRes.etag),
+          });
+        }
+
+        return { data: nextData, etag: normalizeStrongEtag(putRes.etag) || putRes.etag };
       } catch (err) {
         lastError = err;
-        if (err instanceof BlobStoreError && err.statusCode === 400) {
+        if (err instanceof BlobStoreError && (err.statusCode === 400 || err.statusCode === 404 || err.statusCode === 409)) {
           throw err;
         }
+        const conflict = isConflictBlobError(err);
+        if (conflict) {
+          hadConflict = true;
+          console.warn('[BlobJsonStore:ETAG_CONFLICT]', {
+            pathname,
+            attempt,
+            maxRetries,
+            attemptedEtag: safeEtagSummary(currentEtag),
+            errorName: err instanceof Error ? err.name : typeof err,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
         if (attempt < maxRetries && isRetryableBlobError(err)) {
-          const delayMs = 60 * Math.pow(2, attempt) + Math.floor(Math.random() * 40);
+          const delayMs = 80 * Math.pow(2, attempt) + Math.floor(Math.random() * 50);
           await new Promise((r) => setTimeout(r, delayMs));
           continue;
         }
         break;
       }
+    }
+
+    if (isConflictBlobError(lastError)) {
+      console.error('[BlobJsonStore:CONFLICT_EXHAUSTED]', {
+        pathname,
+        attempts: maxRetries + 1,
+        lastAttemptedEtag: safeEtagSummary(lastAttemptedEtag),
+      });
+      throw new BlobStoreError(
+        `Konflik penyimpanan pada ${pathname} setelah ${maxRetries}x percobaan ulang karena data berubah bersamaan di server. Silakan coba simpan lagi.`,
+        409,
+        'BLOB_ETAG_CONFLICT'
+      );
     }
 
     throw normalizeBlobFailure(

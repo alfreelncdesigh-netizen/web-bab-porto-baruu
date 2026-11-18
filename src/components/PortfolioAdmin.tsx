@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import ArchiveMoveModal from './ArchiveMoveModal';
 import ConfirmModal from './ConfirmModal';
 import { motion } from 'motion/react';
@@ -33,6 +33,9 @@ export default function PortfolioAdmin() {
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [togglingDraftIds, setTogglingDraftIds] = useState<Record<string, boolean>>({});
+  const savingRef = useRef(false);
+  const editingBaseUpdatedAtRef = useRef<number | undefined>(undefined);
   const { isSaved, markSaved, resetSaveState } = useAdminSaveState(editingProject);
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -74,7 +77,7 @@ export default function PortfolioAdmin() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingProject) return;
+    if (!editingProject || savingRef.current || saving) return;
     if (uploading) {
       showToast("Tunggu hingga proses upload gambar selesai.", "error");
       return;
@@ -101,6 +104,7 @@ export default function PortfolioAdmin() {
       return;
     }
 
+    savingRef.current = true;
     setSaving(true);
 
     try {
@@ -123,7 +127,6 @@ export default function PortfolioAdmin() {
 
       const cleanMainImage = persistedMain || persistedImages[0] || '';
       if (!cleanMainImage) {
-        setSaving(false);
         showToast("Pilih dan unggah gambar karya terlebih dahulu.", "error");
         return;
       }
@@ -137,6 +140,18 @@ export default function PortfolioAdmin() {
       const persistedCollabLogo = editingProject.collaborationLogo
         ? await ensurePersistedAssetUrl(editingProject.collaborationLogo, 'collaboration')
         : '';
+
+      // Pertahankan URL gambar yang sudah terupload pada state form bahkan jika simpan metadata gagal
+      setEditingProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              image: cleanMainImage,
+              images: finalImages,
+              collaborationLogo: persistedCollabLogo,
+            }
+          : prev
+      );
 
       const savedProj: Project = {
         id: docId,
@@ -165,7 +180,9 @@ export default function PortfolioAdmin() {
         archiveFolderId: null,
       };
 
-      const savedResult = await saveProjectToBlob(savedProj);
+      const savedResult = await saveProjectToBlob(savedProj, {
+        baseUpdatedAt: editingBaseUpdatedAtRef.current,
+      });
       setProjects(savedResult.items);
 
       // Jika kolaborasi aktif pada karya ini, langsung sinkronkan ke pengaturan Vercel Blob
@@ -204,6 +221,10 @@ export default function PortfolioAdmin() {
       } catch {}
 
       const persistedProj = savedResult.item || savedProj;
+      editingBaseUpdatedAtRef.current =
+        typeof persistedProj.updatedAt === 'number' && persistedProj.updatedAt > 0
+          ? persistedProj.updatedAt
+          : savedProj.updatedAt;
       setEditingProject(persistedProj);
       markSaved(persistedProj);
       showToast("Karya berhasil disimpan ke Vercel Blob & langsung tampil di web!");
@@ -211,6 +232,7 @@ export default function PortfolioAdmin() {
     } catch (err: any) {
       showToast(err?.message || "Gagal menyimpan karya ke Vercel Blob.", "error");
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -250,16 +272,25 @@ export default function PortfolioAdmin() {
   };
 
   const handleToggleDraft = async (project: Project) => {
+    const idStr = project.id.toString();
+    if (togglingDraftIds[idStr]) return;
+    setTogglingDraftIds((prev) => ({ ...prev, [idStr]: true }));
     const newDraftStatus = !project.draft;
     try {
       const updated = await patchProjectInBlob({
-        id: project.id.toString(),
+        id: idStr,
         updates: { draft: newDraftStatus },
       });
       setProjects(updated);
       showToast(newDraftStatus ? "Karya disembunyikan (Draft)." : "Karya ditampilkan (Publik).");
     } catch (err: any) {
       showToast(err?.message || "Gagal memperbarui status karya di Vercel Blob.", "error");
+    } finally {
+      setTogglingDraftIds((prev) => {
+        const next = { ...prev };
+        delete next[idStr];
+        return next;
+      });
     }
   };
 
@@ -281,6 +312,7 @@ export default function PortfolioAdmin() {
     }
 
     resetSaveState();
+    editingBaseUpdatedAtRef.current = undefined;
     setUploadError(null);
 
     // Saat menambahkan karya baru, toggle kolaborator selalu OFF secara default
@@ -437,6 +469,7 @@ export default function PortfolioAdmin() {
               type="button"
               onClick={() => {
                 resetSaveState();
+                editingBaseUpdatedAtRef.current = undefined;
                 setEditingProject(null);
               }}
               className="text-black hover:text-black dark:text-zinc-400 dark:hover:text-zinc-500 transition-colors bg-white dark:bg-zinc-900 p-2 rounded-2xl cursor-pointer"
@@ -824,6 +857,7 @@ export default function PortfolioAdmin() {
               type="button"
               onClick={() => {
                 resetSaveState();
+                editingBaseUpdatedAtRef.current = undefined;
                 setEditingProject(null);
               }}
               className="bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 px-6 py-4 text-[10px] font-semibold hover:opacity-80 transition-opacity rounded-2xl active:scale-95 cursor-pointer"
@@ -918,6 +952,10 @@ export default function PortfolioAdmin() {
                   <button
                     onClick={() => {
                       resetSaveState();
+                      editingBaseUpdatedAtRef.current =
+                        typeof project.updatedAt === 'number' && project.updatedAt > 0
+                          ? project.updatedAt
+                          : undefined;
                       setUploadError(null);
                       setEditingProject(project);
                     }}
@@ -936,8 +974,9 @@ export default function PortfolioAdmin() {
                     <span className="text-[11px]">Arsip</span>
                   </button>
                   <button
+                    disabled={Boolean(togglingDraftIds[project.id.toString()])}
                     onClick={() => handleToggleDraft(project)}
-                    className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 ${
+                    className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all active:scale-95 disabled:opacity-50 ${
                       project.draft
                         ? 'bg-zinc-800 text-white dark:bg-zinc-700'
                         : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300'
@@ -1011,6 +1050,10 @@ export default function PortfolioAdmin() {
                       <button
                         onClick={() => {
                           resetSaveState();
+                          editingBaseUpdatedAtRef.current =
+                            typeof project.updatedAt === 'number' && project.updatedAt > 0
+                              ? project.updatedAt
+                              : undefined;
                           setUploadError(null);
                           setEditingProject(project);
                         }}
@@ -1027,8 +1070,9 @@ export default function PortfolioAdmin() {
                         <Archive size={14} />
                       </button>
                       <button
+                        disabled={Boolean(togglingDraftIds[project.id.toString()])}
                         onClick={() => handleToggleDraft(project)}
-                        className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all active:scale-95 cursor-pointer shadow-2xs ${
+                        className={`w-9 h-9 flex items-center justify-center rounded-xl transition-all active:scale-95 cursor-pointer shadow-2xs disabled:opacity-50 ${
                           project.draft
                             ? 'bg-zinc-800 text-white dark:bg-zinc-700'
                             : 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-zinc-300 hover:bg-black hover:text-white dark:hover:bg-white dark:hover:text-black'

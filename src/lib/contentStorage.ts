@@ -929,7 +929,10 @@ export async function fetchProjectsFromBlob(options?: { includeArchived?: boolea
   return run;
 }
 
-export async function saveProjectToBlob(project: Project): Promise<{ item: Project; items: Project[] }> {
+export async function saveProjectToBlob(
+  project: Project,
+  options?: { baseUpdatedAt?: number }
+): Promise<{ item: Project; items: Project[] }> {
   assertNoBase64Payload(project, 'portfolio');
   const res = await fetch('/api/portfolio', {
     method: 'POST',
@@ -938,7 +941,12 @@ export async function saveProjectToBlob(project: Project): Promise<{ item: Proje
       'Content-Type': 'application/json',
       'x-admin-token': ADMIN_AUTH_TOKEN,
     },
-    body: JSON.stringify({ project }),
+    body: JSON.stringify({
+      project,
+      ...(typeof options?.baseUpdatedAt === 'number' && options.baseUpdatedAt > 0
+        ? { baseUpdatedAt: options.baseUpdatedAt }
+        : {}),
+    }),
   });
   const data = await parseApiJson<{ item: Project; items?: Project[] }>(
     res,
