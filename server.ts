@@ -22,6 +22,7 @@ import {
   readJsonFromBlob,
   getOptionalBlobToken,
   getBlobToken,
+  getBlobStoreId,
   isVercelProduction,
   stripDownloadQueryParam,
 } from './api/_lib/blobJsonStore';
@@ -2261,7 +2262,12 @@ app.post('/api/blob-upload', (req: Request, res: Response): void => {
 
 // Health check endpoints for monitoring and probes
 app.get(['/api/health', '/health', '/healthz', '/_health'], (_req: Request, res: Response): void => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.status(200).json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    blobStoreId: getBlobStoreId(),
+    blobConnected: Boolean(getOptionalBlobToken()),
+  });
 });
 
 // Centralized error handling

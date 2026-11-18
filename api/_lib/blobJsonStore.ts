@@ -50,9 +50,27 @@ export function isVercelProduction(): boolean {
   );
 }
 
+export const DEFAULT_BLOB_STORE_ID = 'store_seRRfYn4tAact1K9';
+
+function stripSurroundingQuotes(val?: string | null): string {
+  const trimmed = (val || '').trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+export function getBlobStoreId(): string {
+  const raw = stripSurroundingQuotes(process.env.BLOB_STORE_ID);
+  return raw || DEFAULT_BLOB_STORE_ID;
+}
+
 export function isValidVercelBlobToken(raw?: string | null): boolean {
-  const token = raw?.trim();
-  if (!token) return false;
+  const token = stripSurroundingQuotes(raw);
+  if (!token || /^[*•]+$/.test(token)) return false;
   // Format token Vercel Blob resmi: vercel_blob_rw_<storeId>_<secret>
   const parts = token.split('_');
   return (
@@ -66,13 +84,22 @@ export function isValidVercelBlobToken(raw?: string | null): boolean {
 }
 
 export function getOptionalBlobToken(): string | null {
-  const token = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+  const token = stripSurroundingQuotes(process.env.BLOB_READ_WRITE_TOKEN);
   if (!token) return null;
+  if (/^[*•]+$/.test(token)) {
+    if (!loggedInvalidTokenNotice) {
+      loggedInvalidTokenNotice = true;
+      console.warn(
+        `[BlobJsonStore] BLOB_READ_WRITE_TOKEN untuk store "${getBlobStoreId()}" masih tersensor (****). Masukkan token asli (vercel_blob_rw_...) untuk mengaktifkan koneksi Vercel Blob.`
+      );
+    }
+    return null;
+  }
   if (!isValidVercelBlobToken(token)) {
     if (!loggedInvalidTokenNotice) {
       loggedInvalidTokenNotice = true;
       console.warn(
-        '[BlobJsonStore] BLOB_READ_WRITE_TOKEN ditemukan tetapi formatnya tidak valid (tidak memiliki store ID Vercel Blob).'
+        `[BlobJsonStore] BLOB_READ_WRITE_TOKEN untuk store "${getBlobStoreId()}" ditemukan tetapi formatnya tidak valid (harus diawali vercel_blob_rw_).`
       );
     }
     return null;
@@ -86,7 +113,7 @@ export function getBlobToken(): string {
   const token = getOptionalBlobToken();
   if (!token) {
     throw new BlobStoreError(
-      'Konfigurasi Vercel Blob belum diatur: environment variable BLOB_READ_WRITE_TOKEN tidak ditemukan atau tidak valid di server.',
+      `Konfigurasi Vercel Blob belum aktif untuk store ${getBlobStoreId()}: environment variable BLOB_READ_WRITE_TOKEN belum diisi token asli (vercel_blob_rw_...) di server.`,
       503,
       'BLOB_TOKEN_MISSING'
     );
