@@ -3,9 +3,9 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// Register Service Worker for Static Assets, Images, and Firestore Snapshot Caching
+// Register Service Worker immediately for persistent browser caching of all logos & images
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
+  const registerServiceWorker = () => {
     navigator.serviceWorker
       .register('/sw.js', { scope: '/' })
       .then((registration) => {
@@ -14,16 +14,22 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
           if (installingWorker) {
             installingWorker.onstatechange = () => {
               if (installingWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                console.log('[SW] Versi baru Service Worker aktif untuk aset & snapshot offline.');
+                installingWorker.postMessage({ type: 'SKIP_WAITING' });
               }
             };
           }
         };
       })
       .catch((error) => {
-        console.warn('[SW] Service worker registration error:', error);
+        console.warn('[SW] Service worker registration notice:', error);
       });
-  });
+  };
+
+  if (document.readyState === 'complete') {
+    registerServiceWorker();
+  } else {
+    window.addEventListener('load', registerServiceWorker, { once: true });
+  }
 }
 
 createRoot(document.getElementById('root')!).render(

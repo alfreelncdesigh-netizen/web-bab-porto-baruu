@@ -161,14 +161,6 @@ try {
 // Static file serving for uploads (/uploads/*) and public assets (/images/*, /assets/experiences/*)
 const publicDir = path.resolve(__dirname, 'public');
 
-// Service Worker must always be fresh
-app.get('/sw.js', (_req: Request, res: Response) => {
-  const swPath = path.join(publicDir, 'sw.js');
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Content-Type', 'application/javascript');
-  res.sendFile(swPath);
-});
-
 // Google Search Console Verification Endpoint
 app.get('/google2940fb20d347e64e.html', (_req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');

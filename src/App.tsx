@@ -25,6 +25,8 @@ import {
 } from './lib/contentStorage';
 import { resolveImageUrl } from './lib/imageResolver';
 import { preloadPortfolioImagesFast, markImageLoaded } from './lib/imageLoadCache';
+import { cacheAllWebsiteContent } from './lib/cacheManager';
+import heroAlbiImg from './assets/images/hero-albi.png';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import IntroVideoSplash from './components/IntroVideoSplash';
 
@@ -590,9 +592,20 @@ export default function App() {
     Promise.all([prefetchData(), domReady, minDelay])
       .then(() => {
         setIsAppLoading(false);
+        // Segera simpan cache seluruh logo & gambar di semua menu ke Browser Cache Storage
+        // agar kunjungan ulang di perangkat & browser yang sama tidak memakan transfer Vercel Blob.
+        cacheAllWebsiteContent({
+          includeAllMenus: true,
+          extraUrls: [heroAlbiImg],
+          pruneOrphans: true,
+        }).catch(() => {});
       })
       .catch(() => {
         setIsAppLoading(false);
+        cacheAllWebsiteContent({
+          includeAllMenus: true,
+          extraUrls: [heroAlbiImg],
+        }).catch(() => {});
       });
 
     const maxFallback = setTimeout(() => {

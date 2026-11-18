@@ -236,6 +236,7 @@ export default async function handler(
       access: 'public',
       contentType: typeInfo.mime,
       addRandomSuffix: false,
+      cacheControlMaxAge: 31536000,
       token,
     });
 
