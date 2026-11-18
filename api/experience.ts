@@ -5,18 +5,19 @@ import {
   mutateJsonInBlob,
   readJsonFromBlob,
   sanitizeStoredMediaUrl,
-} from './_lib/blobJsonStore';
+} from './_lib/blobJsonStore.js';
 import {
   type ApiRequest,
   getQueryParam,
   isAdminAuthorized,
+  logSafeApiError,
   readJsonBody,
   sendJson,
-} from './_lib/httpHelpers';
+} from './_lib/httpHelpers.js';
 import {
   createInitialExperienceSeed,
   type ExperienceJsonData,
-} from './_lib/seedDefaults';
+} from './_lib/seedDefaults.js';
 
 function normalizeExperienceRecord(raw: any, existing?: any): any {
   const id = String(raw?.id ?? existing?.id ?? Date.now()).trim();
@@ -263,7 +264,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
   } catch (err: any) {
     const status = err instanceof BlobStoreError ? err.statusCode : 500;
     const code = err instanceof BlobStoreError ? err.code : 'EXPERIENCE_ERROR';
-    console.error('[API EXPERIENCE ERROR]', err);
+    logSafeApiError('API EXPERIENCE ERROR', err);
     sendJson(res, status, {
       error: err?.message || 'Gagal mengakses data pengalaman di Vercel Blob.',
       code,

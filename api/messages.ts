@@ -4,18 +4,19 @@ import {
   BlobStoreError,
   mutateJsonInBlob,
   readJsonFromBlob,
-} from './_lib/blobJsonStore';
+} from './_lib/blobJsonStore.js';
 import {
   type ApiRequest,
   getQueryParam,
   isAdminAuthorized,
+  logSafeApiError,
   readJsonBody,
   sendJson,
-} from './_lib/httpHelpers';
+} from './_lib/httpHelpers.js';
 import {
   createInitialMessagesSeed,
   type ItemsJsonData,
-} from './_lib/seedDefaults';
+} from './_lib/seedDefaults.js';
 
 const DUMMY_COMMENT_NAMES = new Set(['Rahmat Hidayat', 'Siti Nurhaliza', 'Dimas Pratama', 'Putri Ayu Lestari']);
 const DUMMY_COMMENT_IDS = new Set(['msg_1730000101', 'msg_1730000102', 'msg_1730000103', 'msg_1730000104']);
@@ -131,7 +132,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
   } catch (err: any) {
     const status = err instanceof BlobStoreError ? err.statusCode : 500;
     const code = err instanceof BlobStoreError ? err.code : 'MESSAGES_ERROR';
-    console.error('[API MESSAGES ERROR]', err);
+    logSafeApiError('API MESSAGES ERROR', err);
     sendJson(res, status, {
       error: err?.message || 'Gagal mengakses data pesan.',
       code,

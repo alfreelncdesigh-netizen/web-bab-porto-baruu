@@ -63,3 +63,24 @@ export async function readJsonBody(req: ApiRequest): Promise<any> {
   if (!raw) return {};
   return JSON.parse(raw);
 }
+
+function redactSecrets(text: string): string {
+  return text
+    .replace(/vercel_blob_rw_[A-Za-z0-9_-]+/gi, '[REDACTED_BLOB_TOKEN]')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]');
+}
+
+export function logSafeApiError(scope: string, err: unknown): void {
+  if (err instanceof Error) {
+    const code = (err as any)?.code || (err as any)?.statusCode || 'UNKNOWN';
+    console.error(`[${scope}]`, {
+      name: err.name,
+      code,
+      message: redactSecrets(err.message || ''),
+      stack: err.stack ? redactSecrets(err.stack) : undefined,
+    });
+    return;
+  }
+  console.error(`[${scope}]`, redactSecrets(String(err || 'Unknown error')));
+}
+

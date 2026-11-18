@@ -13,7 +13,7 @@ import {
 import {
   createInitialStatsSeed,
   type StatsData,
-} from './seedDefaults';
+} from './seedDefaults.js';
 
 export const BLOB_PATHS = {
   STATS: 'data/stats.json',

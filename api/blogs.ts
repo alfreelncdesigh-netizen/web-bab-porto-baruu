@@ -5,18 +5,19 @@ import {
   mutateJsonInBlob,
   readJsonFromBlob,
   sanitizeStoredMediaUrl,
-} from './_lib/blobJsonStore';
+} from './_lib/blobJsonStore.js';
 import {
   type ApiRequest,
   getQueryParam,
   isAdminAuthorized,
+  logSafeApiError,
   readJsonBody,
   sendJson,
-} from './_lib/httpHelpers';
+} from './_lib/httpHelpers.js';
 import {
   createInitialBlogsSeed,
   type ItemsJsonData,
-} from './_lib/seedDefaults';
+} from './_lib/seedDefaults.js';
 
 function normalizeBlogRecord(raw: any, existing?: any): any {
   const id = String(raw?.id ?? existing?.id ?? Date.now()).trim();
@@ -237,7 +238,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
   } catch (err: any) {
     const status = err instanceof BlobStoreError ? err.statusCode : 500;
     const code = err instanceof BlobStoreError ? err.code : 'BLOGS_ERROR';
-    console.error('[API BLOGS ERROR]', err);
+    logSafeApiError('API BLOGS ERROR', err);
     sendJson(res, status, {
       error: err?.message || 'Gagal mengakses data blog.',
       code,

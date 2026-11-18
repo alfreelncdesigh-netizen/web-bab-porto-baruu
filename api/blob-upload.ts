@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import path from 'path';
 import { put } from '@vercel/blob';
-import { BlobStoreError, getBlobToken, stripDownloadQueryParam } from './_lib/blobJsonStore';
+import { BlobStoreError, getBlobToken, stripDownloadQueryParam } from './_lib/blobJsonStore.js';
+import { logSafeApiError } from './_lib/httpHelpers.js';
 
 export const config = {
   api: {
@@ -252,7 +253,7 @@ export default async function handler(
     );
   } catch (err: any) {
     const msg = err?.message || String(err) || 'Upload ke Vercel Blob gagal.';
-    console.error('[VERCEL BLOB UPLOAD ERROR]', err);
+    logSafeApiError('API BLOB UPLOAD ERROR', err);
     res.statusCode = 500;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: msg }));

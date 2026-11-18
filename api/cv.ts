@@ -5,19 +5,20 @@ import {
   mutateJsonInBlob,
   readJsonFromBlob,
   sanitizeStoredMediaUrl,
-} from './_lib/blobJsonStore';
+} from './_lib/blobJsonStore.js';
 import {
   type ApiRequest,
   isAdminAuthorized,
+  logSafeApiError,
   readJsonBody,
   sendJson,
-} from './_lib/httpHelpers';
+} from './_lib/httpHelpers.js';
 import {
   createInitialCvSeed,
   type CvJsonData,
   type CvSectionSeed,
   DEFAULT_CV_SECTIONS,
-} from './_lib/seedDefaults';
+} from './_lib/seedDefaults.js';
 
 function normalizeCvSections(rawSections: any[]): CvSectionSeed[] {
   return rawSections.map((sec: any) => ({
@@ -102,7 +103,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
   } catch (err: any) {
     const status = err instanceof BlobStoreError ? err.statusCode : 500;
     const code = err instanceof BlobStoreError ? err.code : 'CV_ERROR';
-    console.error('[API CV ERROR]', err);
+    logSafeApiError('API CV ERROR', err);
     sendJson(res, status, {
       error: err?.message || 'Gagal mengakses data CV di Vercel Blob.',
       code,

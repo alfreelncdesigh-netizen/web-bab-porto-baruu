@@ -5,18 +5,19 @@ import {
   mutateJsonInBlob,
   readJsonFromBlob,
   sanitizeStoredMediaUrl,
-} from './_lib/blobJsonStore';
+} from './_lib/blobJsonStore.js';
 import {
   type ApiRequest,
   isAdminAuthorized,
+  logSafeApiError,
   readJsonBody,
   sendJson,
-} from './_lib/httpHelpers';
+} from './_lib/httpHelpers.js';
 import {
   createInitialSiteSettingsSeed,
   DEFAULT_SITE_SETTINGS_SEED,
   type SiteSettingsJsonData,
-} from './_lib/seedDefaults';
+} from './_lib/seedDefaults.js';
 
 export default async function handler(req: ApiRequest, res: ServerResponse): Promise<void> {
   const method = (req.method || 'GET').toUpperCase();
@@ -157,7 +158,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
   } catch (err: any) {
     const status = err instanceof BlobStoreError ? err.statusCode : 500;
     const code = err instanceof BlobStoreError ? err.code : 'SITE_SETTINGS_ERROR';
-    console.error('[API SITE SETTINGS ERROR]', err);
+    logSafeApiError('API SITE SETTINGS ERROR', err);
     sendJson(res, status, {
       error: err?.message || 'Gagal mengakses pengaturan situs di Vercel Blob.',
       code,

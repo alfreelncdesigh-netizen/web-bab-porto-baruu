@@ -5,18 +5,19 @@ import {
   mutateJsonInBlob,
   readJsonFromBlob,
   sanitizeStoredMediaUrl,
-} from './_lib/blobJsonStore';
+} from './_lib/blobJsonStore.js';
 import {
   type ApiRequest,
   getQueryParam,
   isAdminAuthorized,
+  logSafeApiError,
   readJsonBody,
   sendJson,
-} from './_lib/httpHelpers';
+} from './_lib/httpHelpers.js';
 import {
   createInitialQuickFilterSeed,
   type ItemsJsonData,
-} from './_lib/seedDefaults';
+} from './_lib/seedDefaults.js';
 
 function normalizeQuickFilterRecord(raw: any, existing?: any): any {
   const id = String(raw?.id ?? existing?.id ?? `qfa_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`).trim();
@@ -170,7 +171,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
   } catch (err: any) {
     const status = err instanceof BlobStoreError ? err.statusCode : 500;
     const code = err instanceof BlobStoreError ? err.code : 'QUICK_FILTER_ERROR';
-    console.error('[API QUICK FILTER ERROR]', err);
+    logSafeApiError('API QUICK FILTER ERROR', err);
     sendJson(res, status, {
       error: err?.message || 'Gagal mengakses data Quick Filter.',
       code,
