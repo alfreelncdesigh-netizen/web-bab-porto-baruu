@@ -1,8 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import path from 'path';
 import { put } from '@vercel/blob';
-import { BlobStoreError, getBlobToken, stripDownloadQueryParam } from './_lib/blobJsonStore.js';
+import { BlobStoreError, getOptionalBlobToken, stripDownloadQueryParam } from './_lib/blobJsonStore.js';
 import { logSafeApiError } from './_lib/httpHelpers.js';
+import {
+  computeUrlSha1,
+  isQuotaOrOriginFailure,
+  saveMediaToServerCache,
+} from './_lib/serverCache.js';
 
 export const config = {
   api: {
@@ -169,23 +174,7 @@ export default async function handler(
     return;
   }
 
-  let token: string;
-  try {
-    token = getBlobToken();
-  } catch (err: any) {
-    const status = err instanceof BlobStoreError ? err.statusCode : 503;
-    res.statusCode = status;
-    res.setHeader('Content-Type', 'application/json');
-    res.end(
-      JSON.stringify({
-        error:
-          err?.message ||
-          'Konfigurasi Vercel Blob belum diatur: environment variable BLOB_READ_WRITE_TOKEN tidak ditemukan di server.',
-        code: 'BLOB_TOKEN_MISSING',
-      })
-    );
-    return;
-  }
+  const token = getOptionalBlobToken();
 
   try {
     const chunks: Buffer[] = [];
@@ -232,30 +221,81 @@ export default async function handler(
 
     const blobPathname = `${requestedFolder}/${Date.now()}-${rawBase}${typeInfo.ext}`;
 
-    const blob = await put(blobPathname, fileBuffer, {
-      access: 'public',
-      contentType: typeInfo.mime,
-      addRandomSuffix: false,
-      cacheControlMaxAge: 31536000,
-      token,
-    });
+    if (token) {
+      try {
+        const blob = await put(blobPathname, fileBuffer, {
+          access: 'public',
+          contentType: typeInfo.mime,
+          addRandomSuffix: false,
+          cacheControlMaxAge: 31536000,
+          token,
+        });
 
-    const cleanUrl = stripDownloadQueryParam(blob.url);
+        const cleanUrl = stripDownloadQueryParam(blob.url);
+        const serverCached = await saveMediaToServerCache(
+          cleanUrl,
+          fileBuffer,
+          typeInfo.mime,
+          path.basename(blob.pathname),
+          { awaitFirestore: true }
+        );
+
+        res.statusCode = 200;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(
+          JSON.stringify({
+            url: cleanUrl,
+            pathname: blob.pathname,
+            size: fileBuffer.length,
+            storage: 'vercel-blob',
+            serverCached,
+          })
+        );
+        return;
+      } catch (blobErr: any) {
+        if (!isQuotaOrOriginFailure(blobErr)) {
+          throw blobErr;
+        }
+        logSafeApiError('API BLOB UPLOAD QUOTA FALLBACK', blobErr);
+      }
+    }
+
+    // Fallback ke Server Cache (Memory + /tmp + Firestore) saat limit token Vercel Blob habis / token tidak aktif
+    const cacheDocKey = `upload_${Date.now()}_${computeUrlSha1(blobPathname).slice(0, 12)}`;
+    const fallbackProxyUrl = `/api/media-cache?url=${encodeURIComponent(`/uploads/${cacheDocKey}${typeInfo.ext}`)}`;
+    const syntheticCacheKeyUrl = `/uploads/${cacheDocKey}${typeInfo.ext}`;
+    const saved = await saveMediaToServerCache(
+      syntheticCacheKeyUrl,
+      fileBuffer,
+      typeInfo.mime,
+      `${cacheDocKey}${typeInfo.ext}`,
+      { awaitFirestore: true }
+    );
+
+    if (!saved) {
+      throw new BlobStoreError(
+        'Konfigurasi Vercel Blob belum aktif atau limit habis dan server cache gagal menyimpan file.',
+        503,
+        'BLOB_UPLOAD_UNAVAILABLE'
+      );
+    }
 
     res.statusCode = 200;
     res.setHeader('Content-Type', 'application/json');
     res.end(
       JSON.stringify({
-        url: cleanUrl,
-        pathname: blob.pathname,
+        url: fallbackProxyUrl,
+        pathname: blobPathname,
         size: fileBuffer.length,
-        storage: 'vercel-blob',
+        storage: 'server-cache',
+        serverCached: true,
       })
     );
   } catch (err: any) {
+    const status = err instanceof BlobStoreError ? err.statusCode : 500;
     const msg = err?.message || String(err) || 'Upload ke Vercel Blob gagal.';
     logSafeApiError('API BLOB UPLOAD ERROR', err);
-    res.statusCode = 500;
+    res.statusCode = status;
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ error: msg }));
   }

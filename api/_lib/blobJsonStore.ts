@@ -16,6 +16,11 @@ import {
   createInitialStatsSeed,
   type StatsData,
 } from './seedDefaults.js';
+import {
+  isQuotaOrOriginFailure,
+  readJsonFromServerCache,
+  syncJsonToServerCache,
+} from './serverCache.js';
 
 export const BLOB_PATHS = {
   STATS: 'data/stats.json',
@@ -571,18 +576,34 @@ export async function readJsonFromBlob<T>(
   pathname: string,
   seedFactory: () => T
 ): Promise<{ data: T; etag: string }> {
-  const token = isVercelProduction() ? getBlobToken() : getOptionalBlobToken();
+  const token = getOptionalBlobToken();
   if (!token) {
-    try {
-      return await readJsonFromLocal<T>(pathname, seedFactory);
-    } catch (err) {
-      throw normalizeBlobFailure(err, `Gagal membaca ${pathname} dari penyimpanan JSON lokal`);
+    if (!isVercelProduction()) {
+      try {
+        const localRes = await readJsonFromLocal<T>(pathname, seedFactory);
+        void syncJsonToServerCache(pathname, localRes.data, localRes.etag);
+        return localRes;
+      } catch {
+        // Continue to server cache fallback
+      }
     }
+
+    const serverCached = await readJsonFromServerCache<T>(pathname);
+    if (serverCached) {
+      console.warn(`[BlobJsonStore:SERVER_CACHE_FALLBACK] Token Blob tidak aktif, menyajikan ${pathname} dari ${serverCached.source}.`);
+      return { data: serverCached.data, etag: serverCached.etag };
+    }
+
+    const seedData = stripTransientFields(seedFactory());
+    const seedEtag = computeLocalEtag(JSON.stringify(seedData));
+    console.warn(`[BlobJsonStore:SEED_FALLBACK] Menyajikan fallback awal untuk ${pathname}.`);
+    return { data: seedData, etag: seedEtag };
   }
 
   try {
     const existing = await fetchBlobJsonDirect<T>(pathname, token);
     if (existing) {
+      void syncJsonToServerCache(pathname, existing.data, existing.etag);
       return existing;
     }
 
@@ -590,6 +611,7 @@ export async function readJsonFromBlob<T>(
     return await withPathLock(pathname, async () => {
       const doubleCheck = await fetchBlobJsonDirect<T>(pathname, token);
       if (doubleCheck) {
+        void syncJsonToServerCache(pathname, doubleCheck.data, doubleCheck.etag);
         return doubleCheck;
       }
 
@@ -605,17 +627,38 @@ export async function readJsonFromBlob<T>(
           cacheControlMaxAge: 60,
           token,
         });
+        await syncJsonToServerCache(pathname, initialData, created.etag, { awaitFirestore: true });
         return { data: initialData, etag: created.etag };
       } catch (putErr) {
         // Jika request paralel lain lebih dulu membuat blob ini, baca hasilnya
         if (isRetryableBlobError(putErr)) {
           const raceRead = await fetchBlobJsonDirect<T>(pathname, token);
-          if (raceRead) return raceRead;
+          if (raceRead) {
+            void syncJsonToServerCache(pathname, raceRead.data, raceRead.etag);
+            return raceRead;
+          }
         }
         throw putErr;
       }
     });
   } catch (err) {
+    if (isQuotaOrOriginFailure(err) || (err instanceof BlobStoreError && err.statusCode >= 500)) {
+      const serverCached = await readJsonFromServerCache<T>(pathname);
+      if (serverCached) {
+        console.warn(`[BlobJsonStore:SERVER_CACHE_FALLBACK] Vercel Blob gagal/limit habis untuk ${pathname}, menyajikan dari ${serverCached.source}.`);
+        return { data: serverCached.data, etag: serverCached.etag };
+      }
+      if (!isVercelProduction()) {
+        try {
+          const localRes = readLocalJsonDirect<T>(pathname);
+          if (localRes) return localRes;
+        } catch {}
+      }
+      const fallbackData = stripTransientFields(seedFactory());
+      const fallbackEtag = computeLocalEtag(JSON.stringify(fallbackData));
+      console.warn(`[BlobJsonStore:SEED_FALLBACK] Menyajikan seed fallback untuk ${pathname} setelah error Blob.`);
+      return { data: fallbackData, etag: fallbackEtag };
+    }
     throw normalizeBlobFailure(err, `Gagal membaca ${pathname} dari Vercel Blob`);
   }
 }
@@ -688,7 +731,10 @@ export async function mutateJsonInBlob<T>(
           });
         }
 
-        return { data: nextData, etag: normalizeStrongEtag(putRes.etag) || putRes.etag };
+        const finalEtag = normalizeStrongEtag(putRes.etag) || putRes.etag;
+        await syncJsonToServerCache(pathname, nextData, finalEtag, { awaitFirestore: true });
+
+        return { data: nextData, etag: finalEtag };
       } catch (err) {
         lastError = err;
         if (err instanceof BlobStoreError && (err.statusCode === 400 || err.statusCode === 404 || err.statusCode === 409)) {
@@ -798,6 +844,25 @@ export async function readStatsWithCache(): Promise<{
       const expiresAt = Date.now() + STATS_CACHE_TTL_MS;
       statsMemoryCache = { data: normalized, expiresAt };
       return { data: normalized, cached: false, cachedUntil: expiresAt };
+    } catch (err) {
+      if (statsMemoryCache) {
+        return {
+          data: statsMemoryCache.data,
+          cached: true,
+          cachedUntil: Date.now() + 60_000,
+        };
+      }
+      const cached = await readJsonFromServerCache<StatsData>(BLOB_PATHS.STATS);
+      const normalized = normalizeStatsPayload(cached?.data || createInitialStatsSeed());
+      const expiresAt = Date.now() + 60_000;
+      statsMemoryCache = { data: normalized, expiresAt };
+      if (cached) {
+        return { data: normalized, cached: true, cachedUntil: expiresAt };
+      }
+      if (isQuotaOrOriginFailure(err)) {
+        return { data: normalized, cached: true, cachedUntil: expiresAt };
+      }
+      throw err;
     } finally {
       statsReadInFlight = null;
     }
@@ -811,24 +876,43 @@ export async function incrementStatsView(): Promise<{
   cachedUntil: number;
 }> {
   const todayKey = getTodayDateKey();
-  const { data } = await mutateJsonInBlob<StatsData>(
-    BLOB_PATHS.STATS,
-    (current) => {
-      const norm = normalizeStatsPayload(current);
+  try {
+    const { data } = await mutateJsonInBlob<StatsData>(
+      BLOB_PATHS.STATS,
+      (current) => {
+        const norm = normalizeStatsPayload(current);
+        const nextDaily = { ...norm.dailyViews };
+        nextDaily[todayKey] = (nextDaily[todayKey] || 0) + 1;
+        return {
+          totalViews: norm.totalViews + 1,
+          dailyViews: nextDaily,
+          updatedAt: new Date().toISOString(),
+        };
+      },
+      createInitialStatsSeed,
+      3
+    );
+
+    const normalized = normalizeStatsPayload(data);
+    const expiresAt = Date.now() + STATS_CACHE_TTL_MS;
+    statsMemoryCache = { data: normalized, expiresAt };
+    return { data: normalized, cachedUntil: expiresAt };
+  } catch (err) {
+    if (isQuotaOrOriginFailure(err)) {
+      const base = statsMemoryCache?.data || (await readJsonFromServerCache<StatsData>(BLOB_PATHS.STATS))?.data || createInitialStatsSeed();
+      const norm = normalizeStatsPayload(base);
       const nextDaily = { ...norm.dailyViews };
       nextDaily[todayKey] = (nextDaily[todayKey] || 0) + 1;
-      return {
+      const nextStats: StatsData = {
         totalViews: norm.totalViews + 1,
         dailyViews: nextDaily,
         updatedAt: new Date().toISOString(),
       };
-    },
-    createInitialStatsSeed,
-    3
-  );
-
-  const normalized = normalizeStatsPayload(data);
-  const expiresAt = Date.now() + STATS_CACHE_TTL_MS;
-  statsMemoryCache = { data: normalized, expiresAt };
-  return { data: normalized, cachedUntil: expiresAt };
+      const expiresAt = Date.now() + STATS_CACHE_TTL_MS;
+      statsMemoryCache = { data: nextStats, expiresAt };
+      void syncJsonToServerCache(BLOB_PATHS.STATS, nextStats, computeLocalEtag(JSON.stringify(nextStats)));
+      return { data: nextStats, cachedUntil: expiresAt };
+    }
+    throw err;
+  }
 }

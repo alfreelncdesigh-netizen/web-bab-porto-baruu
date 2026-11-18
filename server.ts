@@ -17,6 +17,7 @@ import messagesHandler from './api/messages';
 import quickFilterHandler from './api/quick-filter';
 import blogCommentsHandler from './api/blog-comments';
 import ordersHandler from './api/orders';
+import mediaCacheHandler from './api/media-cache';
 import {
   BLOB_PATHS,
   readJsonFromBlob,
@@ -26,6 +27,11 @@ import {
   isVercelProduction,
   stripDownloadQueryParam,
 } from './api/_lib/blobJsonStore';
+import {
+  computeUrlSha1,
+  isQuotaOrOriginFailure,
+  saveMediaToServerCache,
+} from './api/_lib/serverCache';
 import {
   createInitialPortfolioSeed,
   createInitialSiteSettingsSeed,
@@ -1207,6 +1213,10 @@ app.all('/api/orders/:id', (req: Request, res: Response): void => {
   void ordersHandler(req as any, res);
 });
 
+app.all('/api/media-cache', (req: Request, res: Response): void => {
+  void mediaCacheHandler(req as any, res);
+});
+
 app.get('/api/settings', (_req: Request, res: Response): void => {
   try {
     if (fs.existsSync(settingsFilePath)) {
@@ -2163,21 +2173,53 @@ app.post('/api/blob-upload', (req: Request, res: Response): void => {
       return;
     }
 
-    const blob = await put(blobPathname, fileBuffer, {
-      access: 'public',
-      contentType: typeInfo.mime,
-      addRandomSuffix: false,
-      token
-    });
+    try {
+      const blob = await put(blobPathname, fileBuffer, {
+        access: 'public',
+        contentType: typeInfo.mime,
+        addRandomSuffix: false,
+        cacheControlMaxAge: 31536000,
+        token
+      });
 
-    const cleanUrl = stripDownloadQueryParam(blob.url);
+      const cleanUrl = stripDownloadQueryParam(blob.url);
+      const serverCached = await saveMediaToServerCache(
+        cleanUrl,
+        fileBuffer,
+        typeInfo.mime,
+        path.basename(blob.pathname),
+        { awaitFirestore: true }
+      );
 
-    res.status(200).json({
-      url: cleanUrl,
-      pathname: blob.pathname,
-      size: fileBuffer.length,
-      storage: 'vercel-blob'
-    });
+      res.status(200).json({
+        url: cleanUrl,
+        pathname: blob.pathname,
+        size: fileBuffer.length,
+        storage: 'vercel-blob',
+        serverCached,
+      });
+    } catch (blobErr: any) {
+      if (!isQuotaOrOriginFailure(blobErr)) {
+        throw blobErr;
+      }
+      const cacheDocKey = `upload_${Date.now()}_${computeUrlSha1(blobPathname).slice(0, 12)}`;
+      const syntheticCacheKeyUrl = `/uploads/${cacheDocKey}${typeInfo.ext}`;
+      const fallbackProxyUrl = `/api/media-cache?url=${encodeURIComponent(syntheticCacheKeyUrl)}`;
+      await saveMediaToServerCache(
+        syntheticCacheKeyUrl,
+        fileBuffer,
+        typeInfo.mime,
+        `${cacheDocKey}${typeInfo.ext}`,
+        { awaitFirestore: true }
+      );
+      res.status(200).json({
+        url: fallbackProxyUrl,
+        pathname: blobPathname,
+        size: fileBuffer.length,
+        storage: 'server-cache',
+        serverCached: true,
+      });
+    }
   };
 
   // Dukungan payload JSON { data, filename } jika dipanggil sebagai JSON
