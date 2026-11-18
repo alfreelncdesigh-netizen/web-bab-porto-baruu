@@ -3,9 +3,9 @@
     "id": "1788397101836",
     "description": "Menjadi peserta Lomba Kompetensi Siswa Antar Provinsi dalam bidang teknologi Desain Grafis yang dilaksanakan di universitas Teknologi Akba Makassar (UNITAMA) tahun 2026",
     "images": [
-      "/uploads/exp_item_0_0_1793870573838.png",
-      "/uploads/exp_item_0_1_1793870573841.jpg",
-      "/uploads/exp_item_0_2_1793870573843.jpg"
+      "https://serrfyn4taact1k9.public.blob.vercel-storage.com/experiences/exp_item_0_0_1793870573838.png",
+      "https://serrfyn4taact1k9.public.blob.vercel-storage.com/experiences/exp_item_0_1_1793870573841.jpg",
+      "https://serrfyn4taact1k9.public.blob.vercel-storage.com/experiences/exp_item_0_2_1793870573843.jpg"
     ],
     "dateAdded": {
       "type": "firestore/timestamp/1.0",
@@ -13,12 +13,13 @@
       "nanoseconds": 533000000
     },
     "subtheme": "UPT SMKN 1 Sinjai, LKS, Universitas Teknologi Akba Makassar",
-    "header": "Peserta LKS (Lomba Kompetensi Siswa) Bidang Teknologi Desain Grafis tahun 2026"
+    "header": "Peserta LKS (Lomba Kompetensi Siswa) Bidang Teknologi Desain Grafis tahun 2026",
+    "image": "https://serrfyn4taact1k9.public.blob.vercel-storage.com/experiences/exp_item_0_0_1793870573838.png"
   },
   {
     "id": "1788245774840",
     "images": [
-      "/uploads/exp_item_1_0_1793870573846.png"
+      "https://serrfyn4taact1k9.public.blob.vercel-storage.com/experiences/exp_item_1_0_1793870573846.png"
     ],
     "dateAdded": {
       "type": "firestore/timestamp/1.0",
@@ -27,6 +28,7 @@
     },
     "description": "Berhasil menjuarai lomba desain poster antar sekolah tingkat SMK/SMA/MA yang di adakan oleh Rohis UPT SMA 5 Sinjai yang bekerja sama dengan Rohis Kabupaten dalam rangkat ISLAFEST (Islamic Festival) 2026",
     "subtheme": "SMA NEGERI 5 SINJAI, Rohis Kabupaten Sinjai",
-    "header": "JUARA 1 DESAIN POSTER ANTAR SEKOLAH TINGKAT SMK/SMA/MA "
+    "header": "JUARA 1 DESAIN POSTER ANTAR SEKOLAH TINGKAT SMK/SMA/MA ",
+    "image": "https://serrfyn4taact1k9.public.blob.vercel-storage.com/experiences/exp_item_1_0_1793870573846.png"
   }
 ]

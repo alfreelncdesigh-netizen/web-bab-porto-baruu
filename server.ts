@@ -964,8 +964,22 @@ async function persistImageSourceToExperienceAssets(rawUrl: string): Promise<str
     } catch {}
   }
 
-  // 4. Jika URL eksternal (https:// / http://, misal Firebase Storage / Vercel Blob / URL internet) -> unduh & simpan fisik ke public/assets/experiences/
+  // 4. Pertahankan URL permanen Vercel Blob / Cloud Storage agar tidak diubah ke path disk lokal yang hilang saat deploy Vercel
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const parsed = new URL(trimmed);
+      if (
+        parsed.hostname.endsWith('.vercel-storage.com') ||
+        parsed.hostname.includes('firebasestorage.googleapis.com') ||
+        parsed.hostname.includes('res.cloudinary.com')
+      ) {
+        if (parsed.hostname.endsWith('.vercel-storage.com') && parsed.protocol === 'http:') {
+          parsed.protocol = 'https:';
+        }
+        parsed.searchParams.delete('download');
+        return parsed.toString();
+      }
+    } catch {}
     try {
       const urlHash = crypto.createHash('sha1').update(trimmed).digest('hex').slice(0, 12);
       const urlPathName = (() => {

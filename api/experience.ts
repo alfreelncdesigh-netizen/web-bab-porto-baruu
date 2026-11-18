@@ -187,14 +187,22 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
           const items = (Array.isArray(current.items) ? current.items : []).map((item: any) => {
             if (!idSet.has(String(item?.id))) return item;
             matched++;
-            const nextImages = Array.isArray(updates?.images)
+            const nextImagesRaw = Array.isArray(updates?.images)
               ? updates.images
               : updates?.appendImages && Array.isArray(updates.appendImages)
               ? Array.from(new Set([...(Array.isArray(item.images) ? item.images : []), ...updates.appendImages]))
-              : item.images;
+              : undefined;
+            const nextImages =
+              nextImagesRaw !== undefined
+                ? nextImagesRaw.map((u: any) => sanitizeStoredMediaUrl(u)).filter((u: string) => u.length > 0)
+                : undefined;
+            const nextMainImg =
+              nextImages !== undefined
+                ? sanitizeStoredMediaUrl(item.image) || nextImages[0] || ''
+                : undefined;
             return {
               ...item,
-              ...(nextImages !== undefined ? { images: nextImages, image: nextImages[0] || item.image || '' } : {}),
+              ...(nextImages !== undefined ? { images: nextImages, image: nextMainImg } : {}),
               ...(updates?.isArchived !== undefined ? { isArchived: Boolean(updates.isArchived) } : {}),
               ...(updates?.archiveFolderId !== undefined
                 ? { archiveFolderId: updates.archiveFolderId }

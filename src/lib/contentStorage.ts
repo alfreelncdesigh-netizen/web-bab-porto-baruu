@@ -605,7 +605,7 @@ export function cleanSettings(settings: Partial<SiteSettings>): Partial<SiteSett
     cleaned.collaboration = {
       enabled: Boolean(cleaned.collaboration.enabled),
       partnerName: (cleaned.collaboration.partnerName || '').trim(),
-      partnerLogo: (cleaned.collaboration.partnerLogo || '').trim(),
+      partnerLogo: sanitizeMediaUrl(cleaned.collaboration.partnerLogo || ''),
       collaborationText: (cleaned.collaboration.collaborationText || 'Kolaborasi Bersama').trim(),
       autoTagNewItems: Boolean(cleaned.collaboration.autoTagNewItems),
       collaboratorUsername: cleaned.collaboration.collaboratorUsername,
