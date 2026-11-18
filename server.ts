@@ -190,7 +190,7 @@ try {
 
 const FIREBASE_PROJECT_ID = firebaseAppConfig.projectId || 'portofolio-c368b';
 const FIRESTORE_DATABASE_ID = firebaseAppConfig.firestoreDatabaseId || 'ai-studio-portofoliodesain-16b96d08-efff-4e76-af75-1c33dc5adab7';
-const FIREBASE_API_KEY = firebaseAppConfig.apiKey || 'AIzaSyDHmxUYsvRc5DKy8M1pwqO-zz_Wtq_09us';
+const FIREBASE_API_KEY = firebaseAppConfig.apiKey || process.env.FIREBASE_API_KEY || '';
 
 const getFirestoreRestDocUrl = (collection: string, docId: string): string => {
   return `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${FIRESTORE_DATABASE_ID}/documents/${encodeURIComponent(collection)}/${encodeURIComponent(docId)}?key=${FIREBASE_API_KEY}`;
@@ -2278,7 +2278,7 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction): void => {
 // ============================================================================
 // 5. DYNAMIC METADATA & OPENGRAPH INJECTOR (WHATSAPP & SOCIAL SHARING)
 // ============================================================================
-const KNOWN_PUBLIC_ORIGIN = process.env.PUBLIC_URL || process.env.VITE_APP_URL || 'https://ais-pre-mxab2e5ln5bmg4bqdlekao-238675116784.asia-southeast1.run.app';
+const KNOWN_PUBLIC_ORIGIN = process.env.PUBLIC_URL || process.env.VITE_APP_URL || 'https://ais-pre-jg4bzibqsywr6alaltuib7-535307665475.asia-southeast1.run.app';
 
 function getRequestOrigin(req: Request): string {
   const forwardedProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim();
