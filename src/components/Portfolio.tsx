@@ -622,9 +622,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       e.stopPropagation();
       e.preventDefault();
     }
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://alfreelnc.com';
-    const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
-    const shareUrl = `${origin}${pathname}?project=${proj.id}`;
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://alfreelncdesign.vercel.app';
+    const rawPathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+    const cleanPath = rawPathname.startsWith('/project/') ? '/' : rawPathname;
+    const shareUrl = `${origin}${cleanPath}?project=${encodeURIComponent(String(proj.id))}`;
 
     try {
       await navigator.clipboard.writeText(shareUrl);
@@ -647,13 +648,23 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     }
   };
 
-  // Deteksi tautan khusus dari URL (?project=ID, ?p=ID, ?id=ID) & dukung navigasi back/forward browser
+  // Deteksi tautan khusus dari URL (?project=ID, ?p=ID, ?id=ID, atau /project/ID) & dukung navigasi back/forward browser
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const syncFromUrl = () => {
+    const extractProjectIdFromUrl = () => {
       const params = new URLSearchParams(window.location.search);
-      const projectId = params.get('project') || params.get('p') || params.get('id');
+      const fromQuery = params.get('project') || params.get('p') || params.get('id');
+      if (fromQuery) return fromQuery;
+      if (window.location.pathname.startsWith('/project/')) {
+        const seg = window.location.pathname.slice('/project/'.length).split('/')[0];
+        return seg ? decodeURIComponent(seg) : null;
+      }
+      return null;
+    };
+
+    const syncFromUrl = () => {
+      const projectId = extractProjectIdFromUrl();
       if (projectId && projects.length > 0) {
         const found = projects.find(p => String(p.id) === String(projectId));
         if (found && (!selectedProject || String(selectedProject.id) !== String(projectId))) {
@@ -684,13 +695,16 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     if (typeof window !== 'undefined') {
       try {
         const url = new URL(window.location.href);
+        if (url.pathname.startsWith('/project/')) {
+          url.pathname = '/';
+        }
         url.searchParams.set('project', String(projectToOpen.id));
         window.history.replaceState({ projectId: projectToOpen.id }, '', url.pathname + url.search + url.hash);
         if ((window as any).__updateSocialMeta) {
           (window as any).__updateSocialMeta({
             title: `${projectToOpen.title} – Alfreelnc Design Portofolio`,
             description: projectToOpen.description || (projectToOpen.category ? `Karya desain grafis ${projectToOpen.category} oleh Alfreelnc Design.` : undefined),
-            image: projectToOpen.image,
+            image: `${window.location.origin}/api/og-image?project=${encodeURIComponent(String(projectToOpen.id))}`,
             project: projectToOpen
           });
         }
@@ -711,7 +725,15 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     if (typeof window !== 'undefined') {
       try {
         const url = new URL(window.location.href);
-        if (url.searchParams.has('project') || url.searchParams.has('p') || url.searchParams.has('id')) {
+        const hadProjectParam =
+          url.searchParams.has('project') ||
+          url.searchParams.has('p') ||
+          url.searchParams.has('id') ||
+          url.pathname.startsWith('/project/');
+        if (hadProjectParam) {
+          if (url.pathname.startsWith('/project/')) {
+            url.pathname = '/';
+          }
           url.searchParams.delete('project');
           url.searchParams.delete('p');
           url.searchParams.delete('id');
@@ -719,7 +741,9 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           window.history.replaceState({}, '', url.pathname + cleanSearch + url.hash);
         }
         if ((window as any).__updateSocialMeta) {
-          (window as any).__updateSocialMeta();
+          (window as any).__updateSocialMeta({
+            image: `${window.location.origin}/api/og-image?type=hero`,
+          });
         }
       } catch (e) {}
     }

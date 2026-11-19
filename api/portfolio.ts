@@ -18,6 +18,7 @@ import {
   createInitialPortfolioSeed,
   type PortfolioJsonData,
 } from './_lib/seedDefaults.js';
+import { clearOgMetaCache } from './_lib/ogMeta.js';
 
 function parsePortfolioTimestampMs(val: any): number {
   if (val === null || val === undefined || val === '') return 0;
@@ -209,6 +210,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
           createInitialPortfolioSeed,
           3
         );
+        clearOgMetaCache();
         sendJson(res, 200, {
           success: true,
           items: sortPortfolioNewestFirst(data.items.filter((p: any) => p.isArchived !== true)),
@@ -273,6 +275,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
         3
       );
 
+      clearOgMetaCache();
       sendJson(res, 200, {
         success: true,
         item: savedItem,
@@ -363,6 +366,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
         3
       );
 
+      clearOgMetaCache();
       sendJson(res, 200, {
         success: true,
         items: sortPortfolioNewestFirst(data.items.filter((p: any) => p.isArchived !== true)),

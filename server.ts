@@ -18,6 +18,11 @@ import quickFilterHandler from './api/quick-filter';
 import blogCommentsHandler from './api/blog-comments';
 import ordersHandler from './api/orders';
 import mediaCacheHandler from './api/media-cache';
+import ogImageHandler from './api/og-image';
+import {
+  DEFAULT_PUBLIC_ORIGIN,
+  injectOgMetaIntoHtml,
+} from './api/_lib/ogMeta';
 import {
   BLOB_PATHS,
   readJsonFromBlob,
@@ -502,25 +507,8 @@ app.get('/robots.txt', (_req: Request, res: Response) => {
 });
 
 // Dedicated direct thumbnail endpoints for crawlers
-app.get(['/og-image', '/og-image.jpg', '/thumbnail.jpg'], (_req: Request, res: Response) => {
-  const cover = getPrimaryCoverImage();
-  const filePath = path.join(publicDir, cover.imagePath);
-  if (fs.existsSync(filePath)) {
-    res.setHeader('Content-Type', cover.mimeType);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.sendFile(filePath);
-  } else {
-    const fallbackPath = path.join(publicDir, 'images/hero-albi.png');
-    if (fs.existsSync(fallbackPath)) {
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      res.sendFile(fallbackPath);
-    } else {
-      res.status(404).end();
-    }
-  }
+app.get(['/og-image', '/og-image.jpg', '/thumbnail.jpg'], (req: Request, res: Response): void => {
+  void ogImageHandler(req as any, res);
 });
 
 app.get(['/thumbnail.png', '/hero-thumbnail.png'], (_req: Request, res: Response) => {
@@ -1215,6 +1203,20 @@ app.all('/api/orders/:id', (req: Request, res: Response): void => {
 
 app.all('/api/media-cache', (req: Request, res: Response): void => {
   void mediaCacheHandler(req as any, res);
+});
+
+app.all('/api/og-image', (req: Request, res: Response): void => {
+  void ogImageHandler(req as any, res);
+});
+
+app.get('/og/hero/:version', (req: Request, res: Response): void => {
+  req.query = { ...(req.query || {}), type: 'hero', v: req.params.version };
+  void ogImageHandler(req as any, res);
+});
+
+app.get('/og/project/:id/:version', (req: Request, res: Response): void => {
+  req.query = { ...(req.query || {}), project: req.params.id, v: req.params.version };
+  void ogImageHandler(req as any, res);
 });
 
 app.get('/api/settings', (_req: Request, res: Response): void => {
@@ -2332,344 +2334,19 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction): void => {
 // ============================================================================
 // 5. DYNAMIC METADATA & OPENGRAPH INJECTOR (WHATSAPP & SOCIAL SHARING)
 // ============================================================================
-const KNOWN_PUBLIC_ORIGIN = process.env.PUBLIC_URL || process.env.VITE_APP_URL || 'https://ais-pre-jg4bzibqsywr6alaltuib7-535307665475.asia-southeast1.run.app';
-
-function getRequestOrigin(req: Request): string {
-  const forwardedProto = (req.headers['x-forwarded-proto'] as string)?.split(',')[0]?.trim();
-  const forwardedHost = (req.headers['x-forwarded-host'] as string)?.split(',')[0]?.trim();
-  const hostHeader = (req.headers['host'] as string)?.split(',')[0]?.trim();
-  const candidateHost = forwardedHost || hostHeader || '';
-
-  // If host is a real public domain (not localhost or internal pod IP)
-  if (candidateHost && !candidateHost.includes('localhost') && !candidateHost.includes('127.0.0.1') && !candidateHost.startsWith('10.') && !candidateHost.startsWith('172.')) {
-    const proto = forwardedProto || (req.secure ? 'https' : 'https');
-    return `${proto}://${candidateHost}`;
-  }
-
-  // Fallback to the production/preview HTTPS domain so social crawlers always receive a fully valid, resolvable URL
-  return KNOWN_PUBLIC_ORIGIN;
-}
-
-function getPrimaryCoverImage(): { imagePath: string; mimeType: string; width: number; height: number } {
-  let imagePath = '/images/hero-albi-og.jpg';
-  try {
-    if (fs.existsSync(settingsFilePath)) {
-      const data = JSON.parse(fs.readFileSync(settingsFilePath, 'utf-8'));
-      if (data && typeof data.heroImage === 'string' && data.heroImage.trim().length > 0) {
-        const candidate = data.heroImage.trim();
-        if (candidate.startsWith('http://') || candidate.startsWith('https://')) {
-          const isWebp = candidate.toLowerCase().endsWith('.webp');
-          const isJpg = candidate.toLowerCase().endsWith('.jpg') || candidate.toLowerCase().endsWith('.jpeg');
-          return {
-            imagePath: candidate,
-            mimeType: isWebp ? 'image/webp' : isJpg ? 'image/jpeg' : 'image/png',
-            width: 1200,
-            height: 630,
-          };
-        }
-        if (candidate.includes('hero-albi')) {
-          if (fs.existsSync(path.join(publicDir, 'images/hero-albi-og.jpg'))) {
-            imagePath = '/images/hero-albi-og.jpg';
-          } else {
-            imagePath = '/images/hero-albi.png';
-          }
-        } else if (!candidate.includes('cover_web_') && !candidate.includes('editing_tools_3d')) {
-          const rel = candidate.startsWith('/') ? candidate : `/${candidate}`;
-          const localFile = path.join(publicDir, rel);
-          if (fs.existsSync(localFile)) {
-            imagePath = rel;
-          }
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('Error reading settings for cover image:', e);
-  }
-
-  const isWebp = imagePath.toLowerCase().endsWith('.webp');
-  const isJpg = imagePath.toLowerCase().endsWith('.jpg') || imagePath.toLowerCase().endsWith('.jpeg');
-  return {
-    imagePath,
-    mimeType: isWebp ? 'image/webp' : isJpg ? 'image/jpeg' : 'image/png',
-    width: 1200,
-    height: 630,
-  };
-}
-
-function getProjectById(projectId: string): any | null {
-  try {
-    if (fs.existsSync(projectsFilePath)) {
-      const list = JSON.parse(fs.readFileSync(projectsFilePath, 'utf-8'));
-      if (Array.isArray(list)) {
-        const found = list.find((p: any) => String(p.id) === String(projectId));
-        if (found) return found;
-      }
-    }
-  } catch (e) {
-    console.warn('Notice: getProjectById read error:', e);
-  }
-  return null;
-}
-
-async function resolvePrimaryCoverImage(): Promise<{ imagePath: string; mimeType: string; width: number; height: number }> {
-  try {
-    const { data } = await readJsonFromBlob<SiteSettingsJsonData>(
-      BLOB_PATHS.SITE_SETTINGS,
-      createInitialSiteSettingsSeed
-    );
-    if (data && typeof data.heroImage === 'string' && data.heroImage.trim().length > 0) {
-      const candidate = data.heroImage.trim();
-      if (candidate.startsWith('http://') || candidate.startsWith('https://')) {
-        const isWebp = candidate.toLowerCase().endsWith('.webp');
-        const isJpg = candidate.toLowerCase().endsWith('.jpg') || candidate.toLowerCase().endsWith('.jpeg');
-        return {
-          imagePath: candidate,
-          mimeType: isWebp ? 'image/webp' : isJpg ? 'image/jpeg' : 'image/png',
-          width: 1200,
-          height: 630,
-        };
-      }
-    }
-  } catch {
-    // Fallback to local seed config
-  }
-  return getPrimaryCoverImage();
-}
-
-async function resolveProjectData(projectId: string): Promise<any | null> {
-  try {
-    const { data } = await readJsonFromBlob<PortfolioJsonData>(
-      BLOB_PATHS.PORTFOLIO,
-      createInitialPortfolioSeed
-    );
-    const items = Array.isArray(data?.items) ? data.items : [];
-    const found = items.find((p: any) => String(p?.id) === String(projectId));
-    if (found) return found;
-  } catch {
-    // Fallback to local JSON file
-  }
-
-  return getProjectById(projectId);
-}
+const KNOWN_PUBLIC_ORIGIN =
+  process.env.PUBLIC_URL || process.env.VITE_APP_URL || DEFAULT_PUBLIC_ORIGIN;
 
 async function injectDynamicMeta(html: string, req: Request): Promise<string> {
-  const origin = getRequestOrigin(req);
-
-  // 1. Deteksi ID proyek dari query parameter (?project=ID, ?p=ID, ?id=ID) atau path (/project/:id)
-  let projectId: string | null = null;
-  if (req.query.project && typeof req.query.project === 'string') {
-    projectId = req.query.project.trim();
-  } else if (req.query.p && typeof req.query.p === 'string') {
-    projectId = req.query.p.trim();
-  } else if (req.query.id && typeof req.query.id === 'string') {
-    projectId = req.query.id.trim();
-  } else if (req.path.startsWith('/project/')) {
-    projectId = req.path.replace('/project/', '').split('/')[0].trim();
-  }
-
-  let project: any = null;
-  if (projectId) {
-    project = await resolveProjectData(projectId);
-  }
-
-  const DEFAULT_TITLE = 'Alfreelnc Design Portofolio – Jasa Desain Grafis & Poster Kreatif';
-  const DEFAULT_DESC = 'Alfreelnc Design Portofolio karya Albian (Muhammad Albiansyah) – Jasa desain grafis profesional, portofolio design graphic, jasa buat poster, jasa mengedit poster, jasa tugas, agensi desain grafis, agensi joki tugas, dan freelance desain grafis.';
-
-  let title = DEFAULT_TITLE;
-  let description = DEFAULT_DESC;
-  let imagePath = '/images/hero-albi.png';
-  let imageAlt = 'Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio';
-  let mimeType = 'image/png';
-  let width = 1408;
-  let height = 768;
-
-  if (project) {
-    // 1. Link memuat parameter proyek: ubah og:title, og:description, og:image, twitter:title, twitter:image
-    title = `${project.title || 'Karya Desain'} – Alfreelnc Design Portofolio`;
-    description = (project.description && project.description.trim().length > 0)
-      ? project.description.trim()
-      : `Karya desain grafis ${project.category || 'kreatif'} profesional oleh Alfreelnc Design (Muhammad Albiansyah).`;
-    
-    if (project.image && typeof project.image === 'string' && project.image.trim().length > 0) {
-      imagePath = project.image.trim();
-      const lower = imagePath.toLowerCase();
-      if (lower.endsWith('.webp')) mimeType = 'image/webp';
-      else if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) mimeType = 'image/jpeg';
-      else if (lower.endsWith('.svg')) mimeType = 'image/svg+xml';
-      else mimeType = 'image/png';
-      width = 1200;
-      height = 630;
-    }
-    imageAlt = `${project.title || 'Karya'} - Portofolio Desain Grafis Alfreelnc`;
-  } else {
-    // 2. Halaman utama (tanpa parameter karya): gunakan default setting brand & cover hero utama
-    const cover = await resolvePrimaryCoverImage();
-    imagePath = cover.imagePath;
-    mimeType = cover.mimeType;
-    width = cover.width;
-    height = cover.height;
-  }
-
-  const absoluteImageUrl = imagePath.startsWith('http://') || imagePath.startsWith('https://')
-    ? imagePath
-    : `${origin}${imagePath.startsWith('/') ? imagePath : '/' + imagePath}`;
-
-  const fullUrl = `${origin}${req.originalUrl || '/'}`;
-
-  let modified = html;
-
-  // Replace <title>
-  if (/<title>[^<]*<\/title>/i.test(modified)) {
-    modified = modified.replace(/<title>[^<]*<\/title>/i, `<title>${title}</title>`);
-  }
-
-  // Replace <meta name="title" ...>
-  if (/<meta\s+name=["']title["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+name=["']title["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta name="title" content="${title}" />`
+  try {
+    return await injectOgMetaIntoHtml(html, req as any);
+  } catch (err) {
+    console.warn('[OG META INJECT] Fallback HTML digunakan:', (err as Error)?.message || err);
+    return html.replace(
+      /https:\/\/ais-pre-[^"']+/gi,
+      KNOWN_PUBLIC_ORIGIN
     );
   }
-
-  // Replace <meta name="description" ...>
-  if (/<meta\s+name=["']description["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+name=["']description["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta name="description" content="${description}" />`
-    );
-  }
-
-  // Replace og:title
-  if (/<meta\s+property=["']og:title["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+property=["']og:title["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta property="og:title" content="${title}" id="og-title" />`
-    );
-  } else {
-    modified = modified.replace('</head>', `    <meta property="og:title" content="${title}" id="og-title" />\n  </head>`);
-  }
-
-  // Replace og:description
-  if (/<meta\s+property=["']og:description["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+property=["']og:description["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta property="og:description" content="${description}" id="og-desc" />`
-    );
-  } else {
-    modified = modified.replace('</head>', `    <meta property="og:description" content="${description}" id="og-desc" />\n  </head>`);
-  }
-
-  // Replace og:image
-  if (/<meta\s+property=["']og:image["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+property=["']og:image["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta property="og:image" content="${absoluteImageUrl}" id="og-image" />`
-    );
-  } else {
-    modified = modified.replace('</head>', `    <meta property="og:image" content="${absoluteImageUrl}" id="og-image" />\n  </head>`);
-  }
-
-  // Replace og:image:secure_url
-  if (/<meta\s+property=["']og:image:secure_url["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+property=["']og:image:secure_url["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta property="og:image:secure_url" content="${absoluteImageUrl}" id="og-image-secure" />`
-    );
-  } else {
-    modified = modified.replace('</head>', `    <meta property="og:image:secure_url" content="${absoluteImageUrl}" id="og-image-secure" />\n  </head>`);
-  }
-
-  // Replace og:image:alt
-  if (/<meta\s+property=["']og:image:alt["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+property=["']og:image:alt["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta property="og:image:alt" content="${imageAlt}" id="og-image-alt" />`
-    );
-  }
-
-  // Replace og:image:type
-  if (/<meta\s+property=["']og:image:type["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+property=["']og:image:type["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta property="og:image:type" content="${mimeType}" />`
-    );
-  }
-
-  // Replace og:image:width
-  if (/<meta\s+property=["']og:image:width["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+property=["']og:image:width["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta property="og:image:width" content="${width}" />`
-    );
-  }
-
-  // Replace og:image:height
-  if (/<meta\s+property=["']og:image:height["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+property=["']og:image:height["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta property="og:image:height" content="${height}" />`
-    );
-  }
-
-  // Replace twitter:title
-  if (/<meta\s+name=["']twitter:title["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+name=["']twitter:title["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta name="twitter:title" content="${title}" id="twitter-title" />`
-    );
-  }
-
-  // Replace twitter:description
-  if (/<meta\s+name=["']twitter:description["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+name=["']twitter:description["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta name="twitter:description" content="${description}" id="twitter-desc" />`
-    );
-  }
-
-  // Replace twitter:image
-  if (/<meta\s+name=["']twitter:image["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+name=["']twitter:image["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta name="twitter:image" content="${absoluteImageUrl}" id="twitter-image" />`
-    );
-  }
-
-  // Replace twitter:image:alt
-  if (/<meta\s+name=["']twitter:image:alt["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+name=["']twitter:image:alt["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta name="twitter:image:alt" content="${imageAlt}" id="twitter-image-alt" />`
-    );
-  }
-
-  // Replace og:url
-  if (/<meta\s+property=["']og:url["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<meta\s+property=["']og:url["']\s+content=["'][^"']*["'][^>]*>/i,
-      `<meta property="og:url" content="${fullUrl}" id="og-url" />`
-    );
-  }
-
-  // Replace canonical link
-  if (/<link\s+rel=["']canonical["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<link\s+rel=["']canonical["']\s+href=["'][^"']*["'][^>]*>/i,
-      `<link rel="canonical" href="${fullUrl}" id="canonical-url" />`
-    );
-  }
-
-  // Replace or inject link rel="image_src" (for WhatsApp / Facebook legacy parsers)
-  if (/<link\s+rel=["']image_src["'][^>]*>/i.test(modified)) {
-    modified = modified.replace(
-      /<link\s+rel=["']image_src["']\s+href=["'][^"']*["'][^>]*>/i,
-      `<link rel="image_src" href="${absoluteImageUrl}" id="link-image-src" />`
-    );
-  } else {
-    modified = modified.replace('</head>', `    <link rel="image_src" href="${absoluteImageUrl}" id="link-image-src" />\n  </head>`);
-  }
-
-  return modified;
 }
 
 // ============================================================================

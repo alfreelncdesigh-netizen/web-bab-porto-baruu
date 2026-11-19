@@ -338,10 +338,26 @@ export default function App() {
 
   // Dynamic social sharing images & metadata synchronizer
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hasActiveProject =
+        searchParams.has('project') ||
+        searchParams.has('p') ||
+        searchParams.has('id') ||
+        window.location.pathname.startsWith('/project/');
+      if (hasActiveProject) {
+        return;
+      }
+    }
+
     const currentSettings = getStoredSettings();
-    const heroImage = currentSettings.heroImage
-      ? resolveImageUrl(currentSettings.heroImage)
-      : '/images/hero-albi-og.jpg';
+    const rawHero = (currentSettings.heroImage || '').trim();
+    const isDefaultHero =
+      !rawHero ||
+      rawHero.includes('hero-albi') ||
+      rawHero.includes('cover_web_') ||
+      rawHero.includes('editing_tools_3d');
+    const heroImage = isDefaultHero ? '/images/hero-albi-og.jpg' : resolveImageUrl(rawHero);
 
     const metaMap: Record<string, { title: string; description: string; image: string; hash: string }> = {
       home: {
@@ -353,43 +369,43 @@ export default function App() {
       portfolio: {
         title: 'Galeri Portofolio Desain Grafis & Desain Kreatif – Alfreelnc Design',
         description: 'Eksplorasi portofolio design graphic, jasa buat poster, desain identitas brand, mockup 3D, dan proyek freelance desain grafis oleh Albian.',
-        image: '/images/minimalist_3d_illustration_1787122966121.jpg',
+        image: heroImage,
         hash: '#portfolio',
       },
       about: {
         title: 'Tentang Desainer & Filosofi Desain – Muhammad Albiansyah (Albian)',
         description: 'Profil profesional Albian (Alfreelnc Design), filosofi desain fungsional, dan pendekatan kreatif agensi freelance desain grafis.',
-        image: '/images/editing_tools_3d_1787123977793.jpg',
+        image: heroImage,
         hash: '#about',
       },
       experience: {
         title: 'Riwayat Pengalaman & Karier Desain – Muhammad Albiansyah',
         description: 'Pengalaman kerja profesional, pencapaian proyek desain visual, dan keahlian di berbagai software desain grafis.',
-        image: '/images/editing_tools_3d_1787123977793.jpg',
+        image: heroImage,
         hash: '#experience',
       },
       cv: {
         title: 'Curriculum Vitae (CV) Lengkap – Muhammad Albiansyah',
         description: 'Resume profesional desainer grafis dan UI/UX dengan rekam jejak proyek dan kemampuan teknis.',
-        image: '/images/editing_tools_3d_1787123977793.jpg',
+        image: heroImage,
         hash: '#cv',
       },
       store: {
         title: 'Toko Template & Jasa Desain Grafis – Alfreelnc Design',
         description: 'Pesan jasa desain grafis profesional, jasa buat & edit poster, jasa tugas desain, dan template grafis siap pakai berkualitas tinggi.',
-        image: '/images/banner_promo_crea_1788696808849.jpg',
+        image: heroImage,
         hash: '#store',
       },
       blog: {
         title: 'Blog & Wawasan Desain – Portofolio Desain Minimalis',
         description: 'Artikel, tips desain grafis, inspirasi tipografi modern, dan wawasan proses kreatif.',
-        image: '/images/banner_promo_bca_1788696791480.jpg',
+        image: heroImage,
         hash: '#blog',
       },
       insight: {
         title: 'Insight & Tanya Jawab Desain – Alfreelnc Design',
         description: 'Wawasan terkurasi seputar tren warna, tren desain, tips branding, dan panduan order karya.',
-        image: '/images/editing_tools_3d_1787123977793.jpg',
+        image: heroImage,
         hash: '#insight',
       },
       contact: {
@@ -401,13 +417,13 @@ export default function App() {
       stats: {
         title: 'Statistik & Ringkasan Portofolio – Portofolio Desain Minimalis',
         description: 'Data statistik kunjungan dan ringkasan aktivitas portofolio desain minimalis.',
-        image: '/images/minimalist_3d_illustration_1787122966121.jpg',
+        image: heroImage,
         hash: '#stats',
       },
       admin: {
         title: 'Admin Dashboard – Portofolio Desain Minimalis',
         description: 'Panel pengelolaan konten portofolio, proyek, blog, dan pengaturan website.',
-        image: '/images/editing_tools_3d_1787123977793.jpg',
+        image: heroImage,
         hash: '#admin',
       },
     };

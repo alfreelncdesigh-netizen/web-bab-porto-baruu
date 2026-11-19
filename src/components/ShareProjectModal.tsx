@@ -33,12 +33,14 @@ export default function ShareProjectModal({
   if (!isOpen || !project) return null;
 
   // Generate shareable link
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://alfreelnc.com';
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const shareUrl = `${origin}${pathname}?project=${project.id}`;
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://alfreelncdesign.vercel.app';
+  const rawPathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+  const pathname = rawPathname.startsWith('/project/') ? '/' : rawPathname;
+  const shareUrl = `${origin}${pathname}?project=${encodeURIComponent(String(project.id))}`;
   const shareTitle = `Lihat karya portofolio "${project.title}" oleh Alfreelnc Studio`;
   const shareText = `Halo! Lihat karya desain menarik ini: "${project.title}" di Alfreelnc Studio:\n${shareUrl}`;
   const projectImageUrl = project.image ? resolveImageUrl(project.image) : '';
+  const socialMediaImageUrl = `${origin}/api/og-image?project=${encodeURIComponent(String(project.id))}`;
 
   const copyToClipboard = async (customFeedback?: string) => {
     try {
@@ -163,7 +165,7 @@ export default function ShareProjectModal({
     // Selalu salin tautan terlebih dahulu ke clipboard agar siap dibagikan/ditempel
     await copyToClipboard(platform.customNotice);
 
-    const targetUrl = platform.getShareUrl(shareUrl, project.title, projectImageUrl);
+    const targetUrl = platform.getShareUrl(shareUrl, project.title, socialMediaImageUrl);
     if (targetUrl) {
       try {
         const opened = window.open(targetUrl, '_blank', 'noopener,noreferrer,width=640,height=580');

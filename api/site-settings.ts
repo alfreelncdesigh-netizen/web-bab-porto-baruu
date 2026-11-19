@@ -18,6 +18,7 @@ import {
   DEFAULT_SITE_SETTINGS_SEED,
   type SiteSettingsJsonData,
 } from './_lib/seedDefaults.js';
+import { clearOgMetaCache } from './_lib/ogMeta.js';
 
 export default async function handler(req: ApiRequest, res: ServerResponse): Promise<void> {
   const method = (req.method || 'GET').toUpperCase();
@@ -145,6 +146,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
         3
       );
 
+      clearOgMetaCache();
       sendJson(res, 200, {
         success: true,
         settings: data,

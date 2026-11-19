@@ -109,20 +109,20 @@
     <meta property="og:locale:alternate" content="en_US" />
     <meta property="og:title" content="Alfreelnc Design Portofolio – Jasa Desain Grafis & Poster Kreatif" id="og-title" />
     <meta property="og:description" content="Alfreelnc Design Portofolio karya Albian (Muhammad Albiansyah) – Jasa desain grafis profesional, portofolio design graphic, jasa buat poster, jasa mengedit poster, jasa tugas, agensi desain grafis, agensi joki tugas, dan freelance desain grafis." id="og-desc" />
-    <meta property="og:url" content="https://ais-pre-jg4bzibqsywr6alaltuib7-535307665475.asia-southeast1.run.app/" id="og-url" />
-    <meta property="og:image" content="https://ais-pre-jg4bzibqsywr6alaltuib7-535307665475.asia-southeast1.run.app/images/hero-albi-og.jpg" id="og-image" />
-    <meta property="og:image:secure_url" content="https://ais-pre-jg4bzibqsywr6alaltuib7-535307665475.asia-southeast1.run.app/images/hero-albi-og.jpg" id="og-image-secure" />
+    <meta property="og:url" content="https://alfreelncdesign.vercel.app/" id="og-url" />
+    <meta property="og:image" content="https://alfreelncdesign.vercel.app/images/hero-albi-og.jpg" id="og-image" />
+    <meta property="og:image:secure_url" content="https://alfreelncdesign.vercel.app/images/hero-albi-og.jpg" id="og-image-secure" />
     <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio" id="og-image-alt" />
-    <link rel="image_src" href="https://ais-pre-jg4bzibqsywr6alaltuib7-535307665475.asia-southeast1.run.app/images/hero-albi-og.jpg" id="link-image-src" />
+    <link rel="image_src" href="https://alfreelncdesign.vercel.app/images/hero-albi-og.jpg" id="link-image-src" />
 
     <!-- Twitter / X Social Card -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Alfreelnc Design Portofolio – Jasa Desain Grafis & Poster Kreatif" id="twitter-title" />
     <meta name="twitter:description" content="Alfreelnc Design Portofolio karya Albian (Muhammad Albiansyah) – Jasa desain grafis profesional, portofolio design graphic, jasa buat poster, jasa mengedit poster, jasa tugas, agensi desain grafis, agensi joki tugas, dan freelance desain grafis." id="twitter-desc" />
-    <meta name="twitter:image" content="https://ais-pre-jg4bzibqsywr6alaltuib7-535307665475.asia-southeast1.run.app/images/hero-albi-og.jpg" id="twitter-image" />
+    <meta name="twitter:image" content="https://alfreelncdesign.vercel.app/images/hero-albi-og.jpg" id="twitter-image" />
     <meta name="twitter:image:alt" content="Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio" id="twitter-image-alt" />
 
     <!-- Schema.org JSON-LD Structured Data for Enhanced Search Engine Crawlability -->
@@ -387,28 +387,24 @@
               window.__updateSocialMeta({
                 title: found.title ? (found.title + ' – Alfreelnc Design Portofolio') : DEFAULT_TITLE,
                 description: found.description || (found.category ? ('Karya desain grafis ' + found.category + ' oleh Alfreelnc Design') : DEFAULT_DESC),
-                image: found.image || DEFAULT_IMG,
+                image: ('/api/og-image?project=' + encodeURIComponent(String(found.id))),
                 project: found
               });
             } else {
-              // Ambil langsung dari disk server (/api/projects) jika belum ada di localStorage
-              fetch('/api/projects').then(function(res) { return res.json(); }).then(function(list) {
-                if (Array.isArray(list)) {
-                  var p = list.find(function(it) { return String(it.id) === String(targetProjectId); });
+              fetch('/api/portfolio?id=' + encodeURIComponent(String(targetProjectId)))
+                .then(function(res) { return res.ok ? res.json() : null; })
+                .then(function(payload) {
+                  var p = payload && (payload.item || (Array.isArray(payload.items) && payload.items.find(function(it) { return String(it.id) === String(targetProjectId); })));
                   if (p) {
                     window.__updateSocialMeta({
                       title: p.title ? (p.title + ' – Alfreelnc Design Portofolio') : DEFAULT_TITLE,
                       description: p.description || (p.category ? ('Karya desain grafis ' + p.category + ' oleh Alfreelnc Design') : DEFAULT_DESC),
-                      image: p.image || DEFAULT_IMG,
+                      image: ('/api/og-image?project=' + encodeURIComponent(String(p.id))),
                       project: p
                     });
                   }
-                }
-              }).catch(function() {});
+                }).catch(function() {});
             }
-          } else {
-            // Halaman utama tanpa parameter proyek: pastikan menggunakan default setting brand & hero
-            window.__updateSocialMeta();
           }
         } catch (e) {}
       })();

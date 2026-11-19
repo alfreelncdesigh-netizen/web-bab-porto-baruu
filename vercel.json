@@ -1,13 +1,37 @@
 {
   "version": 2,
+  "functions": {
+    "api/og-html.ts": {
+      "includeFiles": "{dist/index.html,firebase-applet-config.json}"
+    },
+    "api/og-image.ts": {
+      "includeFiles": "{public/images/**,firebase-applet-config.json}"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "source": "/og/hero/:version",
+      "destination": "/api/og-image?type=hero&v=:version"
+    },
+    {
+      "source": "/og/project/:id/:version",
+      "destination": "/api/og-image?project=:id&v=:version"
+    },
+    {
+      "source": "/project/:id",
+      "destination": "/api/og-html?project=:id"
+    },
+    {
+      "source": "/",
+      "destination": "/api/og-html"
+    },
+    {
+      "source": "/((?!api/|og/|assets/|images/|uploads/|src/|index\\.html$|favicon|sw\\.js$|manifest\\.json$|robots\\.txt$|sitemap\\.xml$|pwa-|logo|apple-touch-icon|google).*)",
+      "destination": "/api/og-html"
     }
   ],
   "headers": [
