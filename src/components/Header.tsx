@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Menu, X, Sun, Moon, Search, Sparkles, ChevronRight, HelpCircle, ArrowRight, Globe, Check, Lock } from 'lucide-react';
+import { Menu, X, Sun, Moon, Search, Compass, ChevronRight, ArrowRight, Globe, Check, Lock } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { motion, AnimatePresence } from 'motion/react';
@@ -148,6 +148,28 @@ export default function Header({ setView, currentView }: HeaderProps) {
     window.removeEventListener('keydown', handleKeyDown);
   };
  }, [isMobileMenuOpen, isLanguageDropdownOpen, isSearchSlideOpen]);
+
+ // Keyboard shortcut (Cmd/Ctrl + K or '/') to toggle Quick Insight Search cleanly
+ useEffect(() => {
+  if (isAdminLockedMode) return;
+  const handleGlobalShortcut = (e: KeyboardEvent) => {
+    const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase();
+    const isEditable = tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target as HTMLElement | null)?.isContentEditable;
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      setIsMobileMenuOpen(false);
+      setIsLanguageDropdownOpen(false);
+      setIsSearchSlideOpen(prev => !prev);
+    } else if (!isEditable && e.key === '/') {
+      e.preventDefault();
+      setIsMobileMenuOpen(false);
+      setIsLanguageDropdownOpen(false);
+      setIsSearchSlideOpen(true);
+    }
+  };
+  window.addEventListener('keydown', handleGlobalShortcut);
+  return () => window.removeEventListener('keydown', handleGlobalShortcut);
+ }, [isAdminLockedMode]);
 
  useEffect(() => {
   const handleScroll = () => {
@@ -347,28 +369,35 @@ export default function Header({ setView, currentView }: HeaderProps) {
           setIsLanguageDropdownOpen(false);
           setIsSearchSlideOpen(!isSearchSlideOpen);
         }}
-        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-semibold shadow-2xs transition-all hover:scale-102 cursor-pointer mr-1 lg:mr-1.5 ${
+        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-semibold shadow-2xs transition-all cursor-pointer mr-1 lg:mr-1.5 ${
           isSearchSlideOpen
-            ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+            ? 'bg-zinc-900 text-white border-zinc-900 dark:bg-white dark:text-black dark:border-white shadow-sm'
             : 'bg-zinc-100 hover:bg-zinc-200/90 dark:bg-zinc-800/90 dark:hover:bg-zinc-700/90 border-zinc-200/80 dark:border-zinc-700/80 text-zinc-700 dark:text-zinc-200'
         }`}
         aria-label="Cari Insight & Q&A"
-        title="Buka Pencarian Cepat Insight"
+        title="Buka Pencarian Cepat Insight (⌘K atau /)"
       >
         <GoogleGIcon className="w-4 h-4 shrink-0" />
-        <span className="text-[12.5px] font-medium text-zinc-600 dark:text-zinc-300">Cari Insight</span>
-        <Search className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500" />
+        <span className={`text-[12.5px] font-medium ${isSearchSlideOpen ? 'text-white dark:text-black' : 'text-zinc-600 dark:text-zinc-300'}`}>Cari Insight</span>
+        <kbd className={`hidden xl:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono rounded ${isSearchSlideOpen ? 'bg-white/20 text-white dark:bg-black/15 dark:text-black' : 'bg-white/80 dark:bg-zinc-900 text-zinc-400 border border-zinc-200/80 dark:border-zinc-700'}`}>/</kbd>
       </button>
 
       {navLinks.map((link) => {
-       const isActive = currentView === link.view;
+       const isActive = currentView === link.view || (currentView === 'home' && activeSection === link.id);
        return (
         <button 
          key={link.name} 
          onClick={(e) => handleNavClick(e, link)} 
-         className={`transition-colors relative group py-1.5 ${isActive ? 'text-black dark:text-white font-bold' : 'text-zinc-600 hover:text-black dark:text-zinc-400 dark:hover:text-white font-medium'}`}
+         className={`transition-colors relative py-1.5 cursor-pointer ${isActive ? 'text-black dark:text-white font-semibold' : 'text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white font-medium'}`}
         >
-         {link.name}
+         <span>{link.name}</span>
+         {isActive && (
+          <motion.span
+           layoutId="header-nav-indicator"
+           transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+           className="absolute left-0 right-0 -bottom-0.5 h-[2px] rounded-full bg-black dark:bg-white"
+          />
+         )}
         </button>
        )
       })}
@@ -680,9 +709,9 @@ export default function Header({ setView, currentView }: HeaderProps) {
           <button
            key={cat}
            onClick={() => handleSelectPresetQuestion(cat)}
-           className="px-3 py-1.5 rounded-full text-xs font-semibold bg-zinc-100 hover:bg-blue-50 dark:bg-zinc-800 dark:hover:bg-blue-950/40 text-zinc-700 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400 border border-zinc-200/60 dark:border-zinc-700/60 transition-colors cursor-pointer flex items-center gap-1.5 active:scale-95"
+           className="px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-100 hover:bg-zinc-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border border-zinc-200/60 dark:border-zinc-700/60 transition-colors cursor-pointer flex items-center gap-1.5 active:scale-95"
           >
-           <Sparkles size={11} className="text-blue-500" />
+           <Compass size={12} className="text-zinc-500 dark:text-zinc-400" />
            <span>{translateDynamic(cat)}</span>
           </button>
          ))}

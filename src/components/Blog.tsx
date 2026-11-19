@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BlogPost } from '../types/blog';
-import { X, ArrowRight, BookOpen, Sparkles, Handshake, MessageSquare, Send, Clock } from 'lucide-react';
+import { X, ArrowRight, BookOpen, Handshake, MessageSquare, Send, Clock } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
 import { getStoredBlogs, cleanBlogs, sortBlogsByRecency, subscribeBlogsRealtime } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
@@ -102,7 +102,17 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
       };
       scrollToTop();
       const timer = setTimeout(scrollToTop, 60);
-      return () => clearTimeout(timer);
+
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setSelectedPost(null);
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener('keydown', handleKeyDown);
+      };
     }
   }, [selectedPost?.id]);
 
@@ -389,7 +399,7 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
 
                     {/* Ringkasan Artikel */}
                     {post.content && (
-                      <p className="text-zinc-600 dark:text-zinc-400 text-[10.5px] sm:text-[11px] leading-relaxed line-clamp-2 font-normal mb-3.5">
+                      <p className="text-zinc-600 dark:text-zinc-400 text-xs leading-[1.65] line-clamp-2 font-normal mb-4">
                         {post.content}
                       </p>
                     )}
@@ -476,7 +486,7 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                 </h3>
                 
                 {selectedPost.content && (
-                  <div className="text-zinc-600 dark:text-zinc-300 text-[11.5px] sm:text-[12px] md:text-[12.5px] lg:text-[13px] leading-[1.8] space-y-3.5 whitespace-pre-wrap font-normal pb-4 text-justify [text-justify:inter-word] [text-align-last:left]">
+                  <div className="text-zinc-600 dark:text-zinc-300 text-xs sm:text-[13.5px] md:text-[14px] leading-[1.85] space-y-4 whitespace-pre-wrap font-normal pb-5 text-left max-w-[65ch]">
                     {selectedPost.content}
                   </div>
                 )}
@@ -517,14 +527,11 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                 {displayBlogRecommendations.length > 0 && (
                   <div className="mt-4 pt-5 border-t border-zinc-200/70 dark:border-zinc-800/70">
                     <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full ${unreadPosts.length > 0 ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500'}`}></span>
-                        <h4 className="text-[11px] md:text-xs font-semibold tracking-wide text-black dark:text-white flex items-center gap-1.5">
-                          <BookOpen size={13} className="text-blue-500" />
-                          {unreadPosts.length > 0 ? 'Bacaan Lainnya' : 'Artikel Blog Lainnya'}
-                        </h4>
-                      </div>
-                      <span className="text-[9px] md:text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
+                      <h4 className="text-xs font-semibold tracking-wide text-black dark:text-white flex items-center gap-1.5">
+                        <BookOpen size={14} className="text-zinc-600 dark:text-zinc-400" />
+                        {unreadPosts.length > 0 ? 'Bacaan Lainnya' : 'Artikel Blog Lainnya'}
+                      </h4>
+                      <span className="text-[10px] font-medium px-2.5 py-0.5 rounded-md bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
                         {unreadPosts.length > 0 ? `${unreadPosts.length} belum kamu baca` : `${displayBlogRecommendations.length} tulisan`}
                       </span>
                     </div>
@@ -565,12 +572,12 @@ export default function Blog({ isSecondHalfLoaded = true }: BlogProps = {}) {
                                   {item.category || 'Artikel'}
                                 </span>
                                 {isUnread ? (
-                                  <span className="text-[8px] font-semibold px-1.5 py-0.2 rounded bg-blue-500 text-white dark:bg-blue-500/20 dark:text-blue-400 shrink-0 flex items-center gap-0.5">
-                                    <Sparkles size={8} /> Belum dibaca
+                                  <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-zinc-900 text-white dark:bg-white dark:text-black shrink-0">
+                                    Baru
                                   </span>
                                 ) : (
-                                  <span className="text-[8px] font-medium px-1.5 py-0.2 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-500 shrink-0">
-                                    Sudah dibaca
+                                  <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-500 shrink-0">
+                                    Dibaca
                                   </span>
                                 )}
                               </div>

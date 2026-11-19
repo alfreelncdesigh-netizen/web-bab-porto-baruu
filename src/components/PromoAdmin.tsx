@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Sparkles, 
+  Tag, 
   Check, 
   Loader2, 
   Upload, 
@@ -293,7 +293,7 @@ export default function PromoAdmin() {
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-zinc-200 dark:border-zinc-800 pb-6">
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-semibold mb-2">
-            <Sparkles size={14} />
+            <Tag size={14} />
             <span>Menu Khusus Widget Promosi</span>
           </div>
           <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-black dark:text-white">
@@ -388,7 +388,7 @@ export default function PromoAdmin() {
               onClick={() => handleTriggerRandomNow()}
               className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 text-[11px] font-semibold flex items-center gap-1.5 transition-colors border border-amber-500/20 cursor-pointer"
             >
-              <Sparkles size={13} />
+              <Eye size={13} />
               Munculkan Sekarang (Acak)
             </button>
           </div>

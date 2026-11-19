@@ -92,9 +92,9 @@ export default function Hero() {
           className="w-full px-6 sm:px-8 flex flex-col items-start text-left bg-white dark:bg-[#0a0a0a]"
         >
           {/* Subtitle Mobile */}
-          <div className="flex items-center gap-2 mt-2 sm:mt-3 mb-2 select-none">
-            <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
-            <p className="text-[11px] sm:text-xs font-bold tracking-[0.18em] uppercase text-zinc-600 dark:text-zinc-400">
+          <div className="flex items-center gap-2.5 mt-2 sm:mt-3 mb-2 select-none">
+            <span className="w-5 h-[1.5px] rounded-full bg-zinc-400 dark:bg-zinc-600" aria-hidden="true" />
+            <p className="text-[11px] sm:text-xs font-semibold tracking-[0.18em] uppercase text-zinc-500 dark:text-zinc-400 leading-normal">
               {badgeText}
             </p>
           </div>
@@ -104,25 +104,26 @@ export default function Hero() {
             style={{
               fontFamily: "'Many Years Ago', 'Plus Jakarta Sans', 'Outfit', sans-serif",
               letterSpacing: '-0.025em',
-              lineHeight: 1.04,
+              lineHeight: 1.06,
             }}
             className="font-black text-[38px] sm:text-[46px] text-zinc-950 dark:text-white mt-2 sm:mt-2.5 mb-1 select-none w-full"
           >
             <span className="block text-zinc-950 dark:text-white font-black">{title1Text}</span>
-            <span className="block text-zinc-950 dark:text-white font-black mt-1">{title2Text}</span>
+            <span className="block text-zinc-950 dark:text-white font-black mt-1.5">{title2Text}</span>
           </h1>
 
           {/* Group Tombol CTA Mobile */}
-          <div className="inline-flex items-center p-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-3.5 sm:mt-4 max-w-full select-none">
+          <div className="inline-flex items-center p-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-4 max-w-full select-none">
             <button 
               onClick={() => scrollTo('portfolio')}
-              className="h-[34px] sm:h-[36px] px-4 sm:px-4.5 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-xs font-bold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
+              className="group/cta h-[36px] px-4.5 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-xs font-semibold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
             >
-              {t('hero.view_works')} <ArrowRight className="w-3 h-3 shrink-0" />
+              <span>{t('hero.view_works')}</span>
+              <ArrowRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-hover/cta:translate-x-0.5" />
             </button>
             <button 
               onClick={() => scrollTo('contact')}
-              className="h-[34px] sm:h-[36px] px-4 sm:px-4.5 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-xs font-bold cursor-pointer active:scale-95 transition-all shrink-0"
+              className="h-[36px] px-4.5 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-xs font-semibold cursor-pointer active:scale-95 transition-all shrink-0"
             >
               {t('hero.contact_btn')}
             </button>
@@ -170,10 +171,10 @@ export default function Hero() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: "easeOut" }}
           >
-            {/* Sub-Judul Desktop: Teks bersih dengan dot aksen biru */}
-            <div className="flex items-center gap-2.5 mb-3.5 md:mb-4 select-none">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 dark:bg-blue-400"></span>
-              <p className="text-xs sm:text-[13px] md:text-sm font-bold tracking-[0.2em] uppercase text-zinc-600 dark:text-zinc-400">
+            {/* Sub-Judul Desktop: Teks bersih dengan aksen garis editorial minimalis */}
+            <div className="flex items-center gap-3 mb-4 select-none">
+              <span className="w-7 h-[1.5px] rounded-full bg-zinc-400 dark:bg-zinc-600" aria-hidden="true" />
+              <p className="text-xs sm:text-[13px] font-semibold tracking-[0.2em] uppercase text-zinc-500 dark:text-zinc-400 leading-normal">
                 {badgeText}
               </p>
             </div>
@@ -186,26 +187,27 @@ export default function Hero() {
               }}
               className="font-extrabold text-black dark:text-white select-none w-full"
             >
-              <span className="block text-[clamp(66px,5.8vw,88px)] 2xl:text-[96px] leading-[1.01] text-black dark:text-white font-black tracking-tight whitespace-nowrap">
+              <span className="block text-[clamp(66px,5.8vw,88px)] 2xl:text-[96px] leading-[1.03] text-black dark:text-white font-black tracking-tight whitespace-nowrap">
                 {title1Text}
               </span>
-              <span className="block text-[clamp(52px,4.6vw,72px)] 2xl:text-[78px] leading-[1.04] text-black dark:text-white font-bold md:font-extrabold tracking-tight mt-2 sm:mt-2.5">
+              <span className="block text-[clamp(52px,4.6vw,72px)] 2xl:text-[78px] leading-[1.06] text-black dark:text-white font-bold md:font-extrabold tracking-tight mt-2.5 sm:mt-3">
                 {title2Text}
               </span>
             </h1>
 
-            {/* Group Tombol CTA Desktop: Proporsional, tegas, dekat dengan text judul */}
-            <div className="flex flex-row items-center gap-3 w-fit font-semibold mt-4 md:mt-5">
+            {/* Group Tombol CTA Desktop: Proporsional, tegas, interaktif */}
+            <div className="flex flex-row items-center gap-3 w-fit font-semibold mt-5 md:mt-6">
               <button 
                 onClick={() => scrollTo('portfolio')}
-                className="h-[36px] md:h-[40px] px-5 md:px-6 inline-flex items-center justify-center gap-2 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-full text-xs md:text-sm font-bold shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
+                className="group/cta h-[40px] md:h-[44px] px-6 md:px-7 inline-flex items-center justify-center gap-2 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-full text-xs md:text-sm font-semibold shadow-xs hover:shadow-md active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
               >
-                {t('hero.view_works')} <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+                <span>{t('hero.view_works')}</span>
+                <ArrowRight className="w-4 h-4 shrink-0 transition-transform duration-200 group-hover/cta:translate-x-1" />
               </button>
 
               <button 
                 onClick={() => scrollTo('contact')}
-                className="h-[36px] md:h-[40px] px-5 md:px-6 inline-flex items-center justify-center gap-1.5 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 border border-zinc-200/80 dark:bg-zinc-900 dark:text-white dark:border-zinc-800 dark:hover:bg-zinc-800 rounded-full text-xs md:text-sm font-bold shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
+                className="h-[40px] md:h-[44px] px-6 md:px-7 inline-flex items-center justify-center gap-1.5 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 border border-zinc-200/80 dark:bg-zinc-900 dark:text-white dark:border-zinc-800 dark:hover:bg-zinc-800 rounded-full text-xs md:text-sm font-semibold shadow-xs hover:shadow-md active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
               >
                 {t('hero.contact_btn')}
               </button>

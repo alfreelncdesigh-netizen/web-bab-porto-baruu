@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { Eye, Image as ImageIcon, ShoppingCart, FileText, Mail, BarChart3, Download, Tag, Sparkles } from 'lucide-react';
+import { Eye, Image as ImageIcon, ShoppingCart, FileText, Mail, BarChart3, Download, Tag, Layers, ChevronDown } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { motion, AnimatePresence } from 'framer-motion';
 import BrandLogo from './BrandLogo';
@@ -476,11 +476,17 @@ export default function Stats({
               </motion.div>
 
               {/* 2. Karya (Portofolio Publik) */}
-              <motion.div variants={childGridCardItem} className="bg-white dark:bg-[#0A0A0A] p-2.5 md:p-6 rounded-lg md:rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-sm flex flex-col justify-center items-center text-center">
-                <ImageIcon className="w-4 h-4 md:w-6 md:h-6 text-purple-500 mb-2 md:mb-4" />
+              <motion.button
+                type="button"
+                variants={childGridCardItem}
+                onClick={() => window.dispatchEvent(new CustomEvent('changeView', { detail: { view: 'portfolio' } }))}
+                className="group bg-white dark:bg-[#0A0A0A] p-2.5 md:p-6 rounded-lg md:rounded-3xl border border-zinc-200/70 dark:border-zinc-800/70 hover:border-black dark:hover:border-white shadow-sm flex flex-col justify-center items-center text-center transition-all cursor-pointer active:scale-[0.98]"
+                title="Buka Galeri Karya"
+              >
+                <ImageIcon className="w-4 h-4 md:w-6 md:h-6 text-purple-500 mb-2 md:mb-4 transition-transform group-hover:scale-110" />
                 <h5 className="text-[9px] md:text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Karya</h5>
                 <p className="text-xl md:text-4xl font-bold text-black dark:text-white">{projects.length}</p>
-              </motion.div>
+              </motion.button>
 
               {/* 3. Order (Admin) ATAU Kategori Karya (Publik) */}
               {isEffectiveAdmin ? (
@@ -490,19 +496,31 @@ export default function Stats({
                   <p className="text-xl md:text-4xl font-bold text-black dark:text-white">{orders.length}</p>
                 </motion.div>
               ) : (
-                <motion.div variants={childGridCardItem} className="bg-white dark:bg-[#0A0A0A] p-2.5 md:p-6 rounded-lg md:rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-sm flex flex-col justify-center items-center text-center">
-                  <Tag className="w-4 h-4 md:w-6 md:h-6 text-green-500 mb-2 md:mb-4" />
+                <motion.button
+                  type="button"
+                  variants={childGridCardItem}
+                  onClick={() => window.dispatchEvent(new CustomEvent('changeView', { detail: { view: 'portfolio' } }))}
+                  className="group bg-white dark:bg-[#0A0A0A] p-2.5 md:p-6 rounded-lg md:rounded-3xl border border-zinc-200/70 dark:border-zinc-800/70 hover:border-black dark:hover:border-white shadow-sm flex flex-col justify-center items-center text-center transition-all cursor-pointer active:scale-[0.98]"
+                  title="Lihat Kategori Karya"
+                >
+                  <Tag className="w-4 h-4 md:w-6 md:h-6 text-green-500 mb-2 md:mb-4 transition-transform group-hover:scale-110" />
                   <h5 className="text-[9px] md:text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Kategori</h5>
                   <p className="text-xl md:text-4xl font-bold text-black dark:text-white">{Object.keys(projectCats).length || 5}</p>
-                </motion.div>
+                </motion.button>
               )}
 
-              {/* 4. Blog (Artikel Publik) */}
-              <motion.div variants={childGridCardItem} className="bg-white dark:bg-[#0A0A0A] p-2.5 md:p-6 rounded-lg md:rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-sm flex flex-col justify-center items-center text-center">
-                <FileText className="w-4 h-4 md:w-6 md:h-6 text-orange-500 mb-2 md:mb-4" />
+              {/* 4. Blog / Insight */}
+              <motion.button
+                type="button"
+                variants={childGridCardItem}
+                onClick={() => window.dispatchEvent(new CustomEvent('changeView', { detail: { view: 'insight' } }))}
+                className="group bg-white dark:bg-[#0A0A0A] p-2.5 md:p-6 rounded-lg md:rounded-3xl border border-zinc-200/70 dark:border-zinc-800/70 hover:border-black dark:hover:border-white shadow-sm flex flex-col justify-center items-center text-center transition-all cursor-pointer active:scale-[0.98]"
+                title="Buka Wawasan & Artikel"
+              >
+                <FileText className="w-4 h-4 md:w-6 md:h-6 text-orange-500 mb-2 md:mb-4 transition-transform group-hover:scale-110" />
                 <h5 className="text-[9px] md:text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Blog</h5>
                 <p className="text-xl md:text-4xl font-bold text-black dark:text-white">{blogs.length}</p>
-              </motion.div>
+              </motion.button>
 
               {/* 5. Pesan (Admin) ATAU Layanan Unggulan (Publik) */}
               {isEffectiveAdmin ? (
@@ -512,11 +530,17 @@ export default function Stats({
                   <p className="text-xl md:text-4xl font-bold text-black dark:text-white">{messages.length}</p>
                 </motion.div>
               ) : (
-                <motion.div variants={childGridCardItem} className="bg-white dark:bg-[#0A0A0A] p-2.5 md:p-6 rounded-lg md:rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-sm flex flex-col justify-center items-center text-center">
-                  <Sparkles className="w-4 h-4 md:w-6 md:h-6 text-amber-500 mb-2 md:mb-4" />
+                <motion.button
+                  type="button"
+                  variants={childGridCardItem}
+                  onClick={() => window.dispatchEvent(new CustomEvent('changeView', { detail: { view: 'store' } }))}
+                  className="group bg-white dark:bg-[#0A0A0A] p-2.5 md:p-6 rounded-lg md:rounded-3xl border border-zinc-200/70 dark:border-zinc-800/70 hover:border-black dark:hover:border-white shadow-sm flex flex-col justify-center items-center text-center transition-all cursor-pointer active:scale-[0.98]"
+                  title="Lihat Layanan Desain"
+                >
+                  <Layers className="w-4 h-4 md:w-6 md:h-6 text-amber-500 mb-2 md:mb-4 transition-transform group-hover:scale-110" />
                   <h5 className="text-[9px] md:text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-1">Layanan</h5>
                   <p className="text-xl md:text-4xl font-bold text-black dark:text-white">4 Bidang</p>
-                </motion.div>
+                </motion.button>
               )}
             </motion.div>
 
@@ -530,9 +554,7 @@ export default function Stats({
               >
                 <BarChart3 className="w-4 h-4 text-blue-500 shrink-0" />
                 <span>{showCharts ? 'Sembunyikan Rincian Diagram' : 'Lihat Detail Diagram / Statistik'}</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900 ml-1">
-                  {showCharts ? 'Tutup' : 'Buka Diagram'}
-                </span>
+                <ChevronDown className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${showCharts ? 'rotate-180' : ''}`} />
               </button>
             </motion.div>
 

@@ -36,11 +36,11 @@ export default function Footer() {
             </button>
 
             {/* Copyright Law - Plain Text Without Shape/Background */}
-            <div className="text-[10.5px] text-zinc-500 dark:text-zinc-400 font-normal leading-relaxed max-w-sm space-y-1">
+            <div className="text-[11px] text-zinc-500 dark:text-zinc-400 font-normal leading-[1.75] max-w-sm space-y-1.5">
               <span className="block font-semibold text-zinc-700 dark:text-zinc-300">
                 Undang Undang Perlindungan Hak Cipta:
               </span>
-              <p className="text-zinc-500 dark:text-zinc-400 text-left">
+              <p className="text-zinc-500 dark:text-zinc-400 text-left leading-[1.75]">
                 Seluruh konten, desain, dan materi pada situs ini dilindungi oleh UU No. 28 Tahun 2014 tentang Hak Cipta. Dilarang menjiplak, memperbanyak, atau mendistribusikan karya tanpa izin tertulis dari ALFREELNC.
               </p>
             </div>

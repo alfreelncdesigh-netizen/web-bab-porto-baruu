@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence, type Variants } from 'framer-motion';
-import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRight, Sparkles, Search, MessageCircle, ChevronLeft, ChevronRight, Eye, Clock, Wrench, CalendarCheck, Activity, ChevronDown, Maximize2, Minimize2, Handshake, AlertTriangle, RefreshCw } from 'lucide-react';
+import { ExternalLink, X, Check, Calendar, User, Share2, Copy, Layers, ArrowRight, Search, MessageCircle, ChevronLeft, ChevronRight, Eye, Clock, Wrench, CalendarCheck, Activity, ChevronDown, Maximize2, Minimize2, Handshake, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Project } from '../types/project';
 import { getStoredProjects, cleanProjects, sortProjectsByRecency, subscribeProjectsRealtime, subscribeContentBlobErrors, fetchProjectsFromBlob } from '../lib/contentStorage';
 import { resolveImageUrl, handleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
@@ -496,6 +496,56 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     };
   }, []);
 
+  // Listen to skill filter clicks from About section & keyboard shortcuts for Project modal
+  useEffect(() => {
+    const handleSkillFilter = (e: Event) => {
+      const detail = (e as CustomEvent<{ skill?: string }>).detail;
+      if (detail?.skill) {
+        setActiveCategory('Semua');
+        setSearchQuery(detail.skill);
+        onExpandRemaining?.();
+      }
+    };
+    window.addEventListener('portfolio_filter_skill', handleSkillFilter);
+    return () => window.removeEventListener('portfolio_filter_skill', handleSkillFilter);
+  }, [onExpandRemaining]);
+
+  useEffect(() => {
+    if (!selectedProject && !isFullscreenLightbox) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = document.activeElement?.tagName;
+      if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
+      if (e.key === 'Escape') {
+        if (isFullscreenLightbox) {
+          setIsFullscreenLightbox(false);
+        } else if (selectedProject) {
+          handleCloseArticle();
+        }
+      } else if (selectedProject && e.key === 'ArrowRight') {
+        const imgs = [
+          selectedProject.image,
+          ...(Array.isArray(selectedProject.images) ? selectedProject.images : [])
+        ].filter((img): img is string => typeof img === 'string' && img.trim().length > 0);
+        const total = Array.from(new Set(imgs)).length;
+        if (total > 1) {
+          setActiveImageIndex((prev) => (prev + 1) % total);
+        }
+      } else if (selectedProject && e.key === 'ArrowLeft') {
+        const imgs = [
+          selectedProject.image,
+          ...(Array.isArray(selectedProject.images) ? selectedProject.images : [])
+        ].filter((img): img is string => typeof img === 'string' && img.trim().length > 0);
+        const total = Array.from(new Set(imgs)).length;
+        if (total > 1) {
+          setActiveImageIndex((prev) => (prev - 1 + total) % total);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedProject, isFullscreenLightbox]);
+
   // Auto-scroll ke paling atas modal saat artikel dibuka atau berpindah artikel
   // serta manajemen timer auto-hide tombol silang (hilang jika tidak disentuh 3 detik)
   useEffect(() => {
@@ -714,7 +764,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               <h2 className="text-3xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-black dark:text-white">
                 {t('portfolio.title')}
               </h2>
-              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+              <p className="text-xs sm:text-sm text-zinc-500 dark:text-zinc-400 mt-2 leading-relaxed max-w-xl">
                 {t('portfolio.subtitle')}
               </p>
             </div>
@@ -1312,10 +1362,10 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                     )}
                   </div>
 
-                  {/* TEKS DESKRIPSI LENGKAP: Ukuran nyaman & Rata Kanan-Kiri */}
+                  {/* TEKS DESKRIPSI LENGKAP */}
                   {selectedProject.description && (
                     <div className="mb-5 w-full">
-                      <p className="text-[11px] md:text-[11.5px] leading-[1.7] text-zinc-600 dark:text-zinc-300 font-normal whitespace-pre-wrap text-justify [text-justify:inter-word] [text-align-last:left]">
+                      <p className="text-xs sm:text-[13.5px] leading-[1.8] text-zinc-600 dark:text-zinc-300 font-normal whitespace-pre-wrap text-left">
                         {translateDynamic(selectedProject.description)}
                       </p>
                     </div>
@@ -1392,8 +1442,8 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                                     <Activity size={14} className="text-blue-500 shrink-0" />
                                     <span>{translateDynamic('Detail Metrik Proyek')}</span>
                                   </div>
-                                  <span className="text-[9.5px] md:text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/60 px-2 py-0.5 rounded-full flex items-center gap-1">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                  <span className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-800/60 px-2.5 py-0.5 rounded-md flex items-center gap-1">
+                                    <Check size={11} className="shrink-0" />
                                     {translateDynamic('Selesai & Terkirim')}
                                   </span>
                                 </div>
@@ -1501,14 +1551,11 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                 {/* LAMPIRAN DAFTAR KARYA LAINNYA */}
                 <div className="mt-2 pt-4 border-t border-zinc-200/70 dark:border-zinc-800/70">
                   <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                      <h4 className="text-[11px] md:text-xs font-semibold tracking-wide text-black dark:text-white flex items-center gap-1.5">
-                        <Layers size={13} className="text-blue-500" />
-                        Karya Lainnya
-                      </h4>
-                    </div>
-                    <span className="text-[9px] md:text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
+                    <h4 className="text-xs font-semibold tracking-wide text-black dark:text-white flex items-center gap-1.5">
+                      <Layers size={14} className="text-zinc-500 dark:text-zinc-400" />
+                      Karya Lainnya
+                    </h4>
+                    <span className="text-[10px] font-medium px-2.5 py-0.5 rounded-md bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
                       {displayedOtherProjects.length} dari {otherProjects.length} karya
                     </span>
                   </div>

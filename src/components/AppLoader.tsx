@@ -118,7 +118,6 @@ export default function AppLoader({ onComplete }: AppLoaderProps) {
         </div>
 
         <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-medium text-zinc-400 tracking-wider">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           <span>Memuat 20% konten website...</span>
         </div>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Sparkles, ChevronDown, ChevronUp, HelpCircle, Check, Copy, Share2, Layers } from 'lucide-react';
+import { Search, LayoutGrid, Palette, PenTool, Award, ShoppingBag, HelpCircle, Check, Copy, Layers, X } from 'lucide-react';
 import { QuickFilterItem } from '../types/quickFilter';
 import { getStoredQuickFilterItems, cleanQuickFilterItems, subscribeQuickFilterRealtime } from '../lib/quickFilterStorage';
 import { useTheme } from '../contexts/ThemeContext';
@@ -38,14 +38,7 @@ const CustomLoadingPlaceholder = () => (
     role="status"
     aria-live="polite"
   >
-    <div className="relative w-14 h-14 mb-4 flex items-center justify-center">
-      {/* Blue-purple gradient ring spinner */}
-      <div className="w-14 h-14 rounded-full animate-spin bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 p-[3.5px] shadow-lg shadow-indigo-500/20">
-        <div className="w-full h-full bg-[#f8f8fa] dark:bg-[#0c0c0e] rounded-full" />
-      </div>
-      {/* Center glowing dot */}
-      <div className="absolute w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 to-purple-500 animate-pulse" />
-    </div>
+    <div className="w-10 h-10 mb-4 rounded-full border-2 border-zinc-200 dark:border-zinc-800 border-t-black dark:border-t-white animate-spin" />
     <span className="text-sm font-semibold tracking-wide text-zinc-700 dark:text-zinc-200">
       Memuat konten
     </span>
@@ -59,12 +52,12 @@ export default function QuickFilterSearch({ isSecondHalfLoaded = true }: QuickFi
   const { theme } = useTheme();
   const [items, setItems] = useState<QuickFilterItem[]>(() => getStoredQuickFilterItems());
   const [activeCategory, setActiveCategory] = useState<string>('Semua');
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(() => {
     // Show spinner initially if no cached items
     const cached = getStoredQuickFilterItems();
     return !cached || cached.length === 0;
   });
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Subscribe to realtime updates directly from Cloud Firestore
@@ -118,14 +111,21 @@ export default function QuickFilterSearch({ isSecondHalfLoaded = true }: QuickFi
     return result;
   }, [items]);
 
-  // Filter items based on active preset category
+  // Filter items based on active preset category & live keyword search
   const filteredItems = useMemo(() => {
     const publishedOnly = items.filter(i => i.published !== false);
-    if (activeCategory === 'Semua') {
-      return publishedOnly;
-    }
-    return publishedOnly.filter(i => i.category?.toLowerCase() === activeCategory.toLowerCase());
-  }, [items, activeCategory]);
+    const byCategory = activeCategory === 'Semua'
+      ? publishedOnly
+      : publishedOnly.filter(i => i.category?.toLowerCase() === activeCategory.toLowerCase());
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return byCategory;
+    return byCategory.filter(i =>
+      i.question?.toLowerCase().includes(q) ||
+      i.answer?.toLowerCase().includes(q) ||
+      i.category?.toLowerCase().includes(q) ||
+      (Array.isArray(i.tags) && i.tags.some(tag => tag.toLowerCase().includes(q)))
+    );
+  }, [items, activeCategory, searchQuery]);
 
   const handleCopy = (id: string, text: string) => {
     navigator.clipboard?.writeText(text);
@@ -143,84 +143,84 @@ export default function QuickFilterSearch({ isSecondHalfLoaded = true }: QuickFi
         
         {/* Section Header */}
         <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-10">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-50 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-800/60 mb-3.5 shadow-2xs">
-            <GoogleGIcon className="w-4 h-4 shrink-0" />
-            <span className="text-[11px] sm:text-xs font-bold tracking-wider uppercase text-blue-700 dark:text-blue-300">
-              Quick Filter Search & Insights
-            </span>
-          </div>
+          <span className="inline-flex items-center gap-2 text-[11px] sm:text-xs font-mono font-semibold tracking-[0.18em] uppercase text-zinc-500 dark:text-zinc-400 mb-3">
+            <GoogleGIcon className="w-3.5 h-3.5 shrink-0" />
+            <span>Quick Filter Search &amp; Insights</span>
+          </span>
 
-          <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-black dark:text-white leading-tight">
-            Eksplorasi Wawasan & Jawaban Desain
+          <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight text-black dark:text-white leading-[1.15]">
+            Eksplorasi Wawasan &amp; Jawaban Desain
           </h2>
-          <p className="mt-2 text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
-            Klik tombol topik kurasi di bawah untuk langsung memunculkan jawaban spesifik mengenai tren grafis, rumus warna, dan panduan branding.
+          <p className="mt-2.5 text-xs sm:text-sm md:text-[15px] text-zinc-600 dark:text-zinc-400 leading-[1.75]">
+            Ketik kata kunci atau klik topik kurasi di bawah untuk memunculkan jawaban spesifik seputar tren grafis, warna, dan branding.
           </p>
         </div>
 
-        {/* Strategic Google Search-Style Interactive Filter Bar */}
+        {/* Interactive Search Input Bar */}
         <div className="max-w-3xl mx-auto mb-7 sm:mb-8">
-          <div className="group relative flex items-center bg-white/95 dark:bg-[#121214]/95 backdrop-blur-xl border border-zinc-200/90 dark:border-zinc-800/90 rounded-full px-4 sm:px-6 py-3.5 sm:py-4 shadow-md hover:shadow-lg transition-all duration-200 focus-within:ring-2 focus-within:ring-blue-500/30">
-            {/* Google "G" Icon Left */}
-            <div className="flex items-center justify-center shrink-0 mr-3.5">
-              <GoogleGIcon className="w-6 h-6 sm:w-6.5 sm:h-6.5 select-none" />
+          <div className="group relative flex items-center bg-white/95 dark:bg-[#121214]/95 backdrop-blur-xl border border-zinc-200/90 dark:border-zinc-800/90 rounded-full px-4 sm:px-6 py-3 sm:py-3.5 shadow-sm hover:shadow-md transition-all duration-200 focus-within:ring-2 focus-within:ring-black/15 dark:focus-within:ring-white/20">
+            <div className="flex items-center justify-center shrink-0 mr-3">
+              <GoogleGIcon className="w-5 h-5 sm:w-6 sm:h-6 select-none" />
             </div>
 
-            {/* Simulated Clean Google Search Text Prompt (No free typing needed) */}
-            <div className="flex-1 min-w-0 pr-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs sm:text-sm text-zinc-400 dark:text-zinc-500 font-medium truncate select-none">
-                  {activeCategory === 'Semua' 
-                    ? 'Topik Kurasi: Menampilkan semua wawasan desain' 
-                    : `Menampilkan jawaban kurasi untuk:`}
-                </span>
-                {activeCategory !== 'Semua' && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 animate-fadeIn">
-                    {activeCategory}
-                  </span>
-                )}
-              </div>
-            </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari pertanyaan, topik, atau kata kunci desain..."
+              aria-label="Cari pertanyaan wawasan desain"
+              className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 outline-none pr-3"
+            />
 
-            {/* Right Quick Action / Count Indicator */}
-            <div className="flex items-center gap-1.5 shrink-0 text-zinc-400">
-              <span className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+            <div className="flex items-center gap-2 shrink-0">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="p-1 rounded-full text-zinc-400 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  aria-label="Hapus kata kunci"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <span className="text-[11px] font-mono font-semibold px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
                 {filteredItems.length} Jawaban
               </span>
-              <Search className="w-4 h-4 ml-1 text-zinc-400 dark:text-zinc-500" />
+              <Search className="w-4 h-4 text-zinc-400 dark:text-zinc-500" />
             </div>
           </div>
         </div>
 
-        {/* Preset Pill Tags (Click to instantly reveal specific Q&A) */}
+        {/* Preset Category Tabs */}
         <div className="max-w-4xl mx-auto mb-9">
           <div className="flex items-center justify-start sm:justify-center gap-2 sm:gap-2.5 overflow-x-auto pb-2 pt-1 px-1 no-scrollbar">
             {presetCategories.map((category) => {
               const isActive = activeCategory.toLowerCase() === category.toLowerCase();
+              const CategoryIcon =
+                category === 'Semua'
+                  ? LayoutGrid
+                  : category === 'Tren Warna'
+                  ? Palette
+                  : category === 'Tren Desain'
+                  ? PenTool
+                  : category === 'Tips Branding'
+                  ? Award
+                  : category === 'Jasa & Order'
+                  ? ShoppingBag
+                  : Layers;
+
               return (
                 <button
                   key={category}
-                  onClick={() => {
-                    setActiveCategory(category);
-                  }}
+                  onClick={() => setActiveCategory(category)}
                   className={`group relative shrink-0 flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-full text-xs sm:text-sm font-semibold transition-all duration-200 cursor-pointer select-none ${
                     isActive
-                      ? 'bg-black text-white dark:bg-white dark:text-black shadow-md scale-102 font-bold ring-2 ring-black/10 dark:ring-white/20'
-                      : 'bg-zinc-100 dark:bg-zinc-800/80 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700/80 border border-zinc-200/50 dark:border-zinc-700/40 hover:scale-101'
+                      ? 'bg-black text-white dark:bg-white dark:text-black shadow-sm font-semibold'
+                      : 'bg-zinc-100 dark:bg-zinc-800/80 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700/80 border border-zinc-200/50 dark:border-zinc-700/40'
                   }`}
                   aria-pressed={isActive}
                 >
-                  {category === 'Semua' ? (
-                    <Sparkles className={`w-3.5 h-3.5 ${isActive ? 'text-amber-300 dark:text-amber-500' : 'text-zinc-400'}`} />
-                  ) : category === 'Tren Warna' ? (
-                    <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 shrink-0" />
-                  ) : category === 'Tren Desain' ? (
-                    <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 shrink-0" />
-                  ) : category === 'Tips Branding' ? (
-                    <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-500 shrink-0" />
-                  ) : (
-                    <Layers className="w-3.5 h-3.5 opacity-70 shrink-0" />
-                  )}
+                  <CategoryIcon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'opacity-100' : 'opacity-65'}`} />
                   <span>{category}</span>
                 </button>
               );
@@ -254,7 +254,6 @@ export default function QuickFilterSearch({ isSecondHalfLoaded = true }: QuickFi
           >
             <AnimatePresence mode="popLayout">
               {filteredItems.map((item, index) => {
-                const isExpanded = expandedId === item.id;
                 const isCopied = copiedId === item.id;
 
                 return (
@@ -265,13 +264,12 @@ export default function QuickFilterSearch({ isSecondHalfLoaded = true }: QuickFi
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
                     transition={{ duration: 0.22, delay: index * 0.04 }}
-                    className="flex flex-col justify-between bg-white/90 dark:bg-[#111113]/90 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl sm:rounded-3xl p-5 sm:p-6 shadow-xs hover:shadow-md transition-all duration-200 hover:border-zinc-300 dark:hover:border-zinc-700"
+                    className="flex flex-col justify-between bg-white/95 dark:bg-[#111113]/95 backdrop-blur-md border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl sm:rounded-3xl p-5 sm:p-6 shadow-xs hover:shadow-md transition-all duration-200 hover:border-zinc-300 dark:hover:border-zinc-700"
                   >
                     <div>
-                      {/* Top Meta: Category Pill & Google Icon Badge */}
+                      {/* Top Meta: Category Tag & Copy Button */}
                       <div className="flex items-center justify-between gap-2 mb-3">
-                        <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-bold tracking-wide bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300">
-                          <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-[10.5px] font-semibold uppercase tracking-wider bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
                           {item.category}
                         </span>
 
@@ -279,7 +277,7 @@ export default function QuickFilterSearch({ isSecondHalfLoaded = true }: QuickFi
                           <button
                             onClick={() => handleCopy(item.id, `${item.question}\n\n${item.answer}`)}
                             title="Salin Tanya & Jawab"
-                            className="p-1.5 rounded-lg text-zinc-400 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                            className="p-1.5 rounded-lg text-zinc-400 hover:text-black dark:hover:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                           >
                             {isCopied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
                           </button>
@@ -292,8 +290,8 @@ export default function QuickFilterSearch({ isSecondHalfLoaded = true }: QuickFi
                       </h3>
 
                       {/* Answer Body */}
-                      <div className="text-xs sm:text-[13.5px] text-zinc-600 dark:text-zinc-300 leading-relaxed space-y-2">
-                        <p>{item.answer}</p>
+                      <div className="text-xs sm:text-[14px] text-zinc-600 dark:text-zinc-300 leading-[1.8] space-y-2.5">
+                        <p className="leading-[1.8]">{item.answer}</p>
                       </div>
                     </div>
 

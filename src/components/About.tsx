@@ -109,30 +109,30 @@ export default function About() {
       className="order-2 lg:order-1 text-left mt-2 sm:mt-3 lg:mt-0 lg:col-span-7"
      >
       <motion.div variants={sectionHeaderItem}>
-       <h2 className="text-xl sm:text-3xl md:text-5xl font-semibold tracking-tight mb-4 md:mb-5 text-black dark:text-white leading-[1.1]">
+       <h2 className="text-xl sm:text-3xl md:text-5xl font-semibold tracking-tight mb-5 md:mb-6 text-black dark:text-white leading-[1.15]">
         {translateDynamic(settings.aboutTitle1)} <br className="hidden sm:block"/>
         <span className="text-zinc-500 dark:text-zinc-400">{translateDynamic(settings.aboutTitle2)}</span>
        </h2>
       </motion.div>
       
-      <motion.div variants={sectionContentItem} className="space-y-4 md:space-y-5 text-zinc-600 dark:text-zinc-300 text-sm md:text-base leading-relaxed font-medium mb-5 md:mb-6 max-w-none">
-       <p className={`whitespace-pre-wrap ${(settings.aboutDescription1 || '').includes('\n') ? 'text-left' : 'text-justify'}`}>
+      <motion.div variants={sectionContentItem} className="space-y-4 md:space-y-5 text-zinc-600 dark:text-zinc-300 text-sm md:text-[15.5px] leading-[1.85] font-normal mb-6 md:mb-7 max-w-[65ch]">
+       <p className="whitespace-pre-wrap text-left leading-[1.85]">
         {translateDynamic(settings.aboutDescription1 || '')}
        </p>
-       <p className={`whitespace-pre-wrap ${(settings.aboutDescription2 || '').includes('\n') ? 'text-left' : 'text-justify'}`}>
+       <p className="whitespace-pre-wrap text-left leading-[1.85]">
         {translateDynamic(settings.aboutDescription2 || '')}
        </p>
       </motion.div>
       
        {/* Bento Grid Minimalist: Informasi Kontak & Tombol CV */}
-       <motion.div variants={sectionContentItem} className="mb-6 md:mb-8 p-[16px] bg-[#f8f9fa] dark:bg-[#18181b] rounded-[20px] border border-zinc-200/60 dark:border-zinc-800/60 shadow-none max-w-none sm:max-w-xl">
+       <motion.div variants={sectionContentItem} className="mb-6 md:mb-8 p-4 sm:p-5 bg-[#f8f9fa] dark:bg-[#18181b] rounded-2xl border border-zinc-200/70 dark:border-zinc-800/70 shadow-none max-w-none sm:max-w-xl">
          {/* BARIS 1: Nama & Status */}
          <div className="flex flex-wrap items-center justify-between gap-2">
-           <h3 className="text-[18px] font-bold text-zinc-900 dark:text-white tracking-tight leading-tight">
+           <h3 className="text-[18px] font-bold text-zinc-900 dark:text-white tracking-tight leading-snug">
              {settings.fullName && settings.fullName !== 'Alfreelnc' ? settings.fullName : 'Muhammad Albiansyah'}
            </h3>
            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#f0fdf4] text-[#166534] dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/30">
-             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
              {t('about.available')}
            </span>
          </div>
@@ -187,13 +187,26 @@ export default function About() {
     
       <motion.div variants={childGridContainer} className="flex flex-wrap justify-start gap-2 mt-6">
        {skills.map((skill, index) => (
-        <motion.span 
-         key={index} 
+        <motion.button 
+         key={index}
+         type="button"
          variants={childGridCardItem}
-         className="px-3 py-1.5 md:px-4 md:py-2 bg-white dark:bg-[#1A1A1A] border border-zinc-200/60 dark:border-zinc-800 rounded-full text-[11px] md:text-xs font-semibold text-black dark:text-zinc-300 cursor-default shadow-sm hover:border-zinc-300 dark:hover:border-zinc-600 hover:shadow-md transition-all"
+         onClick={() => {
+           const keyword = skill.replace(/ Design| Suite/gi, '').trim();
+           window.dispatchEvent(new CustomEvent('portfolio_filter_skill', { detail: { skill: keyword } }));
+           const portfolioEl = document.getElementById('portfolio');
+           if (portfolioEl) {
+             portfolioEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+           } else {
+             window.dispatchEvent(new CustomEvent('changeView', { detail: { view: 'portfolio' } }));
+           }
+         }}
+         title={`Lihat karya terkait ${skill}`}
+         className="group/skill inline-flex items-center gap-1.5 px-3.5 py-1.5 md:px-4 md:py-2 bg-white dark:bg-[#161618] border border-zinc-200/80 dark:border-zinc-800 rounded-full text-[11px] md:text-xs font-medium text-zinc-800 dark:text-zinc-200 cursor-pointer hover:border-black dark:hover:border-white hover:bg-zinc-50 dark:hover:bg-zinc-800/80 active:scale-95 transition-all"
         >
-         {translateDynamic(skill)}
-        </motion.span>
+         <span>{translateDynamic(skill)}</span>
+         <ArrowRight className="w-3 h-3 text-zinc-400 opacity-0 -ml-1 group-hover/skill:opacity-100 group-hover/skill:ml-0 group-hover/skill:text-black dark:group-hover/skill:text-white transition-all" />
+        </motion.button>
        ))}
       </motion.div>
      </motion.div>

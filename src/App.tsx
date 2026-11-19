@@ -720,14 +720,11 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setIsSecondHalfLoaded(true)}
-                        className="group inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-white/95 dark:bg-zinc-900/95 border border-zinc-200/80 dark:border-zinc-800/80 shadow-md backdrop-blur-md text-xs font-semibold text-zinc-700 dark:text-zinc-200 cursor-pointer hover:border-black dark:hover:border-white transition-all active:scale-95"
+                        className="group inline-flex items-center gap-2.5 px-5 py-2.5 rounded-full bg-white/95 dark:bg-zinc-900/95 border border-zinc-200/80 dark:border-zinc-800/80 shadow-sm backdrop-blur-md text-xs font-medium text-zinc-700 dark:text-zinc-200 cursor-pointer hover:border-black dark:hover:border-white transition-all active:scale-95"
                       >
-                        <span className="relative flex h-2.5 w-2.5">
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
-                        </span>
-                        <span>50% konten dimuat • Gulir ke bawah atau beralih menu untuk memuat otomatis</span>
-                        <ArrowLeft className="w-3.5 h-3.5 rotate-[-90deg] group-hover:translate-y-0.5 transition-transform" />
+                        <span className="inline-flex h-2 w-2 rounded-full bg-zinc-400 dark:bg-zinc-500 group-hover:bg-blue-600 dark:group-hover:bg-blue-400 transition-colors" />
+                        <span>Muat Statistik, Pengalaman &amp; Kontak</span>
+                        <ArrowLeft className="w-3.5 h-3.5 -rotate-90 group-hover:translate-y-0.5 transition-transform" />
                       </button>
                     </div>
                   )}

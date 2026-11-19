@@ -215,15 +215,15 @@ export default function Contact() {
     {/* Section Header */}
     <motion.div 
      variants={sectionHeaderItem}
-     className="text-left md:text-center mb-5 md:mb-7"
+     className="text-left md:text-center mb-6 md:mb-8"
     >
-     <div className="inline-block px-3.5 py-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800/50 text-[11px] md:text-xs font-semibold tracking-widest text-black dark:text-zinc-400 mb-3 uppercase">
+     <span className="block text-[11px] md:text-xs font-mono font-semibold tracking-[0.2em] text-zinc-500 dark:text-zinc-400 mb-2.5 uppercase">
       {t('nav.contact')}
-     </div>
+     </span>
      <h2 className="text-2xl sm:text-4xl md:text-5xl font-semibold tracking-tight text-black dark:text-white leading-[1.15] mb-3">
       {t('contact.title')}
      </h2>
-     <p className="text-xs sm:text-sm md:text-base text-zinc-600 dark:text-zinc-400 max-w-2xl mx-auto leading-relaxed">
+     <p className="text-xs sm:text-sm md:text-base text-zinc-600 dark:text-zinc-400 max-w-2xl mx-auto leading-[1.75]">
       {t('contact.subtitle')}
      </p>
     </motion.div>
@@ -239,16 +239,13 @@ export default function Contact() {
         <MessageCircle className="w-6 h-6 sm:w-7 sm:h-7" />
        </div>
        <div className="text-left">
-        <div className="flex items-center gap-2 mb-1">
-         <span className="w-2 h-2 rounded-full bg-[#25D366] animate-pulse"></span>
-         <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-          Lebih Cepat & Praktis
-         </span>
-        </div>
-        <h3 className="text-base sm:text-xl font-bold text-black dark:text-white tracking-tight">
+        <span className="block text-[10px] sm:text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400 mb-1">
+         Lebih Cepat &amp; Praktis
+        </span>
+        <h3 className="text-base sm:text-xl font-bold text-black dark:text-white tracking-tight leading-snug">
          Ngobrol Langsung di WhatsApp
         </h3>
-        <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 mt-1 max-w-md leading-relaxed">
+        <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 mt-1.5 max-w-md leading-[1.75]">
          Konsultasi santai dan fleksibel. Mulai dari konsep, referensi visual, perkiraan biaya, sampai jadwal pengerjaan bisa langsung kita bicarakan.
         </p>
        </div>
@@ -272,10 +269,10 @@ export default function Contact() {
      className="bg-zinc-50 dark:bg-[#111111] border border-zinc-200/70 dark:border-zinc-800/70 rounded-2xl sm:rounded-3xl p-5 sm:p-8 md:p-10 shadow-sm"
     >
      <div className="text-left mb-6">
-      <h3 className="text-base sm:text-xl font-bold text-black dark:text-white tracking-tight">
+      <h3 className="text-base sm:text-xl font-bold text-black dark:text-white tracking-tight leading-snug">
        Tinggalkan Pesan Tertulis
       </h3>
-      <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 mt-1">
+      <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 mt-1.5 leading-[1.7]">
        Lebih nyaman lewat pesan tertulis? Silakan isi data di bawah, nanti akan saya balas secepatnya.
       </p>
      </div>
@@ -353,16 +350,13 @@ export default function Contact() {
     >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 sm:pb-6 border-b border-zinc-200/70 dark:border-zinc-800/70">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
-            <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              Ulasan Pengunjung
-            </span>
-          </div>
+          <span className="block text-[10px] sm:text-xs font-mono font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400 mb-1">
+            Ulasan Pengunjung
+          </span>
           <h3 className="text-base sm:text-xl font-bold text-black dark:text-white tracking-tight flex items-center gap-2.5">
-            <MessageSquare className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            <span>Semua Komentar & Pesan</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-bold">
+            <MessageSquare className="w-5 h-5 text-zinc-600 dark:text-zinc-300" />
+            <span>Semua Komentar &amp; Pesan</span>
+            <span className="text-xs px-2.5 py-0.5 rounded-full bg-zinc-200/80 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-semibold">
               {messages.length}
             </span>
           </h3>
@@ -410,7 +404,7 @@ export default function Contact() {
                           <span>{formatCommentDate(msg.dateAdded)}</span>
                         </div>
                       </div>
-                      <p className="text-xs sm:text-[13px] text-zinc-700 dark:text-zinc-300 leading-relaxed mt-0.5 whitespace-pre-wrap break-words">
+                      <p className="text-xs sm:text-[13.5px] text-zinc-700 dark:text-zinc-300 leading-[1.75] mt-1.5 whitespace-pre-wrap break-words">
                         {msg.message}
                       </p>
                     </div>

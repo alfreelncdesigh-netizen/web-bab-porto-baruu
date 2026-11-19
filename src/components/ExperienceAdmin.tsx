@@ -14,7 +14,7 @@ import {
   deleteExperienceFromBlob
 } from '../lib/contentStorage';
 import { SiteSettings } from '../types/site';
-import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake, Upload, ChevronLeft, ChevronRight, Star, Link as LinkIcon } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, Image as ImageIcon, UploadCloud, Archive, Loader2, AlertCircle, Handshake, Upload, ChevronLeft, ChevronRight, Link as LinkIcon } from 'lucide-react';
 import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { resolveImageUrl, handleImageError } from '../lib/imageResolver';
 import { recordCollaboratorActivity } from '../lib/collaboratorLogger';
@@ -638,7 +638,7 @@ export default function ExperienceAdmin() {
                           <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold backdrop-blur-md shadow-xs bg-black/75 text-white">
                             {isPrimary ? (
                               <>
-                                <Star size={10} className="text-amber-400 fill-amber-400" />
+                                <Check size={10} className="text-emerald-400 stroke-[3]" />
                                 <span>Foto 1 (Utama)</span>
                               </>
                             ) : (

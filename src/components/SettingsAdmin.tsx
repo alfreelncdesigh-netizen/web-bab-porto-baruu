@@ -4,7 +4,7 @@ import { SiteSettings, defaultSettings, HeroBanner } from '../types/site';
 import { getStoredSettings, saveStoredSettings, fetchSettingsFromBlob } from '../lib/contentStorage';
 import { compressAndUpload, ensurePersistedAssetUrl } from '../lib/storageUploader';
 import { renderPdfFirstPageToImage } from '../lib/pdfHelper';
-import { Loader2, Check, Upload, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { Loader2, Check, Upload, Plus, Trash2, ArrowUp, ArrowDown, Eye, EyeOff, Tag, Image as ImageIcon } from 'lucide-react';
 import { resolveImageUrl } from '../lib/imageResolver';
 import { useAdminSaveState } from '../hooks/useAdminSaveState';
 
@@ -369,7 +369,7 @@ export default function SettingsAdmin() {
        </div>
 
        <div className="p-3.5 rounded-2xl bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-200 dark:border-zinc-800/80 text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
-        <p className="font-semibold text-black dark:text-zinc-200 mb-1">✨ Tata Letak Hero 3-Elemen Bersih:</p>
+        <p className="font-semibold text-black dark:text-zinc-200 mb-1">Tata Letak Hero 3-Elemen Bersih:</p>
         Sesuai spesifikasi desain terbaru, teks paragraf deskripsi disembunyikan agar tampilan Hero Beranda tetap rapi, fokus, dan estetik langsung ke tombol CTA.
        </div>
       </div>
@@ -471,9 +471,9 @@ export default function SettingsAdmin() {
          Foto tampil di sebelah judul di layar desktop dan di bawah judul di layar mobile.
         </p>
         {settings.heroImage && (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 shrink-0">
-           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-           Tersimpan di Firebase
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 shrink-0">
+           <Check size={11} />
+           Tersimpan di Vercel Blob
           </span>
         )}
        </div>
@@ -486,8 +486,8 @@ export default function SettingsAdmin() {
      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-4 border-b border-zinc-200 dark:border-zinc-800">
       <div>
        <div className="flex items-center gap-2">
-        <span className="p-2 rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
-         <Sparkles size={18} />
+        <span className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white">
+         <ImageIcon size={18} />
         </span>
         <h3 className="text-lg font-semibold text-black dark:text-white">
          Hero Carousel Banner (Promosi 3:1)
@@ -826,7 +826,7 @@ export default function SettingsAdmin() {
      <div className="flex items-center justify-between mb-4 border-b border-zinc-200 dark:border-zinc-800 pb-2">
       <div>
        <h3 className="text-lg font-semibold text-black dark:text-white flex items-center gap-2">
-        <Sparkles size={18} className="text-amber-500" />
+        <Tag size={18} className="text-amber-500" />
         Widget Promosi Sticky (3 Poster Acak)
        </h3>
        <p className="text-xs text-zinc-500 mt-0.5">
@@ -849,7 +849,7 @@ export default function SettingsAdmin() {
 
      <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-800 dark:text-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
       <div>
-       <span className="font-bold block mb-1 text-sm">✨ Tersedia Menu Khusus "Widget Promosi" di Dasbor:</span>
+       <span className="font-bold block mb-1 text-sm">Tersedia Menu Khusus "Widget Promosi" di Dasbor:</span>
        <p className="leading-relaxed">
         Anda sekarang dapat menambahkan dan mengelola hingga <strong>3 Poster Promosi</strong> sekaligus dengan rotasi acak, interval kemunculan otomatis (<strong>20 detik untuk user baru</strong>, <strong>1 menit untuk user lama</strong>), dan penyimpanan riwayat via <strong>Cookie browser</strong>.
        </p>

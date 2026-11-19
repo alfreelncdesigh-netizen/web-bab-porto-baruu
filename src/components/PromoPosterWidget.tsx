@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ArrowUpRight, Sparkles } from 'lucide-react';
+import { X, ArrowUpRight, Tag } from 'lucide-react';
 import { getStoredCookieConsent } from "../lib/cookies";
 import { SiteSettings, defaultSettings, PromoPosterItem, defaultPromoPosters } from '../types/site';
 import { getStoredSettings, subscribeSettingsRealtime } from '../lib/contentStorage';
@@ -455,9 +455,9 @@ export default function PromoPosterWidget({
           </button>
 
           {/* Badge Label "PROMO" di Pojok Kiri Atas */}
-          <div className="absolute top-2 left-2 z-10 pointer-events-none">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/80 text-[10px] font-bold text-amber-400 backdrop-blur-sm border border-amber-400/30 shadow-sm">
-              <Sparkles size={10} className="fill-amber-400" />
+          <div className="absolute top-2.5 left-2.5 z-10 pointer-events-none">
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-black/80 text-[10px] font-semibold tracking-wider text-white backdrop-blur-sm border border-white/20 shadow-sm">
+              <Tag size={10} />
               <span>PROMO</span>
             </span>
           </div>

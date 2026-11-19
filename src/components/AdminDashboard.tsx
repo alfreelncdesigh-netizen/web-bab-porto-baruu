@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Menu, X, Lock, LogOut, Image as ImageIcon, FileText, Settings, 
-  ShoppingCart, Briefcase, BarChart3, User, Mail, Archive, Sparkles, 
+  ShoppingCart, Briefcase, BarChart3, User, Mail, Archive, Tag, 
   Eye, EyeOff, ShieldCheck, Search, Upload, Check, Copy, Loader2, AlertCircle
 } from 'lucide-react';
 import { doc, getDoc, setDoc, getDocs, query, collection, where, orderBy, limit } from 'firebase/firestore';
@@ -636,10 +636,7 @@ export default function AdminDashboard() {
         
         {/* Active Admin Badge */}
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-100 dark:bg-[#141414] border border-zinc-200/80 dark:border-zinc-800 text-xs font-mono font-semibold text-zinc-800 dark:text-zinc-200 self-start sm:self-auto shadow-xs">
-          <span className="relative flex h-2 w-2">
-            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${adminRole === 'collaborator' ? 'bg-indigo-400' : 'bg-emerald-400'}`}></span>
-            <span className={`relative inline-flex rounded-full h-2 w-2 ${adminRole === 'collaborator' ? 'bg-indigo-500' : 'bg-emerald-500'}`}></span>
-          </span>
+          <span className={`inline-block rounded-full h-2 w-2 ${adminRole === 'collaborator' ? 'bg-indigo-500' : 'bg-emerald-500'}`}></span>
           <ShieldCheck size={14} className={adminRole === 'collaborator' ? "text-indigo-500" : "text-emerald-500"} />
           <span className="truncate max-w-[190px] sm:max-w-none">
             {adminRole === 'collaborator' ? `Kolaborator: ${activeAdminName}` : `Admin: ${activeAdminName}`}
@@ -669,7 +666,7 @@ export default function AdminDashboard() {
                   { id: 'about', icon: User },
                   { id: 'cv', icon: FileText },
                   { id: 'archive', icon: Archive },
-                  { id: 'promo', icon: Sparkles },
+                  { id: 'promo', icon: Tag },
                   { id: 'settings', icon: Settings },
                   { id: 'access', icon: Lock },
                 ].find(t => t.id === activeTab);
@@ -815,7 +812,7 @@ export default function AdminDashboard() {
                   { id: 'messages', label: 'Pesan Klien', icon: Mail },
                   { id: 'stats', label: 'Statistik Web', icon: BarChart3 },
                   { id: 'collaboration', label: 'Mitra Kolaborasi', icon: Handshake, collab: true },
-                  { id: 'promo', label: 'Widget Promo', icon: Sparkles, special: true }
+                  { id: 'promo', label: 'Widget Promo', icon: Tag, special: true }
                 ].map((tab) => {
                   const Icon = tab.icon;
                   const isActive = activeTab === tab.id;

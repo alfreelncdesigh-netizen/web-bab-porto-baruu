@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Users, Check, Upload, Trash2, ShieldCheck, Sparkles, AlertCircle, 
+  Users, Check, Upload, Trash2, ShieldCheck, Layers, AlertCircle, 
   Eye, EyeOff, Image as ImageIcon, ExternalLink, ArrowRight, RefreshCw, 
   Handshake, Key, Plus, Lock, UserCheck, Activity, Clock, Search,
   Filter, Smartphone, Laptop, Calendar, History, Shield, Globe, LogOut
@@ -893,10 +893,7 @@ export default function CollaborationAdmin() {
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1.5">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
+                    <span className="inline-block rounded-full h-2 w-2 bg-emerald-500"></span>
                     AUDIT LOG REALTIME
                   </span>
                 </div>
@@ -1079,7 +1076,7 @@ export default function CollaborationAdmin() {
                           ) : isDelete ? (
                             <Trash2 size={15} />
                           ) : isContent ? (
-                            <Sparkles size={15} />
+                            <Layers size={15} />
                           ) : (
                             <Eye size={15} />
                           )}

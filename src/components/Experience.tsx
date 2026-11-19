@@ -716,7 +716,7 @@ export default function Experience() {
                   {/* Teks Deskripsi Lengkap */}
                   {selectedExp.description && (
                     <div className="mb-5 w-full">
-                      <p className="text-[11px] md:text-[11.5px] leading-[1.7] text-zinc-600 dark:text-zinc-300 font-normal whitespace-pre-wrap text-justify [text-justify:inter-word] [text-align-last:left]">
+                      <p className="text-xs sm:text-[13.5px] leading-[1.8] text-zinc-600 dark:text-zinc-300 font-normal whitespace-pre-wrap text-left">
                         {translateDynamic(selectedExp.description)}
                       </p>
                     </div>
@@ -758,14 +758,11 @@ export default function Experience() {
                   {allExpImages.length > 0 && (
                     <div className="mt-2 mb-5 pt-4 border-t border-zinc-100 dark:border-zinc-800/60">
                       <div className="flex items-center justify-between mb-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          <h4 className="text-xs font-bold text-black dark:text-white flex items-center gap-1.5">
-                            <Camera size={13} className="text-emerald-500" />
-                            Dokumentasi & Sertifikat
-                          </h4>
-                        </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
+                        <h4 className="text-xs font-bold text-black dark:text-white flex items-center gap-1.5">
+                          <Camera size={14} className="text-zinc-600 dark:text-zinc-400" />
+                          Dokumentasi & Sertifikat
+                        </h4>
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-md bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
                           {allExpImages.length} Foto
                         </span>
                       </div>
@@ -834,14 +831,11 @@ export default function Experience() {
                     return (
                       <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
                         <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                            <h4 className="text-xs font-bold text-black dark:text-white flex items-center gap-1.5">
-                              <Layers size={13} className="text-blue-500" />
-                              Pengalaman Lainnya
-                            </h4>
-                          </div>
-                          <span className="text-[9px] md:text-[10px] font-medium px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
+                          <h4 className="text-xs font-bold text-black dark:text-white flex items-center gap-1.5">
+                            <Layers size={14} className="text-zinc-600 dark:text-zinc-400" />
+                            Pengalaman Lainnya
+                          </h4>
+                          <span className="text-[10px] font-medium px-2.5 py-0.5 rounded-md bg-zinc-100 dark:bg-[#18181b] text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-800/50">
                             {Math.min(otherList.length, 4)} riwayat
                           </span>
                         </div>

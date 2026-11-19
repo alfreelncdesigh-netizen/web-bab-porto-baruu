@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, Edit, Trash2, Search, Check, X, HelpCircle, 
-  Sparkles, Layers, ArrowUpDown, Eye, EyeOff, Save, Loader2,
+  Layers, ArrowUpDown, Eye, EyeOff, Save, Loader2,
   Upload, Image as ImageIcon, Link as LinkIcon
 } from 'lucide-react';
 import { QuickFilterItem } from '../types/quickFilter';

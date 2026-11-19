@@ -10,7 +10,7 @@ import {
   Image as ImageIcon, 
   Flag, 
   Presentation, 
-  Sparkles,
+  SlidersHorizontal,
   ArrowRight
 } from 'lucide-react';
 
@@ -77,7 +77,7 @@ export const servicesList: ServiceOption[] = [
     name: 'Lainnya',
     category: 'Kustom Khusus',
     description: 'Kebutuhan desain grafis unik lainnya sesuai permintaan spesifik Anda.',
-    icon: Sparkles
+    icon: SlidersHorizontal
   }
 ];
 
@@ -134,13 +134,13 @@ export const ServiceSelectModal: React.FC<ServiceSelectModalProps> = ({
             {/* Header */}
             <div className="p-3 md:p-6 pb-2.5 md:pb-4 border-b border-zinc-100 dark:border-zinc-800/80 flex items-start justify-between shrink-0">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700/60 text-[9px] md:text-[10px] font-bold tracking-wider uppercase text-zinc-600 dark:text-zinc-300 mb-1.5">
+                <span className="block text-[10px] font-mono font-semibold tracking-[0.16em] uppercase text-zinc-400 dark:text-zinc-500 mb-1">
                   Layanan Desain
-                </div>
-                <h3 className="text-base md:text-2xl font-black text-black dark:text-white tracking-tight">
+                </span>
+                <h3 className="text-base md:text-2xl font-bold text-black dark:text-white tracking-tight leading-snug">
                   Pilih Jenis Layanan
                 </h3>
-                <p className="text-[10px] md:text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                <p className="text-[11px] md:text-xs text-zinc-500 dark:text-zinc-400 mt-1 leading-relaxed">
                   Tentukan jenis output desain yang ingin Anda kerjakan bersama kami
                 </p>
               </div>
@@ -201,7 +201,7 @@ export const ServiceSelectModal: React.FC<ServiceSelectModalProps> = ({
                         <h4 className="text-[11px] md:text-sm font-bold tracking-tight truncate mb-0.5">
                           {svc.name}
                         </h4>
-                        <p className={`text-[9px] md:text-[11px] leading-tight md:leading-relaxed line-clamp-2 font-normal ${
+                        <p className={`text-[10px] md:text-[11.5px] leading-[1.6] line-clamp-2 font-normal mt-0.5 ${
                             isSelected
                               ? 'text-zinc-200 dark:text-zinc-700'
                               : 'text-zinc-500 dark:text-zinc-400'

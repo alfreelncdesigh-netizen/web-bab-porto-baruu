@@ -908,7 +908,6 @@ export default function CvAdmin() {
         >
           <div className="relative flex items-center justify-center">
             <Loader2 className="w-5 h-5 animate-spin text-amber-400 dark:text-amber-600 shrink-0" />
-            <span className="absolute w-2 h-2 rounded-full bg-amber-400 dark:bg-amber-600 animate-ping opacity-60" />
           </div>
           <div className="flex flex-col">
             <span className="font-bold tracking-tight">
