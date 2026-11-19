@@ -12,7 +12,7 @@ import {
   getStoredQuickFilterItems,
   fetchQuickFilterFromBlob,
 } from './quickFilterStorage';
-import { resolveImageUrl, FALLBACK_IMAGE } from './imageResolver';
+import { resolveImageUrl, getServerMediaCacheUrl, FALLBACK_IMAGE } from './imageResolver';
 
 export const IMAGE_CACHE_NAME = 'portfolio-images-v1';
 export const STATIC_CACHE_NAME = 'portfolio-static-v8';
@@ -189,13 +189,35 @@ async function isAlreadyInBrowserCache(
 
 async function fetchAndStoreSingleImage(imageCache: Cache, url: string): Promise<boolean> {
   const parsed = new URL(url);
+  const isExternalRemote = parsed.origin !== window.location.origin && isCorsFriendlyHost(parsed);
+
+  // Untuk URL storage eksternal (mis. Vercel Blob), muat melalui /api/media-cache terlebih dahulu
+  // agar Server Cache Website (Edge CDN + Memory + /tmp + Firestore) DAN Browser Cache terisi bersamaan.
+  if (isExternalRemote) {
+    const serverProxyUrl = getServerMediaCacheUrl(url);
+    if (serverProxyUrl) {
+      try {
+        const proxyRes = await fetch(serverProxyUrl, {
+          method: 'GET',
+          credentials: 'same-origin',
+          cache: 'default',
+        });
+        if (isValidImageHttpResponse(proxyRes, false)) {
+          await imageCache.put(url, proxyRes.clone());
+          return true;
+        }
+      } catch {
+        // Fall through to direct fetch
+      }
+    }
+  }
 
   if (isCorsFriendlyHost(parsed)) {
     try {
       const corsRes = await fetch(url, {
         method: 'GET',
-        mode: 'cors',
-        credentials: 'omit',
+        mode: parsed.origin === window.location.origin ? 'same-origin' : 'cors',
+        credentials: parsed.origin === window.location.origin ? 'same-origin' : 'omit',
       });
       if (isValidImageHttpResponse(corsRes, false)) {
         await imageCache.put(url, corsRes.clone());
@@ -223,6 +245,48 @@ async function fetchAndStoreSingleImage(imageCache: Cache, url: string): Promise
   }
 
   return false;
+}
+
+export async function cacheUploadedBlobInBrowser(
+  rawUrl: string,
+  blob: Blob,
+  mimeType?: string
+): Promise<void> {
+  if (typeof window === 'undefined' || !rawUrl || !blob || blob.size <= 0) return;
+
+  const canonicalUrl = toCanonicalHttpUrl(rawUrl);
+  if (!canonicalUrl) return;
+
+  try {
+    memoryExtraUrls.add(canonicalUrl);
+    if ('caches' in window) {
+      const imageCache = await caches.open(IMAGE_CACHE_NAME);
+      const resolvedMime = (mimeType || blob.type || 'image/webp').split(';')[0].trim() || 'image/webp';
+      const syntheticResponse = new Response(blob, {
+        status: 200,
+        statusText: 'OK',
+        headers: {
+          'Content-Type': resolvedMime,
+          'Content-Length': String(blob.size),
+          'Cache-Control': 'public, max-age=31536000',
+        },
+      });
+      await imageCache.put(canonicalUrl, syntheticResponse);
+    }
+
+    notifyServiceWorkerPrecache([canonicalUrl]);
+
+    // Hangatkan Vercel Edge CDN secara paralel agar pengunjung lain langsung mendapat cache tercepat
+    const parsed = new URL(canonicalUrl);
+    if (parsed.origin !== window.location.origin && isCorsFriendlyHost(parsed)) {
+      const proxyUrl = getServerMediaCacheUrl(canonicalUrl);
+      if (proxyUrl) {
+        fetch(proxyUrl, { method: 'GET', credentials: 'same-origin', cache: 'default' }).catch(() => {});
+      }
+    }
+  } catch {
+    // Non-blocking browser cache hydration error
+  }
 }
 
 async function runImagePreloadFallback(urls: string[]): Promise<number> {
@@ -415,10 +479,9 @@ export async function cacheAllWebsiteContent(
             keys.map(async (req) => {
               try {
                 const parsed = new URL(req.url);
-                if (
-                  parsed.hostname.toLowerCase().endsWith('.vercel-storage.com') &&
-                  !activeSet.has(parsed.href)
-                ) {
+                const isVercelBlob = parsed.hostname.toLowerCase().endsWith('.vercel-storage.com');
+                const isServerCacheUrl = parsed.pathname === '/api/media-cache';
+                if ((isVercelBlob || isServerCacheUrl) && !activeSet.has(parsed.href)) {
                   await imageCache.delete(req);
                 }
               } catch {}

@@ -19,8 +19,52 @@ import {
   type PortfolioJsonData,
 } from './_lib/seedDefaults.js';
 
-function normalizeProjectRecord(raw: any, existing?: any): any {
-  const id = String(raw?.id ?? existing?.id ?? Date.now()).trim();
+function parsePortfolioTimestampMs(val: any): number {
+  if (val === null || val === undefined || val === '') return 0;
+  if (typeof val === 'number') return Number.isFinite(val) ? val : 0;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed) return 0;
+    if (/^\d{10,15}$/.test(trimmed)) {
+      const n = Number(trimmed);
+      return Number.isFinite(n) ? (trimmed.length === 10 ? n * 1000 : n) : 0;
+    }
+    if (/^\d{4}$/.test(trimmed)) {
+      return new Date(Number(trimmed), 0, 1).getTime();
+    }
+    const parsed = Date.parse(trimmed);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function getPortfolioCreationRecency(item: any): number {
+  if (!item || typeof item !== 'object') return 0;
+  const idStr = String(item.id || '').trim();
+  const epochMatch = idStr.match(/(?:^|[^0-9])(\d{12,15})(?:$|[^0-9])/);
+  const idNum = epochMatch ? Number(epochMatch[1]) : 0;
+  const created = parsePortfolioTimestampMs(item.createdAt);
+  const added = parsePortfolioTimestampMs(item.dateAdded);
+  const dateMs = parsePortfolioTimestampMs(item.date);
+
+  if (idNum > 0) {
+    return created || added || idNum;
+  }
+  return added || dateMs || created || 0;
+}
+
+function sortPortfolioNewestFirst(items: any[]): any[] {
+  return [...(items || [])].sort((a, b) => {
+    const recencyDiff = getPortfolioCreationRecency(b) - getPortfolioCreationRecency(a);
+    if (recencyDiff !== 0) return recencyDiff;
+    const dateDiff = String(b?.date || '').localeCompare(String(a?.date || ''));
+    if (dateDiff !== 0) return dateDiff;
+    return parsePortfolioTimestampMs(b?.updatedAt) - parsePortfolioTimestampMs(a?.updatedAt);
+  });
+}
+
+function normalizeProjectRecord(raw: any, existing?: any, isWrite = true): any {
+  const id = String(raw?.id ?? existing?.id ?? (isWrite ? Date.now() : '')).trim();
   const imagesRaw = Array.isArray(raw?.images)
     ? raw.images
     : Array.isArray(existing?.images)
@@ -45,6 +89,18 @@ function normalizeProjectRecord(raw: any, existing?: any): any {
       ? [mainImg]
       : [];
 
+  const existingCreated = parsePortfolioTimestampMs(existing?.createdAt);
+  const rawCreated = parsePortfolioTimestampMs(raw?.createdAt);
+  const existingUpdated = parsePortfolioTimestampMs(existing?.updatedAt);
+  const rawUpdated = parsePortfolioTimestampMs(raw?.updatedAt);
+
+  const createdAt = isWrite
+    ? existingCreated || rawCreated || Date.now()
+    : existingCreated || rawCreated || undefined;
+  const updatedAt = isWrite
+    ? Date.now()
+    : existingUpdated || rawUpdated || createdAt || undefined;
+
   return {
     ...(existing || {}),
     ...raw,
@@ -54,7 +110,9 @@ function normalizeProjectRecord(raw: any, existing?: any): any {
     image: mainImg,
     images: finalImages,
     description: String(raw?.description ?? existing?.description ?? '').trim(),
-    date: String(raw?.date ?? existing?.date ?? '').trim() || new Date().toISOString().split('T')[0],
+    date:
+      String(raw?.date ?? existing?.date ?? '').trim() ||
+      (isWrite ? new Date().toISOString().split('T')[0] : ''),
     role: String(raw?.role ?? existing?.role ?? '').trim(),
     collaborationLogo: sanitizeStoredMediaUrl(
       raw?.collaborationLogo !== undefined ? raw.collaborationLogo : existing?.collaborationLogo
@@ -64,8 +122,8 @@ function normalizeProjectRecord(raw: any, existing?: any): any {
     isArchived: Boolean(raw?.isArchived ?? existing?.isArchived ?? false),
     archiveFolderId:
       raw?.archiveFolderId !== undefined ? raw.archiveFolderId : existing?.archiveFolderId ?? null,
-    createdAt: existing?.createdAt || raw?.createdAt || Date.now(),
-    updatedAt: Date.now(),
+    ...(createdAt !== undefined ? { createdAt } : {}),
+    ...(updatedAt !== undefined ? { updatedAt } : {}),
   };
 }
 
@@ -78,8 +136,10 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
         BLOB_PATHS.PORTFOLIO,
         createInitialPortfolioSeed
       );
-      const rawItems = (Array.isArray(data?.items) ? data.items : []).map((item: any) =>
-        normalizeProjectRecord(item, item)
+      const rawItems = sortPortfolioNewestFirst(
+        (Array.isArray(data?.items) ? data.items : []).map((item: any) =>
+          normalizeProjectRecord(item, item, false)
+        )
       );
       const includeArchived = getQueryParam(req, 'includeArchived') === 'true';
       const targetId = getQueryParam(req, 'id');
@@ -141,7 +201,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
               );
             }
             return {
-              items: body.items.map((item: any) => normalizeProjectRecord(item)),
+              items: sortPortfolioNewestFirst(body.items.map((item: any) => normalizeProjectRecord(item))),
               updatedAt: new Date().toISOString(),
               version: currentVersion + 1,
             };
@@ -151,7 +211,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
         );
         sendJson(res, 200, {
           success: true,
-          items: data.items.filter((p: any) => p.isArchived !== true),
+          items: sortPortfolioNewestFirst(data.items.filter((p: any) => p.isArchived !== true)),
           updatedAt: data.updatedAt,
           version: data.version,
           etag,
@@ -204,7 +264,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
             items.unshift(savedItem);
           }
           return {
-            items,
+            items: sortPortfolioNewestFirst(items),
             updatedAt: new Date().toISOString(),
             version: (current.version || 1) + 1,
           };
@@ -216,7 +276,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
       sendJson(res, 200, {
         success: true,
         item: savedItem,
-        items: data.items.filter((p: any) => p.isArchived !== true),
+        items: sortPortfolioNewestFirst(data.items.filter((p: any) => p.isArchived !== true)),
         updatedAt: data.updatedAt,
         version: data.version,
         etag,
@@ -268,8 +328,8 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
 
       sendJson(res, 200, {
         success: true,
-        items: data.items.filter((p: any) => p.isArchived !== true),
-        allItems: data.items,
+        items: sortPortfolioNewestFirst(data.items.filter((p: any) => p.isArchived !== true)),
+        allItems: sortPortfolioNewestFirst(data.items),
         updatedAt: data.updatedAt,
         version: data.version,
       });
@@ -305,7 +365,7 @@ export default async function handler(req: ApiRequest, res: ServerResponse): Pro
 
       sendJson(res, 200, {
         success: true,
-        items: data.items.filter((p: any) => p.isArchived !== true),
+        items: sortPortfolioNewestFirst(data.items.filter((p: any) => p.isArchived !== true)),
         updatedAt: data.updatedAt,
         version: data.version,
       });

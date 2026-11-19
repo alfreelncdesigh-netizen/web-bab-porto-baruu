@@ -64,7 +64,29 @@ const ID_MONTH_MAP: Record<string, number> = {
   desember: 11, des: 11, dec: 11, december: 11,
 };
 
-// In-memory runtime state hydrated from Vercel Blob JSON API routes (never from localStorage or Firestore for migrated features)
+const JSON_SNAPSHOT_PREFIX = 'alfreelnc_json_cache_v1_';
+
+function readLocalJsonSnapshot<T>(key: string): T | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(`${JSON_SNAPSHOT_PREFIX}${key}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalJsonSnapshot(key: string, value: unknown): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(`${JSON_SNAPSHOT_PREFIX}${key}`, JSON.stringify(value));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+// In-memory runtime state hydrated from local snapshot + refreshed from Vercel Blob / Server Cache API routes
 let memorySettings: SiteSettings = { ...defaultSettings };
 let memoryProjects: Project[] = [];
 let memoryBlogs: BlogPost[] = [];
@@ -205,6 +227,21 @@ export function getRecencyTimestamp(item: any): number {
   return Math.max(updated, created, added, saved, idNum, dateMs);
 }
 
+export function getProjectCreationRecency(item: any): number {
+  if (!item || typeof item !== 'object') return 0;
+  const idStr = String(item.id || '').trim();
+  const epochMatch = idStr.match(/(?:^|[^0-9])(\d{12,15})(?:$|[^0-9])/);
+  const idNum = epochMatch ? Number(epochMatch[1]) : 0;
+  const created = getTimestampMs(item.createdAt);
+  const added = getTimestampMs(item.dateAdded);
+  const dateMs = getTimestampMs(item.date);
+
+  if (idNum > 0) {
+    return created || added || idNum;
+  }
+  return added || dateMs || created || 0;
+}
+
 // Deleted records live directly in Firestore (docs deleted cleanly on Firestore)
 export function getDeletedIds(_type: string): Set<string> {
   return new Set<string>();
@@ -273,10 +310,12 @@ export function cleanProjects(projs: Project[]): Project[] {
 
 export function sortProjectsByRecency(projs: Project[]): Project[] {
   return [...(projs || [])].sort((a, b) => {
-    const tA = getRecencyTimestamp(a);
-    const tB = getRecencyTimestamp(b);
+    const tA = getProjectCreationRecency(a);
+    const tB = getProjectCreationRecency(b);
     if (tB !== tA) return tB - tA;
-    return (b.date || '').localeCompare(a.date || '');
+    const dateCmp = (b.date || '').localeCompare(a.date || '');
+    if (dateCmp !== 0) return dateCmp;
+    return getTimestampMs(b.updatedAt) - getTimestampMs(a.updatedAt);
   });
 }
 
@@ -632,6 +671,26 @@ let inFlightSettingsFetch: Promise<SiteSettings> | null = null;
 let inFlightProjectsFetch: Promise<Project[]> | null = null;
 let inFlightExperiencesFetch: Promise<any[]> | null = null;
 
+// Hydrate initial snapshot synchronously on browser load (immediately overwritten once API responds)
+if (typeof window !== 'undefined') {
+  const snapSettings = readLocalJsonSnapshot<Partial<SiteSettings>>('settings');
+  if (snapSettings && typeof snapSettings === 'object') {
+    memorySettings = { ...defaultSettings, ...cleanSettings(snapSettings) } as SiteSettings;
+  }
+  const snapProjects = readLocalJsonSnapshot<Project[]>('projects');
+  if (Array.isArray(snapProjects) && snapProjects.length > 0) {
+    memoryProjects = sortProjectsByRecency(cleanProjects(snapProjects));
+  }
+  const snapExperiences = readLocalJsonSnapshot<any[]>('experiences');
+  if (Array.isArray(snapExperiences) && snapExperiences.length > 0) {
+    memoryExperiences = sortExperiencesByRecency(cleanExperiences(snapExperiences));
+  }
+  const snapBlogs = readLocalJsonSnapshot<BlogPost[]>('blogs');
+  if (Array.isArray(snapBlogs) && snapBlogs.length > 0) {
+    memoryBlogs = sortBlogsByRecency(cleanBlogs(snapBlogs));
+  }
+}
+
 /**
  * Mengambil pengaturan situs dari Vercel Blob (data/site-settings.json)
  */
@@ -754,6 +813,7 @@ export function setLocalSettings(newSettings: Partial<SiteSettings>): SiteSettin
   const timestamp = newSettings.savedAt || Date.now();
   const merged: SiteSettings = { ...defaultSettings, ...cleaned, savedAt: timestamp };
   memorySettings = merged;
+  writeLocalJsonSnapshot('settings', merged);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('app_settings_updated', { detail: merged }));
   }
@@ -878,6 +938,7 @@ export function getStoredProjects(): Project[] {
 export async function saveStoredProjects(newProjects: Project[]): Promise<void> {
   const clean = sortProjectsByRecency(cleanProjects(newProjects || []));
   memoryProjects = clean;
+  writeLocalJsonSnapshot('projects', clean);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('user_projects_updated', { detail: clean }));
   }
@@ -1032,6 +1093,7 @@ export function getStoredBlogs(): BlogPost[] {
 export async function saveStoredBlogs(newBlogs: BlogPost[]): Promise<void> {
   const clean = sortBlogsByRecency(cleanBlogs(newBlogs || []));
   memoryBlogs = clean;
+  writeLocalJsonSnapshot('blogs', clean);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('blog_posts_updated', { detail: clean }));
   }
@@ -1176,6 +1238,7 @@ export function getStoredExperiences(): any[] {
 export async function saveStoredExperiences(newExps: any[]): Promise<void> {
   const clean = sortExperiencesByRecency(cleanExperiences(newExps || []));
   memoryExperiences = clean;
+  writeLocalJsonSnapshot('experiences', clean);
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('user_experiences_updated', { detail: clean }));
   }

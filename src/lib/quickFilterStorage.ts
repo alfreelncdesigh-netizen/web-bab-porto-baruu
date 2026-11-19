@@ -2,6 +2,7 @@ import { QuickFilterItem } from '../types/quickFilter';
 import { getTimestampMs } from './contentStorage';
 
 const ADMIN_AUTH_TOKEN = 'alfreelnc_admin_auth_verified';
+const QUICK_FILTER_SNAPSHOT_KEY = 'alfreelnc_json_cache_v1_quick_filter';
 let memoryQuickFilterItems: QuickFilterItem[] = [];
 
 export function cleanQuickFilterItems(items: any[]): QuickFilterItem[] {
@@ -60,6 +61,18 @@ export function mergeQuickFilterItems(...lists: QuickFilterItem[][]): QuickFilte
   return cleanQuickFilterItems(Array.from(map.values()));
 }
 
+if (typeof window !== 'undefined') {
+  try {
+    const rawSnap = window.localStorage.getItem(QUICK_FILTER_SNAPSHOT_KEY);
+    if (rawSnap) {
+      const parsed = JSON.parse(rawSnap);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        memoryQuickFilterItems = cleanQuickFilterItems(parsed);
+      }
+    }
+  } catch {}
+}
+
 export function getStoredQuickFilterItems(): QuickFilterItem[] {
   return memoryQuickFilterItems;
 }
@@ -68,6 +81,9 @@ export async function saveStoredQuickFilterItems(items: QuickFilterItem[]): Prom
   const cleaned = cleanQuickFilterItems(items);
   memoryQuickFilterItems = cleaned;
   if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(QUICK_FILTER_SNAPSHOT_KEY, JSON.stringify(cleaned));
+    } catch {}
     window.dispatchEvent(new CustomEvent('quick_filter_updated', { detail: cleaned }));
   }
 }

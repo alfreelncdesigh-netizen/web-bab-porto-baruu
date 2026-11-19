@@ -95,12 +95,20 @@ export function sanitizeMediaUrl(url?: string | null): string {
     return '';
   }
 
+  if (trimmed.startsWith('/api/media-cache?')) {
+    return trimmed;
+  }
+
   if (/^https?:\/\//i.test(trimmed)) {
     try {
       const parsed = new URL(trimmed);
       if (AI_STUDIO_PREVIEW_HOST_REGEX.test(parsed.hostname)) {
         logInvalidImageUrlOnce('URL preview AI Studio tidak valid untuk produksi (gunakan URL HTTPS Vercel Blob)', trimmed);
         return '';
+      }
+
+      if (parsed.pathname === '/api/media-cache' && parsed.searchParams.has('url')) {
+        return `${parsed.pathname}${parsed.search}`;
       }
 
       if (parsed.hostname.endsWith('.vercel-storage.com') && parsed.protocol === 'http:') {
@@ -145,6 +153,28 @@ export function sanitizeMediaUrl(url?: string | null): string {
   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
 }
 
+export function getServerMediaCacheUrl(rawUrl?: string | null): string {
+  const sanitized = sanitizeMediaUrl(rawUrl);
+  if (!sanitized || sanitized === FALLBACK_IMAGE || sanitized.startsWith('data:') || sanitized.startsWith('blob:')) {
+    return '';
+  }
+
+  if (sanitized.startsWith('/api/media-cache?')) {
+    return sanitized;
+  }
+
+  if (
+    /^https?:\/\//i.test(sanitized) ||
+    sanitized.startsWith('/uploads/') ||
+    sanitized.startsWith('/images/') ||
+    sanitized.startsWith('/assets/')
+  ) {
+    return `/api/media-cache?url=${encodeURIComponent(sanitized)}`;
+  }
+
+  return '';
+}
+
 /**
  * URL Resolver:
  * - Menjaga keutuhan semua URL publik HTTPS Vercel Blob (*.vercel-storage.com) & URL remote valid.
@@ -186,6 +216,23 @@ export function handleImageError(
   if (target.dataset.triedFallback === 'true') return;
 
   const failedSrc = target.currentSrc || target.getAttribute('src') || target.src || '';
+
+  // Failover otomatis ke Server Cache website saat origin Vercel Blob gagal/limit habis
+  if (
+    failedSrc &&
+    failedSrc !== FALLBACK_IMAGE &&
+    target.dataset.triedServerCache !== 'true' &&
+    /^https?:\/\//i.test(failedSrc) &&
+    !failedSrc.includes('/api/media-cache?')
+  ) {
+    const serverCacheUrl = getServerMediaCacheUrl(failedSrc);
+    if (serverCacheUrl && serverCacheUrl !== failedSrc) {
+      target.dataset.triedServerCache = 'true';
+      target.src = serverCacheUrl;
+      return;
+    }
+  }
+
   if (failedSrc && failedSrc !== FALLBACK_IMAGE) {
     console.error('[ImageLoader] Gagal memuat gambar dari URL:', failedSrc);
   }

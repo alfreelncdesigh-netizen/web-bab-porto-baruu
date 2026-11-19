@@ -682,13 +682,25 @@ export async function mutateJsonInBlob<T>(
   seedFactory: () => T,
   maxRetries = 3
 ): Promise<{ data: T; etag: string }> {
-  const token = isVercelProduction() ? getBlobToken() : getOptionalBlobToken();
+  const token = isVercelProduction() ? getOptionalBlobToken() : getOptionalBlobToken();
   if (!token) {
-    try {
-      return await mutateJsonInLocal<T>(pathname, (curr) => mutator(curr, { attempt: 0, conflictRetry: false }), seedFactory);
-    } catch (err) {
-      throw normalizeBlobFailure(err, `Gagal menyimpan ${pathname} ke penyimpanan JSON lokal`);
+    if (!isVercelProduction()) {
+      try {
+        const localRes = await mutateJsonInLocal<T>(pathname, (curr) => mutator(curr, { attempt: 0, conflictRetry: false }), seedFactory);
+        await syncJsonToServerCache(pathname, localRes.data, localRes.etag, { awaitFirestore: true });
+        return localRes;
+      } catch (err) {
+        throw normalizeBlobFailure(err, `Gagal menyimpan ${pathname} ke penyimpanan JSON lokal`);
+      }
     }
+    const baseCached = await readJsonFromServerCache<T>(pathname);
+    const currentData = baseCached ? baseCached.data : stripTransientFields(seedFactory());
+    const mutatedRaw = await mutator(structuredClone(currentData), { attempt: 0, conflictRetry: false });
+    const nextData = stripTransientFields(mutatedRaw);
+    assertNoBase64InJson(nextData, pathname);
+    const nextEtag = computeLocalEtag(JSON.stringify(nextData));
+    await syncJsonToServerCache(pathname, nextData, nextEtag, { awaitFirestore: true });
+    return { data: nextData, etag: nextEtag };
   }
 
   return await withPathLock(pathname, async () => {
@@ -772,6 +784,18 @@ export async function mutateJsonInBlob<T>(
         409,
         'BLOB_ETAG_CONFLICT'
       );
+    }
+
+    if (isQuotaOrOriginFailure(lastError)) {
+      const baseCached = await readJsonFromServerCache<T>(pathname);
+      const currentData = baseCached ? baseCached.data : stripTransientFields(seedFactory());
+      const mutatedRaw = await mutator(structuredClone(currentData), { attempt: 0, conflictRetry: false });
+      const nextData = stripTransientFields(mutatedRaw);
+      assertNoBase64InJson(nextData, pathname);
+      const nextEtag = computeLocalEtag(JSON.stringify(nextData));
+      await syncJsonToServerCache(pathname, nextData, nextEtag, { awaitFirestore: true });
+      console.warn(`[BlobJsonStore:SERVER_CACHE_WRITE_FALLBACK] Menyimpan ${pathname} ke Server Cache karena Vercel Blob limit/origin error.`);
+      return { data: nextData, etag: nextEtag };
     }
 
     throw normalizeBlobFailure(

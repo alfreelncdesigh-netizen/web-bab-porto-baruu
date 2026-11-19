@@ -43,8 +43,8 @@ const PRECACHE_ASSETS = [
 
 const IMAGE_EXT_REGEX = /\.(?:png|jpe?g|webp|svg|gif|avif|ico|bmp)$/i;
 
-function isCorsFriendlyImageHost(url) {
-  if (url.origin === self.location.origin) return true;
+function isExternalStorageHost(url) {
+  if (!url || url.origin === self.location.origin) return false;
   const host = url.hostname.toLowerCase();
   return (
     host.endsWith('.vercel-storage.com') ||
@@ -53,6 +53,19 @@ function isCorsFriendlyImageHost(url) {
     host.includes('storage.googleapis.com') ||
     host.endsWith('.firebasestorage.app')
   );
+}
+
+function isServerMediaCacheRequest(url) {
+  return (
+    url.origin === self.location.origin &&
+    url.pathname === '/api/media-cache' &&
+    (url.searchParams.has('url') || url.searchParams.has('id'))
+  );
+}
+
+function isCorsFriendlyImageHost(url) {
+  if (url.origin === self.location.origin) return true;
+  return isExternalStorageHost(url);
 }
 
 function isValidImageResponse(response, allowOpaque) {
@@ -77,6 +90,7 @@ function isFontRequest(request, url) {
 }
 
 function isImageRequest(request, url) {
+  if (isServerMediaCacheRequest(url)) return true;
   if (url.pathname.startsWith('/api/')) return false;
   if (/\.(?:mp4|webm|mov|avi|json|html?|js|css|map|pdf)$/i.test(url.pathname)) return false;
   if (request.destination === 'image') return true;
@@ -88,15 +102,38 @@ function isImageRequest(request, url) {
   return false;
 }
 
-async function fetchAndCacheImage(cache, canonicalUrl, originalRequest) {
+async function fetchAndCacheImage(cache, canonicalUrl, originalRequest, preferServerCacheFirst = false) {
+  let parsedUrl = null;
+  try {
+    parsedUrl = new URL(canonicalUrl);
+  } catch {}
+
+  const externalStorage = Boolean(parsedUrl && isExternalStorageHost(parsedUrl));
+  const serverProxyUrl = externalStorage
+    ? `${self.location.origin}/api/media-cache?url=${encodeURIComponent(canonicalUrl)}`
+    : null;
+
+  if (preferServerCacheFirst && serverProxyUrl) {
+    try {
+      const proxyRes = await fetch(serverProxyUrl, { method: 'GET', credentials: 'same-origin' });
+      if (isValidImageResponse(proxyRes, false)) {
+        await cache.put(canonicalUrl, proxyRes.clone());
+        return proxyRes;
+      }
+    } catch {
+      // Fall through to direct fetch
+    }
+  }
+
   let response = null;
 
-  if (isCorsFriendlyImageHost(new URL(canonicalUrl))) {
+  if (parsedUrl && isCorsFriendlyImageHost(parsedUrl)) {
+    const isSameOriginProxy = isServerMediaCacheRequest(parsedUrl);
     try {
       const corsReq = new Request(canonicalUrl, {
         method: 'GET',
-        mode: 'cors',
-        credentials: 'omit',
+        mode: isSameOriginProxy ? 'same-origin' : 'cors',
+        credentials: isSameOriginProxy ? 'same-origin' : 'omit',
       });
       const corsRes = await fetch(corsReq);
       if (isValidImageResponse(corsRes, false)) {
@@ -105,7 +142,19 @@ async function fetchAndCacheImage(cache, canonicalUrl, originalRequest) {
       }
       response = corsRes;
     } catch {
-      // Fallback to original request below
+      // Fall through to Website Server Cache failover below
+    }
+  }
+
+  if (serverProxyUrl) {
+    try {
+      const proxyRes = await fetch(serverProxyUrl, { method: 'GET', credentials: 'same-origin' });
+      if (isValidImageResponse(proxyRes, false)) {
+        await cache.put(canonicalUrl, proxyRes.clone());
+        return proxyRes;
+      }
+    } catch {
+      // Fall through to original request below
     }
   }
 
@@ -134,10 +183,12 @@ async function fetchAndCacheImage(cache, canonicalUrl, originalRequest) {
 async function handleImageRequest(request, url) {
   const canonicalUrl = url.href;
   const imageCache = await caches.open(IMAGE_CACHE_NAME);
+  const proxiedTarget = isServerMediaCacheRequest(url) ? url.searchParams.get('url') : null;
 
   let cached =
     (await imageCache.match(request, { ignoreVary: true })) ||
-    (await imageCache.match(canonicalUrl, { ignoreVary: true }));
+    (await imageCache.match(canonicalUrl, { ignoreVary: true })) ||
+    (proxiedTarget ? await imageCache.match(proxiedTarget, { ignoreVary: true }) : undefined);
 
   if (!cached) {
     const staticCache = await caches.open(STATIC_CACHE_NAME);
@@ -157,7 +208,7 @@ async function handleImageRequest(request, url) {
   }
 
   try {
-    return await fetchAndCacheImage(imageCache, canonicalUrl, request);
+    return await fetchAndCacheImage(imageCache, canonicalUrl, request, false);
   } catch (err) {
     if (cached) return cached;
     throw err;
@@ -208,7 +259,7 @@ async function precacheImageUrls(urls) {
           continue;
         }
 
-        await fetchAndCacheImage(imageCache, targetUrl, null);
+        await fetchAndCacheImage(imageCache, targetUrl, null, true);
       } catch {
         // Ignore individual precache failures so remaining images continue
       }
@@ -277,10 +328,10 @@ self.addEventListener('fetch', (event) => {
 
   const hostname = url.hostname.toLowerCase();
 
-  // NEVER intercept API routes, Firestore/Auth endpoints, Vite dev modules, videos, or range requests
+  // NEVER intercept API JSON routes (except cacheable /api/media-cache images), Firestore/Auth endpoints, Vite dev modules, videos, or range requests
   if (
     request.headers.has('range') ||
-    url.pathname.startsWith('/api/') ||
+    (url.pathname.startsWith('/api/') && !isServerMediaCacheRequest(url)) ||
     url.pathname.endsWith('.mp4') ||
     url.pathname.endsWith('.webm') ||
     url.pathname.startsWith('/@vite/') ||

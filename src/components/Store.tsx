@@ -75,6 +75,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
     return getCleanPhone(getStoredSettings().contactPhone);
   });
   const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showServiceModal, setShowServiceModal] = useState(false);
   const [isDesktop, setIsDesktop] = useState(true);
@@ -98,10 +99,29 @@ export default function Store({ isOrderView = false }: StoreProps) {
   const getInitialFormData = () => {
     try {
       const fromCookie = getCookie('order_draft');
-      if (fromCookie) return JSON.parse(fromCookie);
+      if (fromCookie) {
+        return {
+          nama: '',
+          whatsapp: '',
+          sosmed: '',
+          jenisLayanan: '',
+          layananLainnya: '',
+          tujuan: '',
+          gaya: '',
+          format: '',
+          jumlah: '',
+          deadline: '',
+          budget: '',
+          materi: '',
+          materiPendukung: '',
+          referensiUrl: '',
+          catatan: '',
+          ...JSON.parse(fromCookie),
+        };
+      }
     } catch {}
     return {
-      nama: '', whatsapp: '', sosmed: '', jenisLayanan: '', layananLainnya: '', tujuan: '', gaya: '', format: '', jumlah: '', deadline: '', budget: '', materi: '', referensiUrl: '', catatan: '',
+      nama: '', whatsapp: '', sosmed: '', jenisLayanan: '', layananLainnya: '', tujuan: '', gaya: '', format: '', jumlah: '', deadline: '', budget: '', materi: '', materiPendukung: '', referensiUrl: '', catatan: '',
     };
   };
   const [formData, setFormData] = useState(getInitialFormData);
@@ -149,7 +169,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
   }, [showCancelPopup, showNavPopup, showPaymentModal, showServiceModal]);
 
   const clearForm = () => {
-    setFormData({ nama: '', whatsapp: '', sosmed: '', jenisLayanan: '', layananLainnya: '', tujuan: '', gaya: '', format: '', jumlah: '', deadline: '', budget: '', materi: '', referensiUrl: '', catatan: '' });
+    setFormData({ nama: '', whatsapp: '', sosmed: '', jenisLayanan: '', layananLainnya: '', tujuan: '', gaya: '', format: '', jumlah: '', deadline: '', budget: '', materi: '', materiPendukung: '', referensiUrl: '', catatan: '' });
     setStep(1);
     setIsDraftLoaded(false);
     deleteCookie('order_draft');
@@ -189,6 +209,16 @@ export default function Store({ isOrderView = false }: StoreProps) {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const toAbsoluteReferenceUrl = (rawUrl?: string): string => {
+    const trimmed = String(rawUrl || '').trim();
+    if (!trimmed) return '';
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (typeof window !== 'undefined' && trimmed.startsWith('/')) {
+      return `${window.location.origin}${trimmed}`;
+    }
+    return trimmed;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -196,9 +226,10 @@ export default function Store({ isOrderView = false }: StoreProps) {
     setIsUploading(true);
     try {
       const url = await compressAndUpload(file, 'orders');
-      if (url) {
-        setFormData(prev => ({ ...prev, referensiUrl: url }));
-        showToast("Gambar referensi berhasil diunggah!");
+      const finalUrl = toAbsoluteReferenceUrl(url);
+      if (finalUrl) {
+        setFormData(prev => ({ ...prev, referensiUrl: finalUrl }));
+        showToast("Gambar referensi berhasil diunggah ke Vercel Blob!");
       } else {
         throw new Error("URL upload kosong");
       }
@@ -303,36 +334,91 @@ export default function Store({ isOrderView = false }: StoreProps) {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
   };
 
+  const formatDeadlineIndonesia = (deadlineStr?: string): string => {
+    const raw = String(deadlineStr || '').trim();
+    if (!raw) return '-';
+    try {
+      const dateObj = new Date(`${raw}T00:00:00`);
+      if (Number.isNaN(dateObj.getTime())) return raw;
+      return new Intl.DateTimeFormat('id-ID', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      }).format(dateObj);
+    } catch {
+      return raw;
+    }
+  };
+
+  const getEstimatedWorkDuration = (deadlineStr?: string): string => {
+    const raw = String(deadlineStr || '').trim();
+    if (!raw) return 'Menyesuaikan konfirmasi';
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const deadlineDate = new Date(`${raw}T00:00:00`);
+      deadlineDate.setHours(0, 0, 0, 0);
+      if (Number.isNaN(deadlineDate.getTime())) return 'Menyesuaikan konfirmasi';
+      const diffDays = Math.ceil((deadlineDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 1) return '1 Hari (Prioritas Kilat)';
+      return `${diffDays} Hari Kerja`;
+    } catch {
+      return 'Menyesuaikan konfirmasi';
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const layanan = formData.jenisLayanan === 'Lainnya' ? formData.layananLainnya : formData.jenisLayanan;
-    
-    const { total, breakdown } = getPriceBreakdown();
-    const breakdownText = breakdown.map(b => `  - ${b.label}: ${formatIDR(b.price)}`).join('\n');
+    if (isUploading) {
+      showToast('Tunggu sebentar, gambar referensi sedang diunggah ke Vercel Blob...');
+      return;
+    }
+    if (isSubmitting) return;
 
-    // Simpan data order via API /api/orders (Vercel Blob JSON / local fallback)
-    const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const orderRecord = {
-      id: orderId,
-      nama: formData.nama,
-      whatsapp: formData.whatsapp,
-      sosmed: formData.sosmed || '',
-      layanan,
-      tujuan: formData.tujuan || '',
-      gaya: formData.gaya || '',
-      format: formData.format || '',
-      jumlah: formData.jumlah || '',
-      deadline: formData.deadline || '',
-      budget: formData.budget || '',
-      referensiUrl: formData.referensiUrl || '',
-      materi: formData.materi || '',
-      catatan: formData.catatan || '',
-      totalEstimasi: total,
-      status: 'pending' as const,
-      createdAt: new Date().toISOString()
-    };
-
+    setIsSubmitting(true);
     try {
+      const layanan = formData.jenisLayanan === 'Lainnya' ? (formData.layananLainnya || 'Lainnya') : formData.jenisLayanan;
+      const selectedService = servicesList.find((s) => s.name === formData.jenisLayanan);
+      const kategoriDesain =
+        selectedService?.category ||
+        (formData.jenisLayanan === 'Lainnya' ? 'Kustom Khusus' : '-');
+      const referensiLink = formData.referensiUrl
+        ? toAbsoluteReferenceUrl(formData.referensiUrl)
+        : '';
+
+      const { total, breakdown } = getPriceBreakdown();
+      const hargaRincian =
+        breakdown.length > 0
+          ? breakdown.map((b) => `${b.label} (${formatIDR(b.price)})`).join(', ')
+          : '-';
+      const estimasiWaktuPengerjaan = getEstimatedWorkDuration(formData.deadline);
+      const deadlineFormatted = formatDeadlineIndonesia(formData.deadline);
+
+      // Simpan data order via API /api/orders (Vercel Blob JSON / local fallback)
+      const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const orderRecord = {
+        id: orderId,
+        nama: formData.nama,
+        whatsapp: formData.whatsapp,
+        sosmed: formData.sosmed || '',
+        layanan,
+        kategori: kategoriDesain,
+        tujuan: formData.tujuan || '',
+        gaya: formData.gaya || '',
+        format: formData.format || '',
+        jumlah: formData.jumlah || '1',
+        deadline: formData.deadline || '',
+        estimasiWaktu: estimasiWaktuPengerjaan,
+        budget: formData.budget || '',
+        referensiUrl: referensiLink,
+        materi: formData.materi || '',
+        materiPendukung: formData.materiPendukung || '',
+        catatan: formData.catatan || '',
+        totalEstimasi: total,
+        status: 'pending' as const,
+        createdAt: new Date().toISOString()
+      };
+
       const res = await fetch('/api/orders', {
         method: 'POST',
         cache: 'no-store',
@@ -343,55 +429,78 @@ export default function Store({ isOrderView = false }: StoreProps) {
       if (!res.ok) {
         throw new Error(data?.error || `Gagal menyimpan pesanan (HTTP ${res.status})`);
       }
+
+      const now = new Date();
+      const hariList = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const bulanList = [
+        'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+        'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+      ];
+      const hariNama = hariList[now.getDay()];
+      const tanggalStr = String(now.getDate()).padStart(2, '0');
+      const bulanNama = bulanList[now.getMonth()];
+      const tahunStr = String(now.getFullYear());
+      const waktuPemesanan = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      const message = `━━━━━━━━━━━━━━━━━━━━
+FORMULIR PEMESANAN
+JASA DESAIN ALFREELNC
+━━━━━━━━━━━━━━━━━━━━
+Mohon lengkapi format pemesanan berikut untuk memudahkan proses konsultasi dan pengerjaan desain.
+1. INFORMASI PEMESAN
+Nama: ${formData.nama.trim() || '-'}
+Nomor WhatsApp: ${formData.whatsapp.trim() || '-'}
+Nama Brand/Instansi: ${formData.sosmed.trim() || '-'}
+2. DETAIL PEMESANAN
+Jenis Layanan: ${layanan || '-'}
+Jenis/Kategori Desain: ${kategoriDesain}
+Konsep atau Gaya Desain: ${formData.gaya.trim() || '-'}
+Tujuan Penggunaan: ${formData.tujuan.trim() || '-'}
+Ukuran/Format Desain: ${formData.format.trim() || '-'}
+Jumlah Pesanan: ${String(formData.jumlah || '').trim() || '1'}
+3. KEBUTUHAN DESAIN
+Briefing/Deskripsi: ${formData.materi.trim() || '-'}
+Gambar Referensi: ${referensiLink || 'Belum dilampirkan'}
+Materi Pendukung: ${String(formData.materiPendukung || '').trim() || '-'}
+Catatan Khusus: ${formData.catatan.trim() || '-'}
+4. WAKTU PENGERJAAN
+Deadline: ${deadlineFormatted}
+Estimasi Waktu Pengerjaan: ${estimasiWaktuPengerjaan}
+5. INFORMASI BIAYA
+Budget: ${formData.budget.trim() || '-'}
+Estimasi Harga: ${hargaRincian}
+Total Estimasi Biaya: ${formatIDR(total)}
+6. DETAIL TANGGAL PEMESANAN
+Hari: ${hariNama}
+Tanggal: ${tanggalStr}
+Bulan: ${bulanNama}
+Tahun: ${tahunStr}
+Waktu Pemesanan: ${waktuPemesanan}
+━━━━━━━━━━━━━━━━━━━━
+CATATAN PEMESANAN
+•\tMohon isi seluruh informasi dengan jelas dan lengkap.
+•\tLampirkan gambar referensi dan materi pendukung jika tersedia.
+•\tHarga akhir dan estimasi pengerjaan akan dikonfirmasi setelah briefing ditinjau.
+Terima kasih telah mempercayakan kebutuhan desain Anda kepada kami.
+━━━━━━━━━━━━━━━━━━━━`;
+
+      const encodedMessage = encodeURIComponent(message);
+      const waUrl = `https://wa.me/qr/UDCAZ44OXWLGM1?text=${encodedMessage}`;
+      try {
+        const a = document.createElement('a');
+        a.href = waUrl;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch {
+        window.open(waUrl, '_blank') || (window.location.href = waUrl);
+      }
     } catch (error: any) {
       showToast(error?.message || 'Gagal menyimpan pesanan. Coba lagi.');
-      return;
-    }
-    
-    const message = `Halo, saya ingin melakukan pemesanan custom desain dengan detail berikut:
-
-*Data Diri:*
-- Nama: ${formData.nama}
-- WhatsApp: ${formData.whatsapp}
-${formData.sosmed ? `- Media Sosial: ${formData.sosmed}` : ''}
-
-*Detail Produk:*
-- Jenis Layanan: ${layanan}
-${formData.tujuan ? `- Tujuan Desain: ${formData.tujuan}` : ''}
-${formData.gaya ? `- Gaya Desain: ${formData.gaya}` : ''}
-${formData.format ? `- Format Ukuran: ${formData.format}` : ''}
-${formData.jumlah ? `- Jumlah Desain: ${formData.jumlah}` : ''}
-
-*Ketentuan Waktu & Harga:*
-- Deadline: ${formData.deadline}
-${formData.budget ? `- Budget/Kisaran Harga: ${formData.budget}` : ''}
-
-*Estimasi Harga Sistem:*
-${breakdownText}
-*Total Estimasi:* ${formatIDR(total)}
-*(Harga akhir akan dikonfirmasi setelah diskusi lebih lanjut)*
-
-*Materi & Referensi:*
-${formData.materi ? `- Materi: ${formData.materi}` : '- Materi: Akan dikirim via WhatsApp'}
-${formData.referensiUrl ? `- Referensi Gambar: ${formData.referensiUrl}` : '- Referensi: Akan dikirim via WhatsApp'}
-
-*Catatan Tambahan:*
-${formData.catatan ? formData.catatan : '-'}
-
-Terima kasih.`;
-
-    const encodedMessage = encodeURIComponent(message);
-    const waUrl = `https://wa.me/qr/UDCAZ44OXWLGM1?text=${encodedMessage}`;
-    try {
-      const a = document.createElement('a');
-      a.href = waUrl;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-    } catch {
-      window.open(waUrl, '_blank') || (window.location.href = waUrl);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -557,12 +666,12 @@ Terima kasih.`;
 
                             <div>
                               <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1.5">
-                                <span>Media Sosial / Brand</span>
+                                <span>Nama Brand / Instansi</span>
                                 <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-0.5 rounded-md">Opsional</span>
                               </label>
                               <div className="relative">
                                 <Instagram className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                                <FastInput type="text" name="sosmed" value={formData.sosmed} onChange={handleChange} className={inputClassDesktop} placeholder="@username atau Nama Brand" />
+                                <FastInput type="text" name="sosmed" value={formData.sosmed} onChange={handleChange} className={inputClassDesktop} placeholder="Nama Brand, Instansi, atau @sosmed" />
                               </div>
                             </div>
                           </div>
@@ -728,20 +837,40 @@ Terima kasih.`;
                             </span>
                           </div>
 
-                          <div className="flex flex-col flex-grow">
-                            <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-2">
-                              <span>Briefing / Teks Konten</span>
-                              <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-0.5 rounded-md">Opsional</span>
-                            </label>
-                            <div className="relative flex-grow min-h-[180px]">
-                              <FileText className="absolute left-3.5 top-3.5 w-4 h-4 text-zinc-400" />
-                              <FastTextarea 
-                                name="materi" 
-                                value={formData.materi} 
-                                onChange={handleChange} 
-                                className="w-full h-full pl-10 pr-4 py-3 bg-white/70 dark:bg-black/40 backdrop-blur-xs hover:bg-white/90 dark:hover:bg-black/60 focus:bg-white dark:focus:bg-black/80 border border-zinc-200 dark:border-zinc-800/90 rounded-xl focus:ring-2 focus:ring-black dark:focus:ring-white outline-none transition-all dark:text-white resize-y text-sm min-h-[170px] placeholder:text-zinc-400 dark:placeholder:text-zinc-500" 
-                                placeholder="Tuliskan materi teks, tagline, instruksi khusus, atau tempelkan link Google Drive Anda di sini..." 
-                              />
+                          <div className="flex flex-col flex-grow space-y-4">
+                            <div>
+                              <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-2">
+                                <span>Briefing / Deskripsi Desain</span>
+                                <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-0.5 rounded-md">Opsional</span>
+                              </label>
+                              <div className="relative">
+                                <FileText className="absolute left-3.5 top-3.5 w-4 h-4 text-zinc-400" />
+                                <FastTextarea 
+                                  name="materi" 
+                                  value={formData.materi} 
+                                  onChange={handleChange} 
+                                  className="w-full pl-10 pr-4 py-3 bg-white/70 dark:bg-black/40 backdrop-blur-xs hover:bg-white/90 dark:hover:bg-black/60 focus:bg-white dark:focus:bg-black/80 border border-zinc-200 dark:border-zinc-800/90 rounded-xl focus:ring-2 focus:ring-black dark:focus:ring-white outline-none transition-all dark:text-white resize-y text-sm min-h-[120px] placeholder:text-zinc-400 dark:placeholder:text-zinc-500" 
+                                  placeholder="Tuliskan konsep, briefing desain, teks konten, atau tagline yang diinginkan..." 
+                                />
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="flex items-center justify-between text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-1.5">
+                                <span>Materi Pendukung</span>
+                                <span className="text-[10px] font-medium text-zinc-400 dark:text-zinc-500 bg-zinc-100 dark:bg-zinc-800/60 px-2 py-0.5 rounded-md">Opsional</span>
+                              </label>
+                              <div className="relative">
+                                <ExternalLink className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                                <FastInput
+                                  type="text"
+                                  name="materiPendukung"
+                                  value={formData.materiPendukung || ''}
+                                  onChange={handleChange}
+                                  className={inputClassDesktop}
+                                  placeholder="Link Google Drive, aset logo, atau materi tambahan..."
+                                />
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -781,10 +910,10 @@ Terima kasih.`;
                               {isUploading ? (
                                 <div className="flex flex-col items-center justify-center text-zinc-500">
                                   <UploadCloud className="w-8 h-8 animate-bounce mb-2 text-black dark:text-white" />
-                                  <span className="text-sm font-semibold text-black dark:text-white">Mengunggah file...</span>
+                                  <span className="text-sm font-semibold text-black dark:text-white">Mengunggah ke Vercel Blob...</span>
                                 </div>
                               ) : formData.referensiUrl ? (
-                                <div className="flex flex-col items-center justify-center relative z-0">
+                                <div className="flex flex-col items-center justify-center relative z-0 max-w-full px-2">
                                   <div className="relative mb-2">
                                     <div className="w-24 h-24 rounded-2xl overflow-hidden border-2 border-emerald-500 bg-zinc-100 dark:bg-zinc-800 shadow-sm">
                                       <img src={resolveImageUrl(formData.referensiUrl)} alt="Referensi" className="w-full h-full object-cover" onError={handleImageError} />
@@ -793,8 +922,8 @@ Terima kasih.`;
                                       <CheckCircle2 className="w-4 h-4 text-white" />
                                     </div>
                                   </div>
-                                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">File Berhasil Terpasang!</span>
-                                  <span className="text-[11px] text-zinc-400 mt-0.5">Klik area untuk mengganti file</span>
+                                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Tersimpan di Vercel Blob &amp; Siap Dikirim ke WA!</span>
+                                  <span className="text-[11px] text-zinc-400 mt-0.5">Klik area untuk mengganti gambar referensi</span>
                                 </div>
                               ) : (
                                 <div className="flex flex-col items-center justify-center text-zinc-500">
@@ -802,7 +931,7 @@ Terima kasih.`;
                                     <UploadCloud className="w-5 h-5 text-black dark:text-white" />
                                   </div>
                                   <span className="text-sm font-bold text-black dark:text-white">Pilih atau Seret Gambar ke Sini</span>
-                                  <span className="text-xs text-zinc-400 mt-1">Mendukung PNG, JPG, JPEG (Maks. 5MB)</span>
+                                  <span className="text-xs text-zinc-400 mt-1">Mendukung PNG, JPG, JPEG, WebP (Maks. 5MB)</span>
                                 </div>
                               )}
                             </div>
@@ -1007,8 +1136,8 @@ Terima kasih.`;
                       <button type="button" onClick={prevStep} className="flex justify-center items-center gap-2 bg-zinc-200 text-black dark:bg-zinc-800 dark:text-white px-8 py-3.5 rounded-xl text-sm font-bold hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-all">
                         <ArrowLeft className="w-4 h-4" /> Sebelumnya
                       </button>
-                      <button type="submit" disabled={!isDesktopStep3Valid} className="flex-1 flex justify-center items-center gap-2 bg-[#25D366] text-white px-10 py-3.5 rounded-xl text-sm md:text-base font-extrabold hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-[#25D366]/20 disabled:opacity-50 disabled:hover:scale-100 disabled:shadow-none">
-                        <Send className="w-5 h-5" /> Lanjutkan di WhatsApp
+                      <button type="submit" disabled={!isDesktopStep3Valid || isUploading || isSubmitting} className="flex-1 flex justify-center items-center gap-2 bg-[#25D366] text-white px-10 py-3.5 rounded-xl text-sm md:text-base font-extrabold hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-[#25D366]/20 disabled:opacity-50 disabled:hover:scale-100 disabled:shadow-none">
+                        <Send className="w-5 h-5" /> {isUploading ? 'Mengunggah Gambar...' : isSubmitting ? 'Memproses Pesanan...' : 'Lanjutkan di WhatsApp'}
                       </button>
                     </div>
                   </motion.div>
@@ -1060,12 +1189,12 @@ Terima kasih.`;
                       </div>
                       <div>
                         <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
-                          <span>Media Sosial / Brand</span>
+                          <span>Nama Brand / Instansi</span>
                           <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded">Opsional</span>
                         </label>
                         <div className="relative">
                           <Instagram className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
-                          <FastInput type="text" name="sosmed" value={formData.sosmed} onChange={handleChange} className={inputClassMobile} placeholder="@username atau Brand" />
+                          <FastInput type="text" name="sosmed" value={formData.sosmed} onChange={handleChange} className={inputClassMobile} placeholder="Nama Brand, Instansi, atau @sosmed" />
                         </div>
                       </div>
                     </div>
@@ -1276,12 +1405,22 @@ Terima kasih.`;
                     <div className="space-y-2.5">
                       <div>
                         <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
-                          <span>Materi / Briefing Teks</span>
+                          <span>Briefing / Deskripsi Desain</span>
                           <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded">Opsional</span>
                         </label>
                         <div className="relative">
                           <FileText className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
-                          <FastTextarea rows={2.5} name="materi" value={formData.materi} onChange={handleChange} className="w-full pl-8 pr-2.5 py-2 bg-white/90 dark:bg-[#121212]/90 border border-zinc-200/90 dark:border-zinc-800 rounded-xl focus:border-black dark:focus:border-white focus:ring-1 focus:ring-black/10 outline-none transition-colors text-zinc-950 dark:text-zinc-50 resize-y text-xs font-semibold placeholder:text-zinc-400 min-h-[68px] max-h-[140px] shadow-2xs" placeholder="Tuliskan materi teks, tagline, atau link Google Drive..." />
+                          <FastTextarea rows={2.5} name="materi" value={formData.materi} onChange={handleChange} className="w-full pl-8 pr-2.5 py-2 bg-white/90 dark:bg-[#121212]/90 border border-zinc-200/90 dark:border-zinc-800 rounded-xl focus:border-black dark:focus:border-white focus:ring-1 focus:ring-black/10 outline-none transition-colors text-zinc-950 dark:text-zinc-50 resize-y text-xs font-semibold placeholder:text-zinc-400 min-h-[68px] max-h-[140px] shadow-2xs" placeholder="Tuliskan konsep, briefing desain, teks konten, atau tagline..." />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="flex items-center justify-between text-[11px] font-bold text-zinc-800 dark:text-zinc-200 mb-1">
+                          <span>Materi Pendukung</span>
+                          <span className="text-[9px] font-medium text-zinc-400 bg-zinc-100 dark:bg-zinc-800/60 px-1.5 py-0.5 rounded">Opsional</span>
+                        </label>
+                        <div className="relative">
+                          <ExternalLink className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+                          <FastInput type="text" name="materiPendukung" value={formData.materiPendukung || ''} onChange={handleChange} className={inputClassMobile} placeholder="Link Google Drive, logo, atau materi..." />
                         </div>
                       </div>
                       <div>
@@ -1294,7 +1433,7 @@ Terima kasih.`;
                           {isUploading ? (
                             <div className="flex flex-col items-center justify-center text-zinc-500 py-1">
                               <UploadCloud className="w-5 h-5 animate-bounce mb-1 text-black dark:text-white" />
-                              <span className="text-[10px] font-semibold text-black dark:text-white">Mengunggah file...</span>
+                              <span className="text-[10px] font-semibold text-black dark:text-white">Mengunggah ke Vercel Blob...</span>
                             </div>
                           ) : formData.referensiUrl ? (
                             <div className="flex items-center justify-center gap-3 relative z-0 py-1">
@@ -1307,15 +1446,15 @@ Terima kasih.`;
                                 </div>
                               </div>
                               <div className="text-left">
-                                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 block">File Terpasang</span>
-                                <span className="text-[9px] text-zinc-400">Ketuk untuk ganti gambar</span>
+                                <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 block">Tersimpan di Vercel Blob</span>
+                                <span className="text-[9px] text-zinc-400">Ketuk untuk ganti gambar referensi</span>
                               </div>
                             </div>
                           ) : (
                             <div className="flex flex-col items-center justify-center text-zinc-500 py-1">
                               <UploadCloud className="w-4 h-4 mb-0.5 text-zinc-400 group-hover:text-black dark:group-hover:text-white transition-colors" />
                               <span className="text-[10.5px] font-bold text-black dark:text-white">Pilih Gambar Referensi</span>
-                              <span className="text-[8px] text-zinc-400 mt-0.5">PNG, JPG, JPEG (Maks. 5MB)</span>
+                              <span className="text-[8px] text-zinc-400 mt-0.5">PNG, JPG, JPEG, WebP (Maks. 5MB)</span>
                             </div>
                           )}
                         </div>
@@ -1428,8 +1567,8 @@ Terima kasih.`;
                       <button type="button" onClick={prevStep} className="h-9.5 px-3.5 flex items-center justify-center gap-1 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 rounded-xl text-xs font-bold transition-all shrink-0">
                         <ArrowLeft className="w-3.5 h-3.5" /> Kembali
                       </button>
-                      <button type="submit" className="h-9.5 px-4 flex-1 flex items-center justify-center gap-1.5 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl text-xs font-bold active:scale-95 transition-all shadow-md shadow-[#25D366]/20">
-                        <Send className="w-3.5 h-3.5" /> Lanjutkan di WhatsApp
+                      <button type="submit" disabled={!isValidDeadline || isUploading || isSubmitting} className="h-9.5 px-4 flex-1 flex items-center justify-center gap-1.5 bg-[#25D366] hover:bg-[#20bd5a] text-white rounded-xl text-xs font-bold active:scale-95 transition-all shadow-md shadow-[#25D366]/20 disabled:opacity-50">
+                        <Send className="w-3.5 h-3.5" /> {isUploading ? 'Mengunggah...' : isSubmitting ? 'Memproses...' : 'Lanjutkan di WhatsApp'}
                       </button>
                     </div>
                   </motion.div>
@@ -1682,17 +1821,19 @@ Terima kasih.`;
               <div className="mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex flex-col gap-3">
                 <button 
                   type="button" 
-                  onClick={(e) => { 
-                    setShowPaymentModal(false); 
-                    if ((window.innerWidth >= 768 && isDesktopStep3Valid) || (window.innerWidth < 768 && true)) {
+                  disabled={isUploading || isSubmitting}
+                  onClick={() => { 
+                    if (isValidDataDiri && isValidDetailProduk && isValidDeadline) {
+                      setShowPaymentModal(false);
                       handleSubmit({ preventDefault: () => {} } as React.FormEvent); 
                     } else {
+                      setShowPaymentModal(false);
                       showToast('Mohon lengkapi formulir terlebih dahulu sebelum lanjut pembelian.');
                     }
                   }} 
-                  className="w-full bg-[#25D366] text-black py-3 md:py-3.5 rounded-xl text-xs md:text-sm font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-transform shadow-md shadow-[#25D366]/20 flex items-center justify-center gap-2"
+                  className="w-full bg-[#25D366] text-black py-3 md:py-3.5 rounded-xl text-xs md:text-sm font-extrabold hover:scale-[1.02] active:scale-[0.98] transition-transform shadow-md shadow-[#25D366]/20 flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  Lanjut Pembelian
+                  {isUploading ? 'Mengunggah Gambar...' : isSubmitting ? 'Memproses...' : 'Lanjut Pembelian'}
                 </button>
               </div>
               {/* Bottom Notice */}

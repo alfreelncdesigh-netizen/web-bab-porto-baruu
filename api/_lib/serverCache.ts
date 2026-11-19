@@ -743,7 +743,9 @@ export async function readMediaFromServerCache(
           const buffer = fs.readFileSync(candidatePath);
           if (buffer.length > 0) {
             const mimeType = guessMimeFromName(candidatePath);
-            storeMediaInMemory(canonicalUrl, buffer, mimeType, basename);
+            void saveMediaToServerCache(canonicalUrl, buffer, mimeType, basename, {
+              awaitFirestore: false,
+            });
             return { buffer, mimeType, source: 'bundled-fallback' };
           }
         }

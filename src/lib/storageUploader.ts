@@ -3,6 +3,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { compressImageToWebP, compressPortfolioImageToWebP } from './imageCompressor';
 import { renderPdfFirstPageToImage } from './pdfHelper';
 import { sanitizeMediaUrl } from './imageResolver';
+import { cacheUploadedBlobInBrowser } from './cacheManager';
 
 export const PORTFOLIO_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 export const PDF_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -145,7 +146,11 @@ async function uploadToVercelBlob(
   }
 
   const rawPublicUrl = typeof data?.url === 'string' ? data.url.trim() : '';
-  const isLocalFallback = data?.storage === 'local-fallback';
+  const isServerOrLocalUrl =
+    data?.storage === 'local-fallback' ||
+    data?.storage === 'server-cache' ||
+    rawPublicUrl.startsWith('/api/media-cache?') ||
+    rawPublicUrl.startsWith('/uploads/');
   const sanitizedUrl = sanitizeMediaUrl(rawPublicUrl);
 
   if (!sanitizedUrl) {
@@ -153,10 +158,13 @@ async function uploadToVercelBlob(
     throw new Error('Server tidak mengembalikan URL media yang valid.');
   }
 
-  if (!isLocalFallback && !/^https:\/\//i.test(sanitizedUrl)) {
+  if (!isServerOrLocalUrl && !/^https:\/\//i.test(sanitizedUrl)) {
     console.error('[StorageUploader] URL Vercel Blob produksi wajib diawali https://:', sanitizedUrl);
     throw new Error('Server Vercel Blob tidak mengembalikan URL https:// yang valid.');
   }
+
+  // Simpan gambar hasil upload langsung ke Browser Cache & hangatkan Edge CDN secara paralel
+  void cacheUploadedBlobInBrowser(sanitizedUrl, fileOrBlob, fileOrBlob.type);
 
   return {
     url: sanitizedUrl,

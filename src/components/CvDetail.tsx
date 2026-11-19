@@ -4,7 +4,7 @@ import { defaultCvSections, SiteSettings, CvSectionItem } from '../types/site';
 import { getStoredSettings, subscribeCvRealtime, subscribeContentBlobErrors, fetchSettingsFromBlob } from '../lib/contentStorage';
 import { Download, Mail, Phone, MapPin, Link as LinkIcon, Copy, Check, X, ChevronLeft, ChevronRight, Maximize2, ImageOff, Image as ImageIcon, AlertTriangle, RefreshCw } from 'lucide-react';
 
-import { resolveImageUrl, handleImageError as globalHandleImageError, FALLBACK_IMAGE } from '../lib/imageResolver';
+import { resolveImageUrl, getServerMediaCacheUrl, handleImageError as globalHandleImageError } from '../lib/imageResolver';
 
 // Variasi rotasi alami ala Instagram Chat Stacked (-3° hingga 3°)
 const STACK_ROTATIONS = [-3, 2, -2, 3, -2.5, 1.8, -1.5, 2.5];
@@ -38,14 +38,24 @@ export function IrregularPhotoCollage({
 }: IrregularPhotoCollageProps) {
   // Error state per image index
   const [error, setError] = useState<Record<number, boolean>>({});
+  // Server cache fallback URL map per image index
+  const [fallbackUrls, setFallbackUrls] = useState<Record<number, string>>({});
   // Loaded state per image index for skeleton shimmer
   const [loadedMap, setLoadedMap] = useState<Record<number, boolean>>({});
   // Hover/tap state untuk memicu transform scale(1.08) rotate(0deg) dan z-index terdepan
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
 
-  const handleImageError = (index: number, failedUrl?: string) => {
-    if (failedUrl) {
-      console.error('[CvDetail] Gagal memuat gambar kolase CV:', failedUrl);
+  const handleImageError = (index: number, originalUrl?: string) => {
+    const alreadyUsingFallback = Boolean(fallbackUrls[index]);
+    if (!alreadyUsingFallback && originalUrl && /^https?:\/\//i.test(originalUrl) && !originalUrl.includes('/api/media-cache?')) {
+      const serverCacheUrl = getServerMediaCacheUrl(originalUrl);
+      if (serverCacheUrl) {
+        setFallbackUrls((prev) => ({ ...prev, [index]: serverCacheUrl }));
+        return;
+      }
+    }
+    if (originalUrl) {
+      console.error('[CvDetail] Gagal memuat gambar kolase CV:', originalUrl);
     }
     setError((prev) => ({ ...prev, [index]: true }));
     setLoadedMap((prev) => ({ ...prev, [index]: true }));
@@ -121,7 +131,7 @@ export function IrregularPhotoCollage({
                 renderPlaceholder("w-4 h-4 sm:w-5 sm:h-5")
               ) : (
                 <img
-                  src={imgUrl}
+                  src={fallbackUrls[imgIdx] || imgUrl}
                   alt={`${title} ${imgIdx + 1}`}
                   className={`w-full h-full object-cover select-none pointer-events-none relative z-[1] transition-opacity duration-300 ${
                     isImgLoaded ? 'opacity-100' : 'opacity-0'
@@ -159,6 +169,7 @@ export default function CvDetail() {
   } | null>(null);
   const [lightboxError, setLightboxError] = useState(false);
   const [lightboxLoaded, setLightboxLoaded] = useState(false);
+  const [lightboxFallbackUrl, setLightboxFallbackUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const handleUpdate = (e: any) => {
@@ -221,6 +232,7 @@ export default function CvDetail() {
   const openLightbox = (images: string[], index: number, title: string) => {
     setLightboxError(false);
     setLightboxLoaded(false);
+    setLightboxFallbackUrl(null);
     setLightbox({ images, index, title });
   };
 
@@ -558,8 +570,8 @@ export default function CvDetail() {
                     </div>
                   ) : (
                     <img
-                      key={lightbox.index + '_' + lightbox.images[lightbox.index]}
-                      src={formatImageUrl(lightbox.images[lightbox.index])}
+                      key={lightbox.index + '_' + (lightboxFallbackUrl || lightbox.images[lightbox.index])}
+                      src={lightboxFallbackUrl || formatImageUrl(lightbox.images[lightbox.index])}
                       alt={`Foto ${lightbox.index + 1}`}
                       loading="lazy"
                       decoding="async"
@@ -568,6 +580,14 @@ export default function CvDetail() {
                       }`}
                       onLoad={() => setLightboxLoaded(true)}
                       onError={(e) => {
+                        const rawSrc = formatImageUrl(lightbox.images[lightbox.index]);
+                        if (!lightboxFallbackUrl && rawSrc && /^https?:\/\//i.test(rawSrc) && !rawSrc.includes('/api/media-cache?')) {
+                          const proxyUrl = getServerMediaCacheUrl(rawSrc);
+                          if (proxyUrl) {
+                            setLightboxFallbackUrl(proxyUrl);
+                            return;
+                          }
+                        }
                         console.error('[CvDetail] Gagal memuat gambar lightbox CV:', lightbox.images[lightbox.index]);
                         setLightboxError(true);
                         setLightboxLoaded(true);
@@ -582,6 +602,7 @@ export default function CvDetail() {
                       onClick={() => {
                         setLightboxError(false);
                         setLightboxLoaded(false);
+                        setLightboxFallbackUrl(null);
                         setLightbox(prev => prev ? ({ ...prev, index: (prev.index - 1 + prev.images.length) % prev.images.length }) : null);
                       }}
                       className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 p-2 sm:p-3 rounded-full bg-black/60 hover:bg-black/90 text-white border border-white/10 backdrop-blur-sm transition-transform active:scale-95 shadow-md"
@@ -597,6 +618,7 @@ export default function CvDetail() {
                       onClick={() => {
                         setLightboxError(false);
                         setLightboxLoaded(false);
+                        setLightboxFallbackUrl(null);
                         setLightbox(prev => prev ? ({ ...prev, index: (prev.index + 1) % prev.images.length }) : null);
                       }}
                       className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 p-2 sm:p-3 rounded-full bg-black/60 hover:bg-black/90 text-white border border-white/10 backdrop-blur-sm transition-transform active:scale-95 shadow-md"
@@ -615,6 +637,7 @@ export default function CvDetail() {
                         key={i}
                         onClick={() => {
                           setLightboxError(false);
+                          setLightboxFallbackUrl(null);
                           setLightbox(prev => prev ? ({ ...prev, index: i }) : null);
                         }}
                         className={`w-10 h-10 sm:w-12 sm:h-12 rounded-lg overflow-hidden border-2 transition-all shrink-0 ${
