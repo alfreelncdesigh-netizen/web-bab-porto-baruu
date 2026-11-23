@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/og-html.ts": {
-      "includeFiles": "{dist/index.html,firebase-applet-config.json}"
+      "includeFiles": "{dist/_app.html,firebase-applet-config.json}"
     },
     "api/og-image.ts": {
       "includeFiles": "{public/images/**,firebase-applet-config.json}"
@@ -30,7 +30,7 @@
       "destination": "/api/og-html"
     },
     {
-      "source": "/((?!api/|og/|assets/|images/|uploads/|src/|index\\.html$|favicon|sw\\.js$|manifest\\.json$|robots\\.txt$|sitemap\\.xml$|pwa-|logo|apple-touch-icon|google).*)",
+      "source": "/((?!api/|og/|assets/|images/|uploads/|src/|index\\.html$|_app\\.html$|favicon|sw\\.js$|manifest\\.json$|robots\\.txt$|sitemap\\.xml$|pwa-|logo|apple-touch-icon|google).*)",
       "destination": "/api/og-html"
     }
   ],

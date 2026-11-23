@@ -68,10 +68,23 @@ async function loadMediaBuffer(
 ): Promise<{ buffer: Buffer; mimeType: string } | null> {
   if (!rawUrl) return null;
 
-  if (rawUrl.startsWith('/')) {
-    const localBuf = readBundledPublicFile(rawUrl);
+  let effectiveUrl = rawUrl.trim();
+  if (effectiveUrl.startsWith('/api/media-cache') || effectiveUrl.includes('/api/media-cache?')) {
+    try {
+      const parsed = new URL(effectiveUrl, 'https://localhost');
+      const inner = parsed.searchParams.get('url');
+      if (inner && inner.trim()) {
+        effectiveUrl = inner.trim();
+      }
+    } catch {
+      // Keep original URL if parsing fails
+    }
+  }
+
+  if (effectiveUrl.startsWith('/')) {
+    const localBuf = readBundledPublicFile(effectiveUrl);
     if (localBuf) {
-      const lower = rawUrl.toLowerCase();
+      const lower = effectiveUrl.toLowerCase();
       const mimeType = lower.endsWith('.png')
         ? 'image/png'
         : lower.endsWith('.webp')
@@ -81,11 +94,11 @@ async function loadMediaBuffer(
         : 'image/jpeg';
       return { buffer: localBuf, mimeType };
     }
-    const cached = await readMediaFromServerCache(rawUrl);
+    const cached = await readMediaFromServerCache(effectiveUrl);
     return cached ? { buffer: cached.buffer, mimeType: cached.mimeType } : null;
   }
 
-  const resolved = await resolveAndCacheMedia(rawUrl);
+  const resolved = await resolveAndCacheMedia(effectiveUrl);
   return resolved ? { buffer: resolved.buffer, mimeType: resolved.mimeType } : null;
 }
 
@@ -98,34 +111,40 @@ async function normalizeToWhatsappJpeg(
     sourceUrl === DEFAULT_HERO_OG_IMAGE_PATH &&
     sourceMimeType === 'image/jpeg' &&
     rawBuffer.length > 0 &&
-    rawBuffer.length <= 350 * 1024;
+    rawBuffer.length <= 300 * 1024;
 
   if (isAlreadyHeroOgJpg) {
     return { buffer: rawBuffer, mimeType: 'image/jpeg' };
   }
+
+  const WHATSAPP_MAX_BYTES = 280 * 1024;
 
   try {
     const sharpMod: any = await import('sharp');
     const sharpFn = sharpMod.default || sharpMod;
 
     const inputOptions = sourceMimeType.includes('svg') ? { density: 160 } : undefined;
-    let outBuf: Buffer = await sharpFn(rawBuffer, inputOptions)
-      .rotate()
-      .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
-      .flatten({ background: '#ffffff' })
-      .jpeg({ quality: 86, progressive: false })
-      .toBuffer();
+    const presets: Array<{ maxDim: number; quality: number }> = [
+      { maxDim: 1200, quality: 82 },
+      { maxDim: 1000, quality: 74 },
+      { maxDim: 800, quality: 66 },
+    ];
 
-    if (outBuf.length > 700 * 1024) {
+    let outBuf: Buffer | null = null;
+    for (const preset of presets) {
       outBuf = await sharpFn(rawBuffer, inputOptions)
         .rotate()
-        .resize({ width: 1080, height: 1080, fit: 'inside', withoutEnlargement: true })
+        .resize({ width: preset.maxDim, height: preset.maxDim, fit: 'inside', withoutEnlargement: true })
         .flatten({ background: '#ffffff' })
-        .jpeg({ quality: 76, progressive: false })
+        .jpeg({ quality: preset.quality, progressive: false })
         .toBuffer();
+
+      if (outBuf.length > 0 && outBuf.length <= WHATSAPP_MAX_BYTES) {
+        break;
+      }
     }
 
-    if (outBuf.length > 0) {
+    if (outBuf && outBuf.length > 0) {
       return { buffer: outBuf, mimeType: 'image/jpeg' };
     }
   } catch (sharpErr) {

@@ -1,92 +1,99 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Cookie, Check, ShieldCheck, X, Loader2 } from 'lucide-react';
+import { Cookie, Check, X, Loader2 } from 'lucide-react';
 import { getStoredCookieConsent, saveCookieConsent } from '../lib/cookies';
-
 import { cacheAllWebsiteContent } from '../lib/cacheManager';
 
-export default function CookieBanner() {
-  const [isVisible, setIsVisible] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    return !getStoredCookieConsent();
-  });
+interface CookieBannerProps {
+  isSplashActive?: boolean;
+  splashReady?: boolean;
+  onConsentComplete?: () => void;
+}
+
+export default function CookieBanner({
+  isSplashActive = false,
+  splashReady = false,
+  onConsentComplete,
+}: CookieBannerProps) {
+  const [manualOpen, setManualOpen] = useState(false);
   const [hasExistingConsent, setHasExistingConsent] = useState(() => {
     if (typeof window === 'undefined') return false;
     return !!getStoredCookieConsent();
   });
-  const [shake, setShake] = useState(false);
   const [isCaching, setIsCaching] = useState(false);
   const [cachingProgressText, setCachingProgressText] = useState('');
 
-  useEffect(() => {
-    document.body.style.overflow = '';
-    document.documentElement.style.overflow = '';
-    document.body.style.touchAction = '';
-  }, []);
+  // Tampilkan pop up cookie HANYA ketika:
+  // 1) Sedang di splash video animasi logo setelah 3 detik & belum pernah menyetujui cookie, ATAU
+  // 2) Pengunjung membuka pengaturan secara manual dari Footer ("Preferensi Cookie").
+  // Tidak pernah muncul otomatis saat sudah masuk ke beranda website.
+  const isSplashPromptVisible = isSplashActive && splashReady && !hasExistingConsent;
+  const isVisible = manualOpen || isSplashPromptVisible;
 
   useEffect(() => {
     const existingConsent = getStoredCookieConsent();
-    if (!existingConsent) {
-      setIsVisible(true);
-      setHasExistingConsent(false);
-    } else {
-      setHasExistingConsent(true);
-    }
+    setHasExistingConsent(!!existingConsent);
 
-    // Listen for manual open requests from footer ("Preferensi Cookie")
     const handleOpenRequest = () => {
       setHasExistingConsent(!!getStoredCookieConsent());
-      setIsVisible(true);
+      setManualOpen(true);
     };
 
     window.addEventListener('openCookieSettings', handleOpenRequest);
     return () => window.removeEventListener('openCookieSettings', handleOpenRequest);
   }, []);
 
+  const finishConsentFlow = () => {
+    setIsCaching(false);
+    setHasExistingConsent(true);
+    setManualOpen(false);
+    onConsentComplete?.();
+    window.dispatchEvent(new CustomEvent('website_cache_completed'));
+  };
+
   const handleAcceptAll = async () => {
+    if (isCaching) return;
     setIsCaching(true);
-    setCachingProgressText('Menyimpan semua elemen & konten...');
+    setCachingProgressText('Menyimpan preferensi...');
     saveCookieConsent({ preferences: true, analytics: true, portfolioImagesOnly: false, cacheLevel: 'all' });
-    
+
     try {
       localStorage.setItem('alfreelnc_cache_mode', 'all');
-      // Jalankan caching menyeluruh untuk semua elemen, teks, dan gambar website
-      await cacheAllWebsiteContent((_progress, text) => {
+      const cachePromise = cacheAllWebsiteContent((_progress, text) => {
         setCachingProgressText(text);
-      });
+      }).catch(() => {});
+      await Promise.race([cachePromise, new Promise((resolve) => setTimeout(resolve, 900))]);
     } catch (err) {
       console.warn('Cache all on cookie accept:', err);
     } finally {
-      setIsCaching(false);
-      setHasExistingConsent(true);
-      setIsVisible(false);
-      window.dispatchEvent(new CustomEvent('website_cache_completed'));
+      finishConsentFlow();
     }
   };
 
   const handleEssentialOnly = async () => {
+    if (isCaching) return;
     setIsCaching(true);
-    setCachingProgressText('Menyimpan cache esensial...');
+    setCachingProgressText('Menyimpan pengaturan...');
     saveCookieConsent({ preferences: false, analytics: false, portfolioImagesOnly: true, cacheLevel: 'essential_images' });
+
     try {
       localStorage.setItem('alfreelnc_cache_mode', 'essential_images');
-      await cacheAllWebsiteContent();
-    } catch {}
-    finally {
-      setIsCaching(false);
-      setHasExistingConsent(true);
-      setIsVisible(false);
+      const cachePromise = cacheAllWebsiteContent().catch(() => {});
+      await Promise.race([cachePromise, new Promise((resolve) => setTimeout(resolve, 600))]);
+    } catch {
+      // Abaikan error cache sementara
+    } finally {
+      finishConsentFlow();
     }
   };
 
-  const handleCloseIfConsented = () => {
-    if (hasExistingConsent) {
-      setIsVisible(false);
-    } else {
-      setShake(true);
-      setTimeout(() => setShake(false), 500);
+  const handleCloseManual = () => {
+    if (manualOpen) {
+      setManualOpen(false);
     }
   };
+
+  const isOnDarkSplash = isSplashPromptVisible && !manualOpen;
 
   return (
     <AnimatePresence>
@@ -94,43 +101,61 @@ export default function CookieBanner() {
         <motion.div
           key="cookie-floating-banner"
           role="dialog"
-          aria-modal="false"
+          aria-modal={isOnDarkSplash ? 'true' : 'false'}
           aria-labelledby="cookie-consent-title"
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 24 }}
-          transition={{ duration: 0.2 }}
-          className="fixed bottom-3 sm:bottom-5 inset-x-3 sm:inset-x-auto sm:right-6 z-[9990] sm:w-full sm:max-w-md pointer-events-none select-none"
+          initial={{ opacity: 0, y: 20, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 16, scale: 0.98 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          className={`fixed pointer-events-none select-none ${
+            isOnDarkSplash
+              ? 'z-[200010] bottom-5 sm:bottom-8 inset-x-4 sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:w-full sm:max-w-[440px]'
+              : 'z-[9990] bottom-4 sm:bottom-6 inset-x-4 sm:inset-x-auto sm:right-6 sm:w-full sm:max-w-[420px]'
+          }`}
         >
           <div
-            className={`pointer-events-auto w-full bg-white dark:bg-[#121212] rounded-3xl p-5 sm:p-6 shadow-2xl border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-zinc-100 relative max-h-[85vh] overflow-y-auto transition-transform ${
-              shake ? 'animate-bounce ring-4 ring-zinc-500/40 dark:ring-zinc-400/40' : ''
+            className={`pointer-events-auto w-full rounded-2xl sm:rounded-3xl p-5 sm:p-6 shadow-2xl border backdrop-blur-2xl max-h-[82vh] overflow-y-auto transition-colors ${
+              isOnDarkSplash
+                ? 'bg-[#161820]/95 border-white/12 text-white shadow-[0_24px_60px_-15px_rgba(0,0,0,0.75)]'
+                : 'bg-white/95 dark:bg-[#121214]/95 border-zinc-200/80 dark:border-zinc-800/80 text-zinc-900 dark:text-zinc-100'
             }`}
           >
             {/* Header */}
-            <div className="flex items-start justify-between gap-3 mb-3.5">
+            <div className="flex items-start justify-between gap-3 mb-3">
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-zinc-900 text-white dark:bg-white dark:text-black flex items-center justify-center shrink-0 shadow-lg shadow-black/10 dark:shadow-white/10">
-                  <Cookie className="w-5 h-5" />
+                <div
+                  className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                    isOnDarkSplash
+                      ? 'bg-white/10 border-white/15 text-white'
+                      : 'bg-zinc-900 text-white dark:bg-white dark:text-black border-transparent'
+                  }`}
+                >
+                  <Cookie className="w-4.5 h-4.5" />
                 </div>
                 <div>
-                  <h3 id="cookie-consent-title" className="text-base sm:text-lg font-bold text-zinc-900 dark:text-white leading-tight">
+                  <h3
+                    id="cookie-consent-title"
+                    className={`text-sm sm:text-base font-bold leading-snug tracking-tight ${
+                      isOnDarkSplash ? 'text-white' : 'text-zinc-950 dark:text-white'
+                    }`}
+                  >
                     Persetujuan Cookie
                   </h3>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                    <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-medium">
-                      Alfreelnc Studio
-                    </span>
-                  </div>
+                  <span
+                    className={`text-[11px] font-medium block mt-0.5 ${
+                      isOnDarkSplash ? 'text-zinc-400' : 'text-zinc-500 dark:text-zinc-400'
+                    }`}
+                  >
+                    Alfreelnc Design Studio
+                  </span>
                 </div>
               </div>
 
-              {hasExistingConsent && (
+              {manualOpen && hasExistingConsent && (
                 <button
                   type="button"
-                  onClick={handleCloseIfConsented}
-                  className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 p-1.5 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                  onClick={handleCloseManual}
+                  className="min-w-[36px] min-h-[36px] flex items-center justify-center text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                   title="Tutup Pengaturan"
                   aria-label="Tutup"
                 >
@@ -141,27 +166,35 @@ export default function CookieBanner() {
 
             {/* Description */}
             <div className="mb-5 text-left">
-              <p className="text-xs sm:text-[13px] text-zinc-700 dark:text-zinc-300 leading-relaxed font-normal">
-                Website ini menggunakan cookie untuk menyimpan preferensi kamu dan meningkatkan pengalaman saat menjelajahi portofolio. Beberapa cookie bersifat penting agar website dapat berfungsi dengan baik. Dengan menekan “Terima Cookie”, kamu menyetujui penggunaan cookie sesuai Kebijakan Privasi kami.
+              <p
+                className={`text-xs sm:text-[13px] leading-[1.7] font-normal ${
+                  isOnDarkSplash ? 'text-zinc-300' : 'text-zinc-600 dark:text-zinc-300'
+                }`}
+              >
+                Website ini menggunakan cookie untuk menyimpan preferensi tampilan serta cache aset portofolio agar akses berikutnya lebih cepat dan hemat data.
               </p>
             </div>
 
-            {/* Buttons: Menerima Semua Cookis (Tombol Pertama) & Yang Penting Saja */}
+            {/* Buttons */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <button
                 type="button"
                 disabled={isCaching}
                 onClick={handleAcceptAll}
-                className="w-full order-1 bg-zinc-900 text-white hover:bg-black dark:bg-white dark:text-black dark:hover:bg-zinc-100 text-xs sm:text-sm font-bold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className={`w-full min-h-[44px] order-1 text-xs sm:text-[13px] font-semibold py-2.5 px-4 rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 ${
+                  isOnDarkSplash
+                    ? 'bg-white text-black hover:bg-zinc-200'
+                    : 'bg-zinc-950 text-white hover:bg-black dark:bg-white dark:text-black dark:hover:bg-zinc-200'
+                }`}
               >
                 {isCaching ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-white dark:text-black" />
-                    <span>{cachingProgressText || 'Menyimpan Cache...'}</span>
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    <span className="truncate">{cachingProgressText || 'Menyimpan...'}</span>
                   </>
                 ) : (
                   <>
-                    <Check className="w-4 h-4" />
+                    <Check className="w-4 h-4 shrink-0" />
                     <span>Menerima Semua Cookis</span>
                   </>
                 )}
@@ -170,7 +203,11 @@ export default function CookieBanner() {
                 type="button"
                 disabled={isCaching}
                 onClick={handleEssentialOnly}
-                className="w-full order-2 bg-zinc-100 text-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:text-zinc-200 dark:hover:bg-zinc-700/80 border border-zinc-200/80 dark:border-zinc-700/80 text-xs sm:text-sm font-semibold py-3 px-4 rounded-2xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className={`w-full min-h-[44px] order-2 text-xs sm:text-[13px] font-semibold py-2.5 px-4 rounded-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 border ${
+                  isOnDarkSplash
+                    ? 'bg-white/8 text-zinc-200 hover:bg-white/14 border-white/12'
+                    : 'bg-zinc-100 text-zinc-800 hover:bg-zinc-200 dark:bg-zinc-800/80 dark:text-zinc-200 dark:hover:bg-zinc-700/80 border-zinc-200/80 dark:border-zinc-700/80'
+                }`}
               >
                 Yang Penting Saja
               </button>

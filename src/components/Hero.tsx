@@ -83,63 +83,56 @@ export default function Hero() {
       {/* ========================================================
           1. TAMPILAN MOBILE (< 768px): VERTICAL STACKING LAYOUT
           ======================================================== */}
-      <div className="block md:hidden w-full bg-white dark:bg-[#0a0a0a] pt-20 sm:pt-24 pb-0 transition-colors">
-        {/* Area Teks & Tombol CTA: Latar belakang bersih, solid, high-contrast */}
+      <div className="block md:hidden w-full bg-white dark:bg-[#0a0a0a] pt-22 sm:pt-24 pb-2 transition-colors">
         <motion.div 
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
+          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
           className="w-full px-6 sm:px-8 flex flex-col items-start text-left bg-white dark:bg-[#0a0a0a]"
         >
           {/* Subtitle Mobile */}
-          <div className="flex items-center gap-2.5 mt-2 sm:mt-3 mb-2 select-none">
-            <span className="w-5 h-[1.5px] rounded-full bg-zinc-400 dark:bg-zinc-600" aria-hidden="true" />
-            <p className="text-[11px] sm:text-xs font-semibold tracking-[0.18em] uppercase text-zinc-500 dark:text-zinc-400 leading-normal">
+          <div className="flex items-center gap-2.5 mt-2 mb-2.5 select-none">
+            <span className="w-5 h-[1.5px] bg-zinc-400 dark:bg-zinc-600" aria-hidden="true" />
+            <p className="text-[11px] sm:text-xs font-semibold tracking-[0.2em] uppercase text-zinc-500 dark:text-zinc-400 leading-normal">
               {badgeText}
             </p>
           </div>
 
-          {/* Headline Mobile: Ukuran diperbesar, diturunkan sedikit dengan proporsi rapi */}
-          <h1 
-            style={{
-              fontFamily: "'Many Years Ago', 'Plus Jakarta Sans', 'Outfit', sans-serif",
-              letterSpacing: '-0.025em',
-              lineHeight: 1.06,
-            }}
-            className="font-black text-[38px] sm:text-[46px] text-zinc-950 dark:text-white mt-2 sm:mt-2.5 mb-1 select-none w-full"
-          >
-            <span className="block text-zinc-950 dark:text-white font-black">{title1Text}</span>
-            <span className="block text-zinc-950 dark:text-white font-black mt-1.5">{title2Text}</span>
+          {/* Headline Mobile */}
+          <h1 className="font-bold text-[38px] sm:text-[46px] text-zinc-950 dark:text-white tracking-[-0.03em] leading-[1.06] mt-1 mb-1 select-none w-full">
+            <span className="block text-zinc-950 dark:text-white font-extrabold">{title1Text}</span>
+            <span className="block text-zinc-800 dark:text-zinc-200 font-bold mt-1">{title2Text}</span>
           </h1>
 
-          {/* Group Tombol CTA Mobile */}
-          <div className="inline-flex items-center p-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200/90 dark:border-zinc-800 rounded-full shadow-xs mt-4 max-w-full select-none">
+          {/* Group Tombol CTA Mobile: Minimalis Sejajar */}
+          <div className="flex flex-wrap items-center gap-2.5 mt-5 w-full select-none">
             <button 
+              type="button"
               onClick={() => scrollTo('portfolio')}
-              className="group/cta h-[36px] px-4.5 inline-flex items-center justify-center gap-1.5 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black rounded-full text-xs font-semibold shadow-xs cursor-pointer active:scale-95 transition-all shrink-0"
+              className="group/cta min-h-[44px] px-5 inline-flex items-center justify-center gap-2 bg-zinc-950 text-white hover:bg-black dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-xl text-xs font-semibold cursor-pointer active:scale-[0.98] transition-all shrink-0"
             >
               <span>{t('hero.view_works')}</span>
               <ArrowRight className="w-3.5 h-3.5 shrink-0 transition-transform duration-200 group-hover/cta:translate-x-0.5" />
             </button>
             <button 
+              type="button"
               onClick={() => scrollTo('contact')}
-              className="h-[36px] px-4.5 inline-flex items-center justify-center text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white rounded-full text-xs font-semibold cursor-pointer active:scale-95 transition-all shrink-0"
+              className="min-h-[44px] px-5 inline-flex items-center justify-center bg-zinc-100/80 hover:bg-zinc-200/80 text-zinc-900 dark:bg-zinc-900 dark:hover:bg-zinc-800 dark:text-zinc-100 border border-zinc-200/80 dark:border-zinc-800 rounded-xl text-xs font-semibold cursor-pointer active:scale-[0.98] transition-all shrink-0"
             >
               {t('hero.contact_btn')}
             </button>
           </div>
         </motion.div>
 
-        {/* Foto Desainer Mobile: Diposisikan rapi di bawah teks dan tombol tanpa ruang kosong berlebihan */}
+        {/* Foto Desainer Mobile */}
         <motion.div 
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6, delay: 0.12, ease: "easeOut" }}
-          className="w-full mt-3 sm:mt-4 px-3 sm:px-6 flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none"
+          transition={{ duration: 0.55, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+          className="w-full mt-4 px-4 sm:px-6 flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none"
         >
-          <div className="relative w-full max-w-[380px] sm:max-w-[420px] aspect-[4/5] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
-            {/* Ambient subtle glow */}
-            <div className="absolute w-[260px] h-[260px] sm:w-[300px] sm:h-[300px] rounded-full bg-blue-500/10 dark:bg-blue-600/15 blur-3xl pointer-events-none -z-10" />
+          <div className="relative w-full max-w-[360px] sm:max-w-[400px] aspect-[4/5] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
+            <div className="absolute w-[240px] h-[240px] sm:w-[280px] sm:h-[280px] rounded-full bg-zinc-400/10 dark:bg-white/5 blur-3xl pointer-events-none -z-10" />
 
             <img 
               src={currentHeroImg} 
@@ -154,78 +147,67 @@ export default function Hero() {
       </div>
 
       {/* ========================================================
-          2. TAMPILAN DESKTOP (>= 768px): REDESIGN HERO SECTION
-          - Lebar konten dimaksimalkan memenuhi kanan & kiri layar (max-w-[1800px] 2xl:max-w-[1920px])
-          - Layout 2 kolom Grid: Teks di KIRI, Foto Profil di KANAN
-          - Judul diperbesar proporsional, rapat, bold, tegas
-          - Foto profil diperbesar ~1.3–1.5x, seimbang, dominan & elegan
-          - Komposisi terpusat dengan padding tepi layar yang aman & konsisten
+          2. TAMPILAN DESKTOP (>= 768px)
           ======================================================== */}
-      <div className="hidden md:flex flex-col justify-center w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-6 sm:px-8 md:px-10 lg:px-12 xl:px-16 2xl:px-20 pt-20 md:pt-24 lg:pt-28 pb-6 md:pb-8 min-h-[calc(88vh-70px)]">
-        <div className="grid grid-cols-1 md:grid-cols-[54%_46%] xl:grid-cols-[52%_48%] 2xl:grid-cols-[50%_50%] gap-8 lg:gap-12 xl:gap-16 2xl:gap-20 items-center w-full">
+      <div className="hidden md:flex flex-col justify-center w-full max-w-[1600px] 2xl:max-w-[1760px] mx-auto px-8 lg:px-12 xl:px-16 2xl:px-20 pt-24 lg:pt-28 pb-6 md:pb-8 min-h-[calc(86vh-64px)]">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-8 lg:gap-12 xl:gap-16 items-center w-full">
           
-          {/* Kolom Kiri: Teks & Tombol CTA (Proporsi Luas, Tidak Terpotong) */}
+          {/* Kolom Kiri: Teks & Tombol CTA */}
           <motion.div 
-            className="flex flex-col justify-center items-start text-left z-10 w-full min-w-0 pr-2 lg:pr-6"
+            className="md:col-span-7 flex flex-col justify-center items-start text-left z-10 w-full min-w-0 pr-2 lg:pr-6"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
+            transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
           >
-            {/* Sub-Judul Desktop: Teks bersih dengan aksen garis editorial minimalis */}
-            <div className="flex items-center gap-3 mb-4 select-none">
-              <span className="w-7 h-[1.5px] rounded-full bg-zinc-400 dark:bg-zinc-600" aria-hidden="true" />
-              <p className="text-xs sm:text-[13px] font-semibold tracking-[0.2em] uppercase text-zinc-500 dark:text-zinc-400 leading-normal">
+            {/* Sub-Judul Desktop */}
+            <div className="flex items-center gap-3 mb-5 select-none">
+              <span className="w-7 h-[1.5px] bg-zinc-400 dark:bg-zinc-600" aria-hidden="true" />
+              <p className="text-xs sm:text-[13px] font-semibold tracking-[0.22em] uppercase text-zinc-500 dark:text-zinc-400 leading-normal">
                 {badgeText}
               </p>
             </div>
 
-            {/* Judul Utama Desktop: WELCOME & My Portfolio Design, diperbesar elegan & memenuhi layar */}
-            <h1 
-              style={{
-                fontFamily: "'Many Years Ago', 'Plus Jakarta Sans', 'Outfit', sans-serif",
-                letterSpacing: '-0.025em',
-              }}
-              className="font-extrabold text-black dark:text-white select-none w-full"
-            >
-              <span className="block text-[clamp(66px,5.8vw,88px)] 2xl:text-[96px] leading-[1.03] text-black dark:text-white font-black tracking-tight whitespace-nowrap">
+            {/* Judul Utama Desktop */}
+            <h1 className="font-extrabold text-zinc-950 dark:text-white tracking-[-0.03em] select-none w-full">
+              <span className="block text-[clamp(56px,5.4vw,84px)] 2xl:text-[92px] leading-[1.03] text-zinc-950 dark:text-white font-extrabold tracking-[-0.035em] whitespace-nowrap">
                 {title1Text}
               </span>
-              <span className="block text-[clamp(52px,4.6vw,72px)] 2xl:text-[78px] leading-[1.06] text-black dark:text-white font-bold md:font-extrabold tracking-tight mt-2.5 sm:mt-3">
+              <span className="block text-[clamp(44px,4.2vw,68px)] 2xl:text-[74px] leading-[1.08] text-zinc-800 dark:text-zinc-200 font-bold tracking-[-0.025em] mt-2.5">
                 {title2Text}
               </span>
             </h1>
 
-            {/* Group Tombol CTA Desktop: Proporsional, tegas, interaktif */}
-            <div className="flex flex-row items-center gap-3 w-fit font-semibold mt-5 md:mt-6">
+            {/* Group Tombol CTA Desktop */}
+            <div className="flex flex-row items-center gap-3 w-fit font-semibold mt-7">
               <button 
+                type="button"
                 onClick={() => scrollTo('portfolio')}
-                className="group/cta h-[40px] md:h-[44px] px-6 md:px-7 inline-flex items-center justify-center gap-2 bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-full text-xs md:text-sm font-semibold shadow-xs hover:shadow-md active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
+                className="group/cta min-h-[44px] h-[44px] px-6 md:px-7 inline-flex items-center justify-center gap-2 bg-zinc-950 text-white hover:bg-black dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-xl text-xs md:text-sm font-semibold active:scale-[0.98] duration-200 transition-all shrink-0 cursor-pointer"
               >
                 <span>{t('hero.view_works')}</span>
                 <ArrowRight className="w-4 h-4 shrink-0 transition-transform duration-200 group-hover/cta:translate-x-1" />
               </button>
 
               <button 
+                type="button"
                 onClick={() => scrollTo('contact')}
-                className="h-[40px] md:h-[44px] px-6 md:px-7 inline-flex items-center justify-center gap-1.5 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 border border-zinc-200/80 dark:bg-zinc-900 dark:text-white dark:border-zinc-800 dark:hover:bg-zinc-800 rounded-full text-xs md:text-sm font-semibold shadow-xs hover:shadow-md active:scale-95 duration-200 transition-all shrink-0 cursor-pointer"
+                className="min-h-[44px] h-[44px] px-6 md:px-7 inline-flex items-center justify-center gap-1.5 bg-zinc-100/80 text-zinc-900 hover:bg-zinc-200/80 border border-zinc-200/80 dark:bg-zinc-900 dark:text-white dark:border-zinc-800 dark:hover:bg-zinc-800 rounded-xl text-xs md:text-sm font-semibold active:scale-[0.98] duration-200 transition-all shrink-0 cursor-pointer"
               >
                 {t('hero.contact_btn')}
               </button>
             </div>
           </motion.div>
 
-          {/* Kolom Kanan: Foto Profil Diperbesar Memenuhi Area Kanan, Bersih, Transparan Tanpa Garis Bingkai */}
+          {/* Kolom Kanan: Foto Profil */}
           <motion.div 
-            className="w-full flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none"
-            initial={{ opacity: 0, scale: 0.96 }}
+            className="md:col-span-5 w-full flex items-center justify-center relative bg-transparent border-0 shadow-none outline-none"
+            initial={{ opacity: 0, scale: 0.97 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.7, delay: 0.08, ease: "easeOut" }}
+            transition={{ duration: 0.65, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
           >
-            <div className="relative w-full max-w-[580px] lg:max-w-[680px] xl:max-w-[760px] 2xl:max-w-[840px] aspect-[4/5] max-h-[700px] lg:max-h-[780px] xl:max-h-[840px] 2xl:max-h-[900px] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
-              {/* Ambient subtle glow tanpa garis bingkai apapun */}
-              <div className="absolute w-[420px] h-[420px] lg:w-[520px] lg:h-[520px] xl:w-[620px] xl:h-[620px] 2xl:w-[700px] 2xl:h-[700px] rounded-full bg-blue-500/12 dark:bg-blue-600/15 blur-3xl pointer-events-none -z-10" />
+            <div className="relative w-full max-w-[520px] lg:max-w-[600px] xl:max-w-[660px] aspect-[4/5] max-h-[640px] lg:max-h-[700px] xl:max-h-[760px] flex items-center justify-center bg-transparent border-0 shadow-none outline-none">
+              <div className="absolute w-[380px] h-[380px] lg:w-[460px] lg:h-[460px] xl:w-[540px] xl:h-[540px] rounded-full bg-zinc-400/10 dark:bg-white/5 blur-3xl pointer-events-none -z-10" />
 
-              {/* Foto Profil Asli (Transparan, Jernih, Tanpa Garis Bingkai) */}
               <img 
                 src={currentHeroImg} 
                 alt="Muhammad Albiansyah - Graphic Designer & UI/UX Specialist Portfolio"
@@ -240,8 +222,8 @@ export default function Hero() {
         </div>
       </div>
 
-      {/* Banner Promosi Carousel (Tampil di desktop dengan padding proporsional dalam batas max-w-[1800px] 2xl:max-w-[1920px]) */}
-      <div className="hidden md:block w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-6 sm:px-8 md:px-10 lg:px-12 xl:px-16 2xl:px-20 pt-2 md:pt-4 pb-4 md:pb-6 relative z-10">
+      {/* Banner Promosi Carousel */}
+      <div className="hidden md:block w-full max-w-[1600px] 2xl:max-w-[1760px] mx-auto px-8 lg:px-12 xl:px-16 2xl:px-20 pt-2 md:pt-4 pb-4 md:pb-6 relative z-10">
         <HeroBannerCarousel banners={settings.heroBanners} />
       </div>
     </section>

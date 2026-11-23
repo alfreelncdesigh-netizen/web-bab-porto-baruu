@@ -228,21 +228,21 @@ export default function Contact() {
      </p>
     </motion.div>
 
-    {/* 1. Card WhatsApp (Paling Utama & Menonjol) */}
+    {/* 1. Card WhatsApp (Minimalist & High Contrast) */}
     <motion.div 
      variants={sectionContentItem}
-     className="bg-emerald-500/[0.04] dark:bg-emerald-500/[0.08] border border-emerald-500/30 dark:border-emerald-500/40 rounded-2xl sm:rounded-3xl p-5 sm:p-7 md:p-8 mb-6 shadow-sm relative overflow-hidden"
+     className="bg-zinc-50/90 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl sm:rounded-3xl p-5 sm:p-7 md:p-8 mb-6 relative overflow-hidden"
     >
      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5">
       <div className="flex items-start gap-4">
-       <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-[#25D366] text-white flex items-center justify-center shrink-0 shadow-md shadow-[#25D366]/25">
-        <MessageCircle className="w-6 h-6 sm:w-7 sm:h-7" />
+       <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-2xl bg-[#25D366]/12 text-[#1ea952] dark:text-[#25D366] border border-[#25D366]/25 flex items-center justify-center shrink-0">
+        <MessageCircle className="w-6 h-6" />
        </div>
        <div className="text-left">
-        <span className="block text-[10px] sm:text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400 mb-1">
+        <span className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700 dark:text-emerald-400 mb-1">
          Lebih Cepat &amp; Praktis
         </span>
-        <h3 className="text-base sm:text-xl font-bold text-black dark:text-white tracking-tight leading-snug">
+        <h3 className="text-base sm:text-xl font-bold text-zinc-950 dark:text-white tracking-tight leading-snug">
          Ngobrol Langsung di WhatsApp
         </h3>
         <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 mt-1.5 max-w-md leading-[1.75]">
@@ -255,21 +255,21 @@ export default function Contact() {
        href={waLink}
        target="_blank" 
        rel="noopener noreferrer"
-       className="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 bg-[#25D366] hover:bg-[#20ba59] active:scale-95 text-white font-bold px-6 py-3.5 sm:px-7 sm:py-3.5 rounded-full text-xs sm:text-sm transition-all shadow-md shadow-[#25D366]/20 shrink-0"
+       className="w-full sm:w-auto min-h-[44px] inline-flex items-center justify-center gap-2 bg-[#1ea952] hover:bg-[#199346] active:scale-[0.98] text-white font-semibold px-6 py-3 rounded-xl text-xs sm:text-sm transition-all shrink-0"
       >
-       <MessageCircle className="w-4 h-4 sm:w-5 sm:h-5" />
+       <MessageCircle className="w-4 h-4" />
        <span>Chat di WhatsApp</span>
       </a>
      </div>
     </motion.div>
 
-    {/* 2. Form Kontak Sederhana (Input: Nama, Email, Pesan, Button: Kirim) */}
+    {/* 2. Form Kontak Minimalis (2 Kolom Responsive untuk Nama & Email) */}
     <motion.div 
      variants={sectionContentItem}
-     className="bg-zinc-50 dark:bg-[#111111] border border-zinc-200/70 dark:border-zinc-800/70 rounded-2xl sm:rounded-3xl p-5 sm:p-8 md:p-10 shadow-sm"
+     className="bg-zinc-50/90 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl sm:rounded-3xl p-5 sm:p-8 md:p-10"
     >
      <div className="text-left mb-6">
-      <h3 className="text-base sm:text-xl font-bold text-black dark:text-white tracking-tight leading-snug">
+      <h3 className="text-base sm:text-xl font-bold text-zinc-950 dark:text-white tracking-tight leading-snug">
        Tinggalkan Pesan Tertulis
       </h3>
       <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 mt-1.5 leading-[1.7]">
@@ -278,38 +278,40 @@ export default function Contact() {
      </div>
 
      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5 text-left">
-      <div>
-       <label className="block text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-black dark:text-zinc-300 mb-2">
-        {t('contact.name')}
-       </label>
-       <FastInput 
-        type="text" 
-        name="name" 
-        required 
-        value={formData.name} 
-        onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))} 
-        className="w-full bg-white dark:bg-[#0A0A0A] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-xs sm:text-sm focus:border-black dark:focus:border-white outline-none transition-colors text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 shadow-sm" 
-        placeholder="Nama atau nama brand kamu" 
-       />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
+       <div>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-2">
+         {t('contact.name')}
+        </label>
+        <FastInput 
+         type="text" 
+         name="name" 
+         required 
+         value={formData.name} 
+         onChange={(e) => setFormData(prev => ({...prev, name: e.target.value}))} 
+         className="w-full min-h-[44px] bg-white dark:bg-[#0A0A0C] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:border-black dark:focus:border-white outline-none transition-colors text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600" 
+         placeholder="Nama atau nama brand kamu" 
+        />
+       </div>
+       
+       <div>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-2">
+         {t('contact.email')}
+        </label>
+        <FastInput 
+         type="email" 
+         name="email" 
+         required 
+         value={formData.email} 
+         onChange={(e) => setFormData(prev => ({...prev, email: e.target.value}))} 
+         className="w-full min-h-[44px] bg-white dark:bg-[#0A0A0C] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:border-black dark:focus:border-white outline-none transition-colors text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600" 
+         placeholder="nama@email.com" 
+        />
+       </div>
       </div>
       
       <div>
-       <label className="block text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-black dark:text-zinc-300 mb-2">
-        {t('contact.email')}
-       </label>
-       <FastInput 
-        type="email" 
-        name="email" 
-        required 
-        value={formData.email} 
-        onChange={(e) => setFormData(prev => ({...prev, email: e.target.value}))} 
-        className="w-full bg-white dark:bg-[#0A0A0A] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-xs sm:text-sm focus:border-black dark:focus:border-white outline-none transition-colors text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 shadow-sm" 
-        placeholder="nama@email.com" 
-       />
-      </div>
-      
-      <div>
-       <label className="block text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-black dark:text-zinc-300 mb-2">
+       <label className="block text-xs font-semibold uppercase tracking-wider text-zinc-700 dark:text-zinc-300 mb-2">
         {t('contact.message')}
        </label>
        <FastTextarea 
@@ -318,7 +320,7 @@ export default function Contact() {
         rows={4} 
         value={formData.message} 
         onChange={(e) => setFormData(prev => ({...prev, message: e.target.value}))} 
-        className="w-full bg-white dark:bg-[#0A0A0A] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-xs sm:text-sm focus:border-black dark:focus:border-white outline-none transition-colors text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 resize-none shadow-sm" 
+        className="w-full bg-white dark:bg-[#0A0A0C] border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm focus:border-black dark:focus:border-white outline-none transition-colors text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 resize-none" 
         placeholder="Jelaskan kebutuhan proyek atau pertanyaan Anda..." 
        />
       </div>
@@ -326,10 +328,10 @@ export default function Contact() {
       <button 
        type="submit" 
        disabled={isSubmitting || isSuccess} 
-       className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 text-xs sm:text-sm font-semibold rounded-full border transition-all active:scale-95 duration-200 ${
+       className={`w-full sm:w-auto min-h-[44px] inline-flex items-center justify-center gap-2 px-7 py-3 text-xs sm:text-sm font-semibold rounded-xl border transition-all active:scale-[0.98] duration-200 cursor-pointer ${
         isSuccess 
-         ? 'bg-emerald-500 text-white border-emerald-500 cursor-default' 
-         : 'bg-black text-white border-black dark:bg-white dark:text-black hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed shadow-md'
+         ? 'bg-emerald-600 text-white border-emerald-600 cursor-default' 
+         : 'bg-zinc-950 text-white border-zinc-950 dark:bg-white dark:text-black dark:border-white hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed'
        }`}
       >
        {isSubmitting ? (
@@ -346,18 +348,18 @@ export default function Contact() {
     {/* Kolom Semua Komentar Pengunjung di Bawah Kolom Pesan */}
     <motion.div 
       variants={sectionContentItem}
-      className="mt-8 sm:mt-10 bg-zinc-50 dark:bg-[#111111] border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl sm:rounded-3xl p-5 sm:p-8 md:p-10 shadow-sm text-left"
+      className="mt-6 sm:mt-8 bg-zinc-50/90 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl sm:rounded-3xl p-5 sm:p-8 md:p-10 text-left"
     >
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 sm:pb-6 border-b border-zinc-200/70 dark:border-zinc-800/70">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-zinc-200/70 dark:border-zinc-800/70">
         <div>
-          <span className="block text-[10px] sm:text-xs font-mono font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400 mb-1">
+          <span className="block text-[11px] font-mono font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400 mb-1">
             Ulasan Pengunjung
           </span>
-          <h3 className="text-base sm:text-xl font-bold text-black dark:text-white tracking-tight flex items-center gap-2.5">
-            <MessageSquare className="w-5 h-5 text-zinc-600 dark:text-zinc-300" />
+          <h3 className="text-base sm:text-xl font-bold text-zinc-950 dark:text-white tracking-tight flex items-center gap-2.5">
+            <MessageSquare className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             <span>Semua Komentar &amp; Pesan</span>
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-zinc-200/80 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 font-semibold">
-              {messages.length}
+            <span className="text-sm text-zinc-400 dark:text-zinc-500 font-mono tabular-nums font-normal">
+              ({messages.length})
             </span>
           </h3>
         </div>
@@ -376,30 +378,30 @@ export default function Contact() {
           <p className="text-xs sm:text-sm font-semibold text-zinc-700 dark:text-zinc-300">
             Belum ada komentar yang masuk
           </p>
-          <p className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-sm">
-            Jadilah yang pertama menuliskan pesan melalui formulir di atas!
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1 max-w-sm">
+            Jadilah yang pertama menuliskan pesan melalui formulir di atas.
           </p>
         </div>
       ) : (
         <div className="mt-6 space-y-3.5">
-          <div className="space-y-3.5 pr-1 sm:pr-2 custom-scrollbar">
+          <div className="space-y-3 pr-1 sm:pr-2 custom-scrollbar">
             {(showAllComments ? messages : messages.slice(0, 3)).map((msg, index) => {
               const initial = (msg.name && msg.name.trim().length > 0) ? msg.name.trim().charAt(0).toUpperCase() : 'U';
               return (
                 <div 
                   key={msg.id ? `comment-${msg.id}-${index}` : `comment-idx-${index}`}
-                  className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-[#0A0A0A] border border-zinc-200/80 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors shadow-xs"
+                  className="p-4 rounded-2xl bg-white dark:bg-[#0A0A0C] border border-zinc-200/80 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors"
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 text-white flex items-center justify-center font-bold text-xs sm:text-sm shadow-xs shrink-0 select-none mt-0.5">
+                  <div className="flex items-start gap-3.5">
+                    <div className="w-9 h-9 rounded-xl bg-zinc-950 text-white dark:bg-zinc-100 dark:text-black flex items-center justify-center font-bold text-xs shrink-0 select-none mt-0.5">
                       {initial}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <h4 className="text-xs sm:text-sm font-bold text-zinc-900 dark:text-white truncate">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="text-xs sm:text-sm font-bold text-zinc-950 dark:text-white truncate">
                           {msg.name || 'Pengunjung Anonim'}
                         </h4>
-                        <div className="inline-flex items-center gap-1 text-zinc-400 dark:text-zinc-500 text-[10px] sm:text-[11px] font-medium shrink-0">
+                        <div className="inline-flex items-center gap-1 text-zinc-400 dark:text-zinc-500 text-[11px] font-medium shrink-0 tabular-nums">
                           <Clock className="w-3 h-3 text-zinc-400 shrink-0" />
                           <span>{formatCommentDate(msg.dateAdded)}</span>
                         </div>
@@ -419,16 +421,16 @@ export default function Contact() {
               <button
                 type="button"
                 onClick={() => setShowAllComments(prev => !prev)}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white dark:bg-[#0A0A0A] border border-zinc-300 dark:border-zinc-800 hover:border-black dark:hover:border-white text-xs font-bold text-zinc-800 dark:text-zinc-200 transition-all shadow-xs active:scale-95 cursor-pointer"
+                className="min-h-[44px] inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white dark:bg-[#0A0A0C] border border-zinc-200 dark:border-zinc-800 hover:border-zinc-950 dark:hover:border-white text-xs font-semibold text-zinc-800 dark:text-zinc-200 transition-all active:scale-95 cursor-pointer"
               >
                 {showAllComments ? (
                   <>
-                    <ChevronUp className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <ChevronUp className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
                     <span>Tampilkan Lebih Sedikit (3 Terbaru)</span>
                   </>
                 ) : (
                   <>
-                    <ChevronDown className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <ChevronDown className="w-4 h-4 text-zinc-600 dark:text-zinc-300" />
                     <span>Lihat Komentar Lainnya (+{messages.length - 3} komentar)</span>
                   </>
                 )}

@@ -229,25 +229,27 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
         {activeBanners.length > 1 && (
           <>
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 prevSlide();
               }}
               aria-label="Banner Sebelumnya"
-              className="absolute left-2 sm:left-4 md:left-8 top-1/2 -translate-y-1/2 z-30 p-2 sm:p-3 rounded-full bg-white/90 dark:bg-zinc-900/90 hover:bg-white dark:hover:bg-zinc-800 text-black dark:text-white backdrop-blur-md shadow-xl border border-zinc-200/60 dark:border-zinc-700/60 transition-all hover:scale-110 active:scale-95 duration-200 flex items-center justify-center opacity-80 hover:opacity-100"
+              className="absolute left-2 sm:left-4 md:left-6 top-1/2 -translate-y-1/2 z-30 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white/90 dark:bg-zinc-900/90 hover:bg-white dark:hover:bg-zinc-800 text-black dark:text-white backdrop-blur-md shadow-lg border border-zinc-200/70 dark:border-zinc-700/70 transition-all hover:scale-105 active:scale-95 duration-200 flex items-center justify-center opacity-85 hover:opacity-100 cursor-pointer"
             >
-              <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
+              <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
 
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 nextSlide();
               }}
               aria-label="Banner Berikutnya"
-              className="absolute right-2 sm:right-4 md:right-8 top-1/2 -translate-y-1/2 z-30 p-2 sm:p-3 rounded-full bg-white/90 dark:bg-zinc-900/90 hover:bg-white dark:hover:bg-zinc-800 text-black dark:text-white backdrop-blur-md shadow-xl border border-zinc-200/60 dark:border-zinc-700/60 transition-all hover:scale-110 active:scale-95 duration-200 flex items-center justify-center opacity-80 hover:opacity-100"
+              className="absolute right-2 sm:right-4 md:right-6 top-1/2 -translate-y-1/2 z-30 w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-white/90 dark:bg-zinc-900/90 hover:bg-white dark:hover:bg-zinc-800 text-black dark:text-white backdrop-blur-md shadow-lg border border-zinc-200/70 dark:border-zinc-700/70 transition-all hover:scale-105 active:scale-95 duration-200 flex items-center justify-center opacity-85 hover:opacity-100 cursor-pointer"
             >
-              <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6" />
+              <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
           </>
         )}
@@ -255,18 +257,19 @@ export default function HeroBannerCarousel({ banners = [] }: HeroBannerCarouselP
 
       {/* Pagination Dots (Under the active card) */}
       {activeBanners.length > 1 && (
-        <div className="flex items-center justify-center gap-1.5 md:gap-2 mt-2 sm:mt-2.5">
+        <div className="flex items-center justify-center gap-1.5 md:gap-2 mt-2.5 sm:mt-3">
           {activeBanners.map((_, dotIndex) => {
             const isCurrent = dotIndex === currentIndex;
             return (
               <button
                 key={`dot-${dotIndex}`}
+                type="button"
                 onClick={() => goToSlide(dotIndex)}
                 aria-label={`Buka banner ${dotIndex + 1}`}
-                className={`h-2 rounded-full transition-all duration-300 ${
+                className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
                   isCurrent 
-                    ? 'w-6 md:w-8 bg-blue-600 dark:bg-white shadow-sm' 
-                    : 'w-2 bg-zinc-300 dark:bg-zinc-700 hover:bg-zinc-400 dark:hover:bg-zinc-500'
+                    ? 'w-6 md:w-8 bg-zinc-950 dark:bg-white' 
+                    : 'w-1.5 bg-zinc-300 dark:bg-zinc-700 hover:bg-zinc-400 dark:hover:bg-zinc-500'
                 }`}
               />
             );

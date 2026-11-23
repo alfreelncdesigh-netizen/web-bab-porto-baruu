@@ -278,6 +278,22 @@ export interface OgPageMetadata {
   isProject: boolean;
 }
 
+function computeScaledOgDimensions(
+  rawWidth?: unknown,
+  rawHeight?: unknown,
+  maxBox = 1200
+): { width: number; height: number } | null {
+  const w = Number(rawWidth);
+  const h = Number(rawHeight);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    return null;
+  }
+  const scale = Math.min(1, maxBox / w, maxBox / h);
+  const outW = Math.max(200, Math.round(w * scale));
+  const outH = Math.max(200, Math.round(h * scale));
+  return { width: outW, height: outH };
+}
+
 export async function buildOgMetadata(req: ApiRequest): Promise<OgPageMetadata> {
   const origin = resolveSeoOrigin(req);
   const projectId = extractProjectIdFromRequest(req);
@@ -291,9 +307,13 @@ export async function buildOgMetadata(req: ApiRequest): Promise<OgPageMetadata> 
       const desc =
         stripHtmlAndCollapse(project.description, 240) ||
         `Karya desain grafis ${stripHtmlAndCollapse(project.category, 40) || 'kreatif'} profesional oleh Alfreelnc Design (Muhammad Albiansyah).`;
+      const encodedId = encodeURIComponent(String(project.id));
       const ogImageUrl = imageUrl
-        ? `${origin}/og/project/${encodeURIComponent(String(project.id))}/${version}.jpg`
+        ? `${origin}/og/project/${encodedId}/${version}.jpg`
         : `${origin}${DEFAULT_HERO_OG_IMAGE_PATH}`;
+      const scaledDims = imageUrl
+        ? computeScaledOgDimensions(project.imageWidth, project.imageHeight, 1200)
+        : { width: 1200, height: 630 };
 
       return {
         title,
@@ -301,9 +321,9 @@ export async function buildOgMetadata(req: ApiRequest): Promise<OgPageMetadata> 
         imageUrl: ogImageUrl,
         imageAlt: `${cleanProjectTitle} – Portofolio Desain Grafis Alfreelnc`,
         mimeType: 'image/jpeg',
-        width: imageUrl ? null : 1200,
-        height: imageUrl ? null : 630,
-        pageUrl: `${origin}/?project=${encodeURIComponent(String(project.id))}`,
+        width: scaledDims ? scaledDims.width : null,
+        height: scaledDims ? scaledDims.height : null,
+        pageUrl: `${origin}/project/${encodedId}`,
         isProject: true,
       };
     }
@@ -313,7 +333,9 @@ export async function buildOgMetadata(req: ApiRequest): Promise<OgPageMetadata> 
   const rawReqUrl = typeof req.url === 'string' ? req.url : '/';
   const rawPath = rawReqUrl.split('?')[0] || '/';
   const cleanPath =
-    rawPath === '/api/og-html' || rawPath === '/index.html' ? '/' : rawPath;
+    rawPath === '/api/og-html' || rawPath === '/index.html' || rawPath === '/_app.html'
+      ? '/'
+      : rawPath;
   const pageUrl = `${origin}${cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`}`;
 
   const heroOgImageUrl = hero.isDefaultHero

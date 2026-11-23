@@ -623,9 +623,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
       e.preventDefault();
     }
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://alfreelncdesign.vercel.app';
-    const rawPathname = typeof window !== 'undefined' ? window.location.pathname : '/';
-    const cleanPath = rawPathname.startsWith('/project/') ? '/' : rawPathname;
-    const shareUrl = `${origin}${cleanPath}?project=${encodeURIComponent(String(proj.id))}`;
+    const shareUrl = `${origin}/project/${encodeURIComponent(String(proj.id))}`;
 
     try {
       await navigator.clipboard.writeText(shareUrl);
@@ -695,16 +693,17 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
     if (typeof window !== 'undefined') {
       try {
         const url = new URL(window.location.href);
-        if (url.pathname.startsWith('/project/')) {
-          url.pathname = '/';
-        }
-        url.searchParams.set('project', String(projectToOpen.id));
+        url.pathname = `/project/${encodeURIComponent(String(projectToOpen.id))}`;
+        url.searchParams.delete('project');
+        url.searchParams.delete('p');
+        url.searchParams.delete('id');
         window.history.replaceState({ projectId: projectToOpen.id }, '', url.pathname + url.search + url.hash);
         if ((window as any).__updateSocialMeta) {
           (window as any).__updateSocialMeta({
             title: `${projectToOpen.title} – Alfreelnc Design Portofolio`,
             description: projectToOpen.description || (projectToOpen.category ? `Karya desain grafis ${projectToOpen.category} oleh Alfreelnc Design.` : undefined),
             image: `${window.location.origin}/api/og-image?project=${encodeURIComponent(String(projectToOpen.id))}`,
+            url: `${window.location.origin}/project/${encodeURIComponent(String(projectToOpen.id))}`,
             project: projectToOpen
           });
         }
@@ -793,7 +792,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
               </p>
             </div>
 
-            {/* Fitur Pencarian Proyek (Search Bar) & Riset Google Search Grounding */}
+            {/* Fitur Pencarian Proyek (Search Bar) */}
             <div className="flex items-center gap-2 w-full lg:w-auto">
               <div className="w-full lg:w-72 xl:w-80 relative">
                 <div className="relative flex items-center">
@@ -803,12 +802,13 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder={t('portfolio.search')}
-                    className="w-full pl-9 pr-8 py-2 md:py-2.5 text-xs md:text-sm rounded-full bg-zinc-50 dark:bg-[#111111] border border-zinc-200/80 dark:border-zinc-800 text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-black dark:focus:ring-white transition-all shadow-xs"
+                    className="w-full min-h-[42px] pl-10 pr-9 py-2 text-xs md:text-sm rounded-xl bg-zinc-50 dark:bg-[#111113] border border-zinc-200/80 dark:border-zinc-800 text-black dark:text-white placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none focus:border-zinc-950 dark:focus:border-white transition-all"
                   />
                   {searchQuery && (
                     <button
+                      type="button"
                       onClick={() => setSearchQuery('')}
-                      className="absolute right-3 p-0.5 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
+                      className="absolute right-2.5 p-1 text-zinc-400 hover:text-black dark:hover:text-white transition-colors cursor-pointer"
                       title="Hapus"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -820,17 +820,18 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
           </motion.div>
           
           {/* Filter Kategori */}
-          <motion.div variants={sectionContentItem} className="flex flex-nowrap overflow-x-auto pb-2.5 pt-1 gap-2 md:gap-2.5 scroll-smooth -mx-4 px-4 sm:mx-0 sm:px-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <motion.div variants={sectionContentItem} className="flex flex-nowrap overflow-x-auto pb-2.5 pt-1 gap-2 scroll-smooth -mx-4 px-4 sm:mx-0 sm:px-0 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {['Semua', ...Array.from(new Set(projects.map(p => p.category)))].filter(Boolean).map((cat) => {
               const isCatActive = activeCategory === cat;
               const btnClass = isCatActive
-                ? 'bg-black text-white dark:bg-white dark:text-black border-transparent'
-                : 'bg-zinc-50 text-black border-zinc-200/60 hover:border-zinc-300 hover:text-zinc-800 dark:bg-[#111111] dark:border-zinc-800/50 dark:hover:border-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200';
+                ? 'bg-zinc-950 text-white dark:bg-white dark:text-black border-transparent'
+                : 'bg-zinc-50/90 text-zinc-700 border-zinc-200/70 hover:border-zinc-400 hover:text-black dark:bg-[#121214] dark:border-zinc-800 dark:hover:border-zinc-600 dark:text-zinc-300 dark:hover:text-white';
               return (
                 <button 
                   key={cat} 
+                  type="button"
                   onClick={() => setActiveCategory(cat)} 
-                  className={`px-3.5 py-1.5 md:px-4 md:py-2 rounded-full text-[10px] md:text-xs font-semibold transition-all shadow-sm border shrink-0 whitespace-nowrap active:scale-95 cursor-pointer ${btnClass}`}
+                  className={`min-h-[38px] px-3.5 py-1.5 md:px-4 md:py-2 rounded-xl text-xs font-semibold transition-all border shrink-0 whitespace-nowrap active:scale-95 cursor-pointer ${btnClass}`}
                 >
                   {cat === 'Semua' ? t('portfolio.all') : translateDynamic(cat)}
                 </button>
@@ -838,9 +839,9 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
             })}
           </motion.div>
 
-          {/* Bar Kontrol Pilihan Kisi Layout Karya (di bawah kategori, sebelah kanan) */}
+          {/* Bar Kontrol Pilihan Kisi Layout Karya */}
           <div className="flex items-center justify-between pt-2.5 pb-2">
-            <span className="text-[11px] sm:text-xs text-zinc-500 dark:text-zinc-400 font-medium select-none">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400 font-medium tabular-nums select-none">
               {(loading && filteredProjects.length === 0 && manifest?.publicCount
                 ? manifest.publicCount
                 : filteredProjects.length)}{' '}
@@ -1072,7 +1073,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                       <button
                         type="button"
                         onClick={() => onExpandRemaining?.()}
-                        className="group inline-flex items-center gap-2 px-6 py-2.5 rounded-full text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 border border-zinc-200/80 dark:border-zinc-700/80 transition-all shadow-xs active:scale-95 cursor-pointer"
+                        className="group min-h-[44px] inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-semibold bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-100 border border-zinc-200/80 dark:border-zinc-800 transition-all active:scale-95 cursor-pointer"
                       >
                         <span>Tampilkan Sisa Karya ({filteredProjects.length - displayLimit} karya lagi)</span>
                         <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
@@ -1539,7 +1540,7 @@ export default function Portfolio({ isSecondHalfLoaded = true, onExpandRemaining
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-6 pt-2">
                     {/* Tombol Diskusi Proyek via WhatsApp */}
                     <a
-                      href={`https://wa.me/qr/UDCAZ44OXWLGM1?text=${encodeURIComponent(`Halo Albiansyah, saya tertarik dengan proyek portofolio "${selectedProject.title}". Bisakah kita mendiskusikan kerja sama serupa?`)}`}
+                      href={`https://api.whatsapp.com/send?phone=6282394549268&text=${encodeURIComponent(`Halo Albiansyah, saya tertarik dengan proyek portofolio "${selectedProject.title}". Bisakah kita mendiskusikan kerja sama serupa?`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="py-2.5 px-4 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"

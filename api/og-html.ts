@@ -13,6 +13,7 @@ async function loadIndexHtmlTemplate(req: ApiRequest): Promise<string | null> {
   }
 
   const localCandidates = [
+    path.resolve(process.cwd(), 'dist', '_app.html'),
     path.resolve(process.cwd(), 'dist', 'index.html'),
     path.resolve(process.cwd(), 'index.html'),
   ];
@@ -31,27 +32,29 @@ async function loadIndexHtmlTemplate(req: ApiRequest): Promise<string | null> {
     }
   }
 
-  // Remote static Edge fallback if serverless bundle lacked dist/index.html
+  // Remote static Edge fallback if serverless bundle lacked dist/_app.html
   if (!req.headers['x-og-html-internal']) {
-    try {
-      const origin = resolveSeoOrigin(req);
-      const staticRes = await fetch(`${origin}/index.html`, {
-        method: 'GET',
-        headers: {
-          Accept: 'text/html',
-          'x-og-html-internal': '1',
-        },
-        signal: AbortSignal.timeout(4000),
-      });
-      if (staticRes.ok) {
-        const html = await staticRes.text();
-        if (html && html.includes('<head')) {
-          g[GLOBAL_HTML_TEMPLATE_KEY] = html;
-          return html;
+    const origin = resolveSeoOrigin(req);
+    for (const remotePath of ['/_app.html', '/index.html']) {
+      try {
+        const staticRes = await fetch(`${origin}${remotePath}`, {
+          method: 'GET',
+          headers: {
+            Accept: 'text/html',
+            'x-og-html-internal': '1',
+          },
+          signal: AbortSignal.timeout(4000),
+        });
+        if (staticRes.ok) {
+          const html = await staticRes.text();
+          if (html && html.includes('<head')) {
+            g[GLOBAL_HTML_TEMPLATE_KEY] = html;
+            return html;
+          }
         }
+      } catch {
+        // Try next path
       }
-    } catch {
-      // Fall through
     }
   }
 

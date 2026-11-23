@@ -101,7 +101,7 @@ export default function About() {
    variants={sectionStaggerContainer}
    className="pt-5 sm:pt-7 md:py-10 mt-2 sm:mt-4 md:mt-0 pb-6 md:pb-10 bg-[var(--bg-main,#ffffff)] dark:bg-[#0a0a0a] scroll-mt-24 md:scroll-mt-32"
   >
-   <div className="w-full max-w-[1800px] 2xl:max-w-[1920px] mx-auto px-6 sm:px-8 md:px-10 lg:px-12 xl:px-16 2xl:px-20">
+    <div className="w-full max-w-[1600px] 2xl:max-w-[1760px] mx-auto px-6 sm:px-8 lg:px-12 xl:px-16 2xl:px-20">
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 xl:gap-16 items-center">
      
      <motion.div 
@@ -109,13 +109,13 @@ export default function About() {
       className="order-2 lg:order-1 text-left mt-2 sm:mt-3 lg:mt-0 lg:col-span-7"
      >
       <motion.div variants={sectionHeaderItem}>
-       <h2 className="text-xl sm:text-3xl md:text-5xl font-semibold tracking-tight mb-5 md:mb-6 text-black dark:text-white leading-[1.15]">
+       <h2 className="text-2xl sm:text-3xl md:text-5xl font-semibold tracking-[-0.025em] mb-5 md:mb-6 text-zinc-950 dark:text-white leading-[1.15]">
         {translateDynamic(settings.aboutTitle1)} <br className="hidden sm:block"/>
         <span className="text-zinc-500 dark:text-zinc-400">{translateDynamic(settings.aboutTitle2)}</span>
        </h2>
       </motion.div>
       
-      <motion.div variants={sectionContentItem} className="space-y-4 md:space-y-5 text-zinc-600 dark:text-zinc-300 text-sm md:text-[15.5px] leading-[1.85] font-normal mb-6 md:mb-7 max-w-[65ch]">
+      <motion.div variants={sectionContentItem} className="space-y-4 md:space-y-5 text-zinc-600 dark:text-zinc-300 text-sm md:text-[15.5px] leading-[1.85] font-normal mb-6 md:mb-8 max-w-[65ch]">
        <p className="whitespace-pre-wrap text-left leading-[1.85]">
         {translateDynamic(settings.aboutDescription1 || '')}
        </p>
@@ -124,43 +124,42 @@ export default function About() {
        </p>
       </motion.div>
       
-       {/* Bento Grid Minimalist: Informasi Kontak & Tombol CV */}
-       <motion.div variants={sectionContentItem} className="mb-6 md:mb-8 p-4 sm:p-5 bg-[#f8f9fa] dark:bg-[#18181b] rounded-2xl border border-zinc-200/70 dark:border-zinc-800/70 shadow-none max-w-none sm:max-w-xl">
+       {/* Minimalist Info Card: Kontak & CV */}
+       <motion.div variants={sectionContentItem} className="mb-6 md:mb-8 p-5 sm:p-6 bg-zinc-50/90 dark:bg-[#141416] rounded-2xl border border-zinc-200/80 dark:border-zinc-800/80 max-w-none sm:max-w-xl">
          {/* BARIS 1: Nama & Status */}
          <div className="flex flex-wrap items-center justify-between gap-2">
-           <h3 className="text-[18px] font-bold text-zinc-900 dark:text-white tracking-tight leading-snug">
+           <h3 className="text-lg font-bold text-zinc-950 dark:text-white tracking-tight leading-snug">
              {settings.fullName && settings.fullName !== 'Alfreelnc' ? settings.fullName : 'Muhammad Albiansyah'}
            </h3>
-           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#f0fdf4] text-[#166534] dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200/50 dark:border-emerald-800/30">
-             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+           <span className="text-xs font-medium text-emerald-700 dark:text-emerald-400">
              {t('about.available')}
            </span>
          </div>
 
          {/* BARIS 2: Sub-Info Kontak & Domisili */}
-         <div className="flex flex-wrap items-center gap-x-2.5 sm:gap-x-3 gap-y-1.5 text-[12px] text-zinc-500 dark:text-zinc-400 mt-2.5">
+         <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-zinc-500 dark:text-zinc-400 mt-3">
            <div className="inline-flex items-center gap-1.5 shrink-0">
              <MapPin className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500" />
              <span>{settings.contactLocation || t('about.location')}</span>
            </div>
 
-           <span className="text-zinc-300 dark:text-zinc-600 select-none">•</span>
+           <span className="text-zinc-300 dark:text-zinc-700 select-none" aria-hidden="true">/</span>
 
            <div className="inline-flex items-center gap-1.5 shrink-0">
-             <MessageCircle className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" />
+             <MessageCircle className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
              <button
                type="button"
                onClick={handleCopyWhatsApp}
                title={t('about.copy_wa')}
-               className="inline-flex items-center gap-1 text-[12px] text-zinc-600 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors cursor-pointer group/copy"
+               className="inline-flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300 hover:text-black dark:hover:text-white transition-colors cursor-pointer group/copy"
              >
-               <span className="font-medium underline-offset-2 hover:underline">{phoneDisplay}</span>
+               <span className="font-medium underline-offset-2 hover:underline tabular-nums">{phoneDisplay}</span>
                {copied ? (
-                 <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold inline-flex items-center gap-0.5 ml-0.5">
+                 <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold inline-flex items-center gap-0.5">
                    <Check className="w-3 h-3" /> {t('about.copied')}
                  </span>
                ) : (
-                 <Copy className="w-3 h-3 text-zinc-400 group-hover/copy:text-zinc-700 dark:group-hover/copy:text-zinc-200 transition-colors ml-0.5" />
+                 <Copy className="w-3 h-3 text-zinc-400 group-hover/copy:text-zinc-700 dark:group-hover/copy:text-zinc-200 transition-colors" />
                )}
              </button>
              <a
@@ -168,7 +167,8 @@ export default function About() {
                target="_blank"
                rel="noreferrer"
                title="WhatsApp"
-               className="p-0.5 text-zinc-400 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors ml-0.5"
+               aria-label="Chat via WhatsApp"
+               className="p-1 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
              >
                <ExternalLink className="w-3 h-3" />
              </a>
@@ -177,11 +177,12 @@ export default function About() {
 
          {/* BARIS 3: Tombol CV */}
          <button 
+           type="button"
            onClick={() => window.dispatchEvent(new CustomEvent('changeView', { detail: { view: 'cv' } }))} 
-           className="w-full mt-3.5 sm:mt-4 py-2 sm:py-2.5 px-3 sm:px-4 bg-black text-white dark:bg-white dark:text-black rounded-[10px] sm:rounded-[12px] text-[11.5px] sm:text-[13px] font-medium inline-flex items-center justify-center gap-1.5 sm:gap-2 hover:-translate-y-[2px] hover:shadow-md active:translate-y-0 active:shadow-none transition-all duration-200 group cursor-pointer"
+           className="w-full min-h-[44px] mt-4 py-2.5 px-4 bg-zinc-950 text-white hover:bg-black dark:bg-white dark:text-black dark:hover:bg-zinc-200 rounded-xl text-xs sm:text-[13px] font-semibold inline-flex items-center justify-center gap-2 active:scale-[0.99] transition-all duration-200 group cursor-pointer"
          >
            <span>{t('about.view_cv')}</span>
-           <ArrowRight className="w-3 h-3 sm:w-3.5 sm:h-3.5 transition-transform duration-200 group-hover:translate-x-1" />
+           <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-1" />
          </button>
        </motion.div>
     
@@ -202,7 +203,7 @@ export default function About() {
            }
          }}
          title={`Lihat karya terkait ${skill}`}
-         className="group/skill inline-flex items-center gap-1.5 px-3.5 py-1.5 md:px-4 md:py-2 bg-white dark:bg-[#161618] border border-zinc-200/80 dark:border-zinc-800 rounded-full text-[11px] md:text-xs font-medium text-zinc-800 dark:text-zinc-200 cursor-pointer hover:border-black dark:hover:border-white hover:bg-zinc-50 dark:hover:bg-zinc-800/80 active:scale-95 transition-all"
+         className="group/skill min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-zinc-50/80 dark:bg-[#141416] border border-zinc-200/80 dark:border-zinc-800 rounded-xl text-xs font-medium text-zinc-700 dark:text-zinc-200 cursor-pointer hover:border-zinc-900 dark:hover:border-zinc-200 hover:text-black dark:hover:text-white active:scale-95 transition-all"
         >
          <span>{translateDynamic(skill)}</span>
          <ArrowRight className="w-3 h-3 text-zinc-400 opacity-0 -ml-1 group-hover/skill:opacity-100 group-hover/skill:ml-0 group-hover/skill:text-black dark:group-hover/skill:text-white transition-all" />
@@ -213,15 +214,15 @@ export default function About() {
 
      <motion.div 
       variants={slideInRightItem}
-      className="order-1 lg:order-2 lg:col-span-5 relative aspect-[1080/1350] rounded-3xl sm:rounded-[2rem] overflow-hidden bg-zinc-200 dark:bg-[#1A1A1A] border border-zinc-100 dark:border-zinc-800 shadow-xl w-full max-w-md mx-auto lg:max-w-none mt-2 sm:mt-3 lg:mt-0"
+      className="order-1 lg:order-2 lg:col-span-5 relative aspect-[1080/1350] rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-100 dark:bg-[#161618] border border-zinc-200/70 dark:border-zinc-800/80 w-full max-w-md mx-auto lg:max-w-none mt-2 sm:mt-3 lg:mt-0"
      >
       <ImageWithSkeleton 
         src={settings.aboutImage && !settings.aboutImage.includes('photo-1499951360447') ? settings.aboutImage : "/images/minimalist_3d_illustration_1787122966121.jpg"} 
         alt={settings.fullName || "Tentang Saya"} 
-        className="w-full h-full object-cover opacity-90 hover:opacity-100 hover:scale-105 transition-all duration-500 ease-out"
+        className="w-full h-full object-cover opacity-95 hover:opacity-100 hover:scale-[1.03] transition-all duration-500 ease-out"
         priority={true}
         containerClassName="w-full h-full overflow-hidden"
-        skeletonClassName="rounded-3xl sm:rounded-[2rem]"
+        skeletonClassName="rounded-2xl sm:rounded-3xl"
       />
      </motion.div>
      

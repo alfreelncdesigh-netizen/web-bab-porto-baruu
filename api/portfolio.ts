@@ -48,10 +48,7 @@ function getPortfolioCreationRecency(item: any): number {
   const added = parsePortfolioTimestampMs(item.dateAdded);
   const dateMs = parsePortfolioTimestampMs(item.date);
 
-  if (idNum > 0) {
-    return created || added || idNum;
-  }
-  return added || dateMs || created || 0;
+  return Math.max(created, added, idNum) || dateMs || 0;
 }
 
 function sortPortfolioNewestFirst(items: any[]): any[] {

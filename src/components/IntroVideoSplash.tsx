@@ -5,12 +5,14 @@ export const INTRO_LOGO_VIDEO_SRC = '/assets/aistudio/animasi_logo_cafcdb69.mp4'
 
 interface IntroVideoSplashProps {
   onComplete: () => void;
+  onThreeSecondsElapsed?: () => void;
+  holdForCookieConsent?: boolean;
 }
 
 const INTRO_DURATION_MS = 3000;
-const SAFETY_TIMEOUT_MS = 4500;
-const FADE_DURATION_MS = 220;
-const REDUCED_MOTION_FADE_MS = 100;
+const SAFETY_TRIGGER_MS = 3500;
+const FADE_DURATION_MS = 280;
+const REDUCED_MOTION_FADE_MS = 120;
 
 function getPrefersReducedMotion(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
@@ -28,17 +30,28 @@ function clearResidualPageLocks() {
   document.body.style.pointerEvents = '';
 }
 
-export default function IntroVideoSplash({ onComplete }: IntroVideoSplashProps) {
+export default function IntroVideoSplash({
+  onComplete,
+  onThreeSecondsElapsed,
+  holdForCookieConsent = false,
+}: IntroVideoSplashProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [phase, setPhase] = useState<'playing' | 'fading'>('playing');
+  const [phase, setPhase] = useState<'playing' | 'awaiting_cookie' | 'fading'>('playing');
+  const [threeSecondsDone, setThreeSecondsDone] = useState(false);
   const [reducedMotion, setReducedMotion] = useState<boolean>(getPrefersReducedMotion);
-  const [showPromptHelper, setShowPromptHelper] = useState(false);
 
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
+  const onThreeSecondsElapsedRef = useRef(onThreeSecondsElapsed);
+  onThreeSecondsElapsedRef.current = onThreeSecondsElapsed;
+
+  const holdForCookieConsentRef = useRef(holdForCookieConsent);
+  holdForCookieConsentRef.current = holdForCookieConsent;
+
   const playStartedAtRef = useRef<number | null>(null);
   const isFinishingRef = useRef(false);
+  const threeSecondsTriggeredRef = useRef(false);
   const fadeTimerRef = useRef<number | null>(null);
   const durationTimerRef = useRef<number | null>(null);
   const safetyTimerRef = useRef<number | null>(null);
@@ -88,6 +101,36 @@ export default function IntroVideoSplash({ onComplete }: IntroVideoSplashProps) 
     }, durationMs);
   }, []);
 
+  const handleThreeSecondsReached = useCallback(() => {
+    if (threeSecondsTriggeredRef.current) return;
+    threeSecondsTriggeredRef.current = true;
+
+    if (durationTimerRef.current !== null) {
+      window.clearTimeout(durationTimerRef.current);
+      durationTimerRef.current = null;
+    }
+    if (safetyTimerRef.current !== null) {
+      window.clearTimeout(safetyTimerRef.current);
+      safetyTimerRef.current = null;
+    }
+
+    setThreeSecondsDone(true);
+    onThreeSecondsElapsedRef.current?.();
+
+    if (holdForCookieConsentRef.current) {
+      setPhase('awaiting_cookie');
+    } else {
+      startFadeOut();
+    }
+  }, [startFadeOut]);
+
+  // Saat cookie consent selesai diberikan ketika splash sedang menahan tampilan, segera fade-out ke beranda
+  useEffect(() => {
+    if (threeSecondsDone && !holdForCookieConsent) {
+      startFadeOut();
+    }
+  }, [threeSecondsDone, holdForCookieConsent, startFadeOut]);
+
   // Pastikan atribut HTML muted/playsinline terpasang sinkron sebelum browser mengevaluasi autoplay
   useLayoutEffect(() => {
     const videoEl = videoRef.current;
@@ -130,8 +173,8 @@ export default function IntroVideoSplash({ onComplete }: IntroVideoSplashProps) 
     const videoEl = videoRef.current;
 
     safetyTimerRef.current = window.setTimeout(() => {
-      startFadeOut();
-    }, SAFETY_TIMEOUT_MS);
+      handleThreeSecondsReached();
+    }, SAFETY_TRIGGER_MS);
 
     if (!videoEl) {
       return () => {
@@ -148,10 +191,9 @@ export default function IntroVideoSplash({ onComplete }: IntroVideoSplashProps) 
       const playPromise = videoEl.play();
       if (playPromise && typeof playPromise.catch === 'function') {
         playPromise.catch(() => {
-          setShowPromptHelper(true);
           if (durationTimerRef.current === null) {
             durationTimerRef.current = window.setTimeout(() => {
-              startFadeOut();
+              handleThreeSecondsReached();
             }, INTRO_DURATION_MS);
           }
         });
@@ -169,7 +211,7 @@ export default function IntroVideoSplash({ onComplete }: IntroVideoSplashProps) 
       videoEl.removeEventListener('canplay', attemptPlay);
       clearAllTimers();
     };
-  }, [startFadeOut, clearAllTimers]);
+  }, [handleThreeSecondsReached, clearAllTimers]);
 
   const handleVideoPlaying = () => {
     if (playStartedAtRef.current !== null) return;
@@ -178,36 +220,32 @@ export default function IntroVideoSplash({ onComplete }: IntroVideoSplashProps) 
       window.clearTimeout(durationTimerRef.current);
     }
     durationTimerRef.current = window.setTimeout(() => {
-      startFadeOut();
+      handleThreeSecondsReached();
     }, INTRO_DURATION_MS);
   };
 
   const handleVideoEnded = () => {
     if (playStartedAtRef.current === null) {
-      startFadeOut();
+      handleThreeSecondsReached();
       return;
     }
     const elapsed = Date.now() - playStartedAtRef.current;
     const remaining = Math.max(0, INTRO_DURATION_MS - elapsed);
     if (remaining <= 150) {
-      startFadeOut();
+      handleThreeSecondsReached();
     }
   };
 
   const handleVideoError = () => {
-    setShowPromptHelper(true);
     if (durationTimerRef.current === null) {
       durationTimerRef.current = window.setTimeout(() => {
-        startFadeOut();
+        handleThreeSecondsReached();
       }, INTRO_DURATION_MS);
     }
   };
 
-  const handleSkipClick = () => {
-    startFadeOut(reducedMotion ? 0 : 180);
-  };
-
   const fadeMs = reducedMotion ? REDUCED_MOTION_FADE_MS : FADE_DURATION_MS;
+  const isAwaitingCookie = phase === 'awaiting_cookie';
 
   const splashContent = (
     <div
@@ -219,8 +257,12 @@ export default function IntroVideoSplash({ onComplete }: IntroVideoSplashProps) 
         phase === 'fading' ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'
       }`}
     >
-      {/* Container 1:1 dengan dimensi eksplisit & batas viewport agar tampil jelas di semua perangkat */}
-      <div className="relative flex items-center justify-center w-[260px] h-[260px] sm:w-[340px] sm:h-[340px] md:w-[400px] md:h-[400px] lg:w-[440px] lg:h-[440px] max-w-[82vw] max-h-[82vh] aspect-square">
+      {/* Container 1:1 dengan posisi adaptif saat pop up cookie muncul setelah 3 detik */}
+      <div
+        className={`relative flex items-center justify-center w-[240px] h-[240px] sm:w-[320px] sm:h-[320px] md:w-[380px] md:h-[380px] lg:w-[420px] lg:h-[420px] max-w-[78vw] max-h-[60vh] aspect-square transition-transform duration-500 ease-out ${
+          isAwaitingCookie ? '-translate-y-24 sm:-translate-y-20 scale-90 sm:scale-95' : 'translate-y-0 scale-100'
+        }`}
+      >
         <video
           ref={videoRef}
           src={INTRO_LOGO_VIDEO_SRC}
@@ -235,24 +277,6 @@ export default function IntroVideoSplash({ onComplete }: IntroVideoSplashProps) 
           className="w-full h-full object-contain block pointer-events-none"
         />
       </div>
-
-      {/* Tombol Lewati */}
-      {phase === 'playing' && (
-        <div className="fixed bottom-5 right-5 sm:bottom-8 sm:right-8 z-10 flex items-center gap-3 pointer-events-auto">
-          {showPromptHelper && (
-            <span className="text-xs text-white/75">
-              Ketuk untuk masuk ke beranda
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={handleSkipClick}
-            className="min-h-[40px] px-4 py-2 rounded-full bg-white/12 hover:bg-white/22 border border-white/20 text-xs font-medium tracking-wide text-white transition-colors active:scale-95 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-          >
-            Lewati
-          </button>
-        </div>
-      )}
     </div>
   );
 

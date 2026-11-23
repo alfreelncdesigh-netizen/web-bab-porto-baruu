@@ -32,11 +32,9 @@ export default function ShareProjectModal({
 
   if (!isOpen || !project) return null;
 
-  // Generate shareable link
+  // Generate clean canonical shareable link (/project/:id) so social crawlers get project-specific OG tags
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://alfreelncdesign.vercel.app';
-  const rawPathname = typeof window !== 'undefined' ? window.location.pathname : '/';
-  const pathname = rawPathname.startsWith('/project/') ? '/' : rawPathname;
-  const shareUrl = `${origin}${pathname}?project=${encodeURIComponent(String(project.id))}`;
+  const shareUrl = `${origin}/project/${encodeURIComponent(String(project.id))}`;
   const shareTitle = `Lihat karya portofolio "${project.title}" oleh Alfreelnc Studio`;
   const shareText = `Halo! Lihat karya desain menarik ini: "${project.title}" di Alfreelnc Studio:\n${shareUrl}`;
   const projectImageUrl = project.image ? resolveImageUrl(project.image) : '';

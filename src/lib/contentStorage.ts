@@ -236,10 +236,7 @@ export function getProjectCreationRecency(item: any): number {
   const added = getTimestampMs(item.dateAdded);
   const dateMs = getTimestampMs(item.date);
 
-  if (idNum > 0) {
-    return created || added || idNum;
-  }
-  return added || dateMs || created || 0;
+  return Math.max(created, added, idNum) || dateMs || 0;
 }
 
 // Deleted records live directly in Firestore (docs deleted cleanly on Firestore)

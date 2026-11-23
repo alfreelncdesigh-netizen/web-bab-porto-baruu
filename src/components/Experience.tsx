@@ -293,35 +293,35 @@ export default function Experience() {
               <motion.div 
                 key={exp.id ? `exp-${exp.id}-${idx}` : `exp-idx-${idx}`}
                 variants={childGridCardItem}
-                className="w-full bg-zinc-50/70 dark:bg-[#111111]/60 border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl md:rounded-3xl p-3 sm:p-5 md:p-8 shadow-sm hover:border-zinc-300 dark:hover:border-zinc-700 transition-all cursor-pointer"
+                className="w-full bg-zinc-50/85 dark:bg-[#121214] border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl md:rounded-3xl p-4 sm:p-6 md:p-8 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all cursor-pointer"
                 onClick={() => handleOpenExp(exp)}
               >
-                <div className={`flex flex-col md:flex-row items-start md:items-center gap-3 sm:gap-5 md:gap-8 w-full ${isEven ? 'md:flex-row-reverse' : ''}`}>
+                <div className={`flex flex-col md:flex-row items-start md:items-center gap-4 sm:gap-6 md:gap-8 w-full ${isEven ? 'md:flex-row-reverse' : ''}`}>
                   {/* Text Content */}
                   <div className="w-full md:w-1/2 flex flex-col justify-center text-left">
-                    <h3 className="text-sm sm:text-base md:text-2xl font-bold text-black dark:text-white mb-0.5 sm:mb-1 leading-snug md:leading-tight tracking-tight">
+                    <h3 className="text-base sm:text-lg md:text-2xl font-bold text-zinc-950 dark:text-white mb-1 leading-snug md:leading-tight tracking-tight">
                       {translateDynamic(exp.header)}
                     </h3>
                     
                     {exp.subtheme && (
-                      <div className="flex flex-wrap items-center gap-2 mb-1.5 sm:mb-2 md:mb-3">
-                        <p className="text-[11px] sm:text-[13px] font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-2 mb-2 md:mb-3">
+                        <p className="text-xs sm:text-[13px] font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
                           <Briefcase className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                           <span>{translateDynamic(exp.subtheme)}</span>
                         </p>
                         {(exp.isCollaboration || exp.collaborationPartner) && (
-                          <span className="bg-indigo-600/90 text-white border border-indigo-400/30 px-2 py-0.5 rounded-full text-[9px] font-bold shadow-xs flex items-center gap-1.5">
+                          <span className="bg-zinc-200/70 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border border-zinc-300/60 dark:border-zinc-700 px-2.5 py-0.5 rounded-lg text-[10px] font-semibold flex items-center gap-1.5">
                             {exp.collaborationLogo ? (
                               <img
                                 src={resolveImageUrl(exp.collaborationLogo)}
                                 alt=""
-                                className="w-3.5 h-3.5 object-contain rounded-full bg-white p-0.5 shrink-0"
+                                className="w-3.5 h-3.5 object-contain rounded-sm bg-white p-0.5 shrink-0"
                                 loading="lazy"
                                 decoding="async"
                                 onError={handleImageError}
                               />
                             ) : (
-                              <Handshake size={10} />
+                              <Handshake size={11} />
                             )}
                             <span>{exp.collaborationPartner ? `${translateDynamic('Kolaborasi')}: ${translateDynamic(exp.collaborationPartner)}` : translateDynamic('Kolaborasi')}</span>
                           </span>
@@ -815,7 +815,7 @@ export default function Experience() {
                   {/* Tombol Aksi: Diskusi via WhatsApp */}
                   <div className="grid grid-cols-1 gap-2.5 mb-6 pt-4">
                     <a
-                      href={`https://wa.me/qr/UDCAZ44OXWLGM1?text=${encodeURIComponent(`Halo Albiansyah, saya melihat pengalaman "${selectedExp.header}" di portofolio Anda. Bisakah kita berdiskusi lebih lanjut?`)}`}
+                      href={`https://api.whatsapp.com/send?phone=6282394549268&text=${encodeURIComponent(`Halo Albiansyah, saya melihat pengalaman "${selectedExp.header}" di portofolio Anda. Bisakah kita berdiskusi lebih lanjut?`)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="py-2.5 px-4 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95"

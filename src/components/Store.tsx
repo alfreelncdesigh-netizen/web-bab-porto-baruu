@@ -18,11 +18,11 @@ interface StoreProps {
 export default function Store({ isOrderView = false }: StoreProps) {
   const { t } = useLanguage();
   const getCleanPhone = (phoneStr?: string) => {
-    let phone = (phoneStr || '628112345678').replace(/\D/g, '');
+    let phone = (phoneStr || '6282394549268').replace(/\D/g, '');
     if (phone.startsWith('0')) {
       phone = '62' + phone.substring(1);
     }
-    return phone || '628112345678';
+    return phone || '6282394549268';
   };
 
   const deduplicatePosters = (list: PromoPosterItem[]): PromoPosterItem[] => {
@@ -367,7 +367,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (isUploading) {
       showToast('Tunggu sebentar, gambar referensi sedang diunggah ke Vercel Blob...');
@@ -394,7 +394,7 @@ export default function Store({ isOrderView = false }: StoreProps) {
       const estimasiWaktuPengerjaan = getEstimatedWorkDuration(formData.deadline);
       const deadlineFormatted = formatDeadlineIndonesia(formData.deadline);
 
-      // Simpan data order via API /api/orders (Vercel Blob JSON / local fallback)
+      // Simpan data order via API /api/orders secara non-blocking (keepalive) agar tidak memblokir user-gesture WhatsApp
       const orderId = `order_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
       const orderRecord = {
         id: orderId,
@@ -419,16 +419,15 @@ export default function Store({ isOrderView = false }: StoreProps) {
         createdAt: new Date().toISOString()
       };
 
-      const res = await fetch('/api/orders', {
+      void fetch('/api/orders', {
         method: 'POST',
         cache: 'no-store',
+        keepalive: true,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderRecord),
+      }).catch((err) => {
+        console.warn('Notice: Order record background sync:', err);
       });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(data?.error || `Gagal menyimpan pesanan (HTTP ${res.status})`);
-      }
 
       const now = new Date();
       const hariList = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
@@ -484,23 +483,25 @@ CATATAN PEMESANAN
 Terima kasih telah mempercayakan kebutuhan desain Anda kepada kami.
 ━━━━━━━━━━━━━━━━━━━━`;
 
+      const targetPhone = getCleanPhone(whatsappNumber);
       const encodedMessage = encodeURIComponent(message);
-      const waUrl = `https://wa.me/qr/UDCAZ44OXWLGM1?text=${encodedMessage}`;
+      const waUrl = `https://api.whatsapp.com/send?phone=${targetPhone}&text=${encodedMessage}`;
+
       try {
-        const a = document.createElement('a');
-        a.href = waUrl;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        const opened = window.open(waUrl, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+          window.location.href = waUrl;
+        }
       } catch {
-        window.open(waUrl, '_blank') || (window.location.href = waUrl);
+        window.location.href = waUrl;
       }
+
+      deleteCookie('order_draft');
+      setIsDraftLoaded(false);
     } catch (error: any) {
-      showToast(error?.message || 'Gagal menyimpan pesanan. Coba lagi.');
+      showToast(error?.message || 'Gagal membuka WhatsApp. Coba lagi.');
     } finally {
-      setIsSubmitting(false);
+      setTimeout(() => setIsSubmitting(false), 600);
     }
   };
 
@@ -560,7 +561,7 @@ Terima kasih telah mempercayakan kebutuhan desain Anda kepada kami.
           </p>
           <div className="mt-3 sm:mt-4 flex justify-center">
             <a
-              href="https://wa.me/qr/UDCAZ44OXWLGM1"
+              href={`https://api.whatsapp.com/send?phone=${getCleanPhone(whatsappNumber)}`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all shadow-2xs active:scale-95 cursor-pointer"
@@ -936,6 +937,9 @@ Terima kasih telah mempercayakan kebutuhan desain Anda kepada kami.
                                     </div>
                                   </div>
                                   <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Tersimpan di Vercel Blob &amp; Siap Dikirim ke WA!</span>
+                                  <span className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400 mt-1 max-w-[230px] truncate block">
+                                    {toAbsoluteReferenceUrl(formData.referensiUrl)}
+                                  </span>
                                   <span className="text-[11px] text-zinc-400 mt-0.5">Klik area untuk mengganti gambar referensi</span>
                                 </div>
                               ) : (
@@ -1448,8 +1452,11 @@ Terima kasih telah mempercayakan kebutuhan desain Anda kepada kami.
                                   <CheckCircle2 className="w-3 h-3 text-white" />
                                 </div>
                               </div>
-                              <div className="text-left">
+                              <div className="text-left min-w-0 max-w-[190px]">
                                 <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 block">Tersimpan di Vercel Blob</span>
+                                <span className="text-[9px] font-mono text-zinc-500 dark:text-zinc-400 truncate block">
+                                  {toAbsoluteReferenceUrl(formData.referensiUrl)}
+                                </span>
                                 <span className="text-[9px] text-zinc-400">Ketuk untuk ganti gambar referensi</span>
                               </div>
                             </div>

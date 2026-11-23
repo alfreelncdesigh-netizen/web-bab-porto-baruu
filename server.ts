@@ -2420,8 +2420,12 @@ async function startServer() {
       }
     }));
     app.get('*', async (req: Request, res: Response) => {
-      const indexPath = path.resolve(distDir, 'index.html');
-      if (fs.existsSync(indexPath)) {
+      const candidateHtmlPaths = [
+        path.resolve(distDir, 'index.html'),
+        path.resolve(distDir, '_app.html'),
+      ];
+      const indexPath = candidateHtmlPaths.find((p) => fs.existsSync(p));
+      if (indexPath) {
         try {
           const rawTemplate = fs.readFileSync(indexPath, 'utf-8');
           const finalHtml = await injectDynamicMeta(rawTemplate, req);

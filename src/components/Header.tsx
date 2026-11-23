@@ -314,25 +314,26 @@ export default function Header({ setView, currentView }: HeaderProps) {
     )}
    </AnimatePresence>
 
-   <header className="fixed top-0 left-0 right-0 z-50 pt-2.5 sm:pt-3.5 md:pt-4 px-3 sm:px-5 md:px-8 pointer-events-none flex justify-center max-w-[1540px] xl:max-w-[1720px] 2xl:max-w-[1840px] mx-auto">
+   <header className="fixed top-0 left-0 right-0 z-50 pt-2.5 sm:pt-3.5 md:pt-4 px-3 sm:px-5 md:px-8 pointer-events-none flex justify-center max-w-[1600px] 2xl:max-w-[1760px] mx-auto">
     <motion.div 
      initial={{ y: -100, opacity: 0 }}
      animate={{ y: 0, opacity: 1 }}
-     transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-     className={`pointer-events-auto flex items-center justify-between w-full rounded-full px-5 py-2.5 sm:px-6 sm:py-3 md:px-7 md:py-3.5 transition-all duration-300 ${
+     transition={{ type: 'spring', stiffness: 220, damping: 24 }}
+     className={`pointer-events-auto flex items-center justify-between w-full rounded-2xl sm:rounded-full px-4 py-2 sm:px-6 sm:py-2.5 md:px-7 md:py-3 transition-all duration-300 ${
       isScrolled 
-       ? 'bg-white/92 dark:bg-[#111111]/92 backdrop-blur-xl border border-zinc-200/60 dark:border-zinc-800/60 shadow-md' 
-       : 'bg-white/80 dark:bg-[#0A0A0A]/80 backdrop-blur-md border border-zinc-200/30 dark:border-zinc-800/30 shadow-sm'
+       ? 'bg-white/95 dark:bg-[#111113]/95 backdrop-blur-xl border border-zinc-200/75 dark:border-zinc-800/75 shadow-sm' 
+       : 'bg-white/85 dark:bg-[#0A0A0C]/85 backdrop-blur-md border border-zinc-200/45 dark:border-zinc-800/45'
      }`}
     >
      {/* Logo ALFREELNC & Logo Kolaborasi (jika aktif) */}
      <div className="flex items-center gap-2 sm:gap-2.5 md:gap-3 shrink-0">
       <button 
+       type="button"
        onClick={() => { setView('home'); }} 
-       className="group relative flex items-center justify-center hover:opacity-85 active:scale-95 transition-all select-none focus:outline-none shrink-0"
+       className="group relative flex items-center justify-center hover:opacity-85 active:scale-95 transition-all select-none focus:outline-none shrink-0 cursor-pointer"
        aria-label="ALFREELNC Beranda"
       >
-       <BrandLogo className="h-9 sm:h-10 md:h-11 lg:h-12" />
+       <BrandLogo className="h-8 sm:h-9 md:h-10 lg:h-11" />
       </button>
 
       {settings.collaboration?.enabled && settings.collaboration?.partnerLogo && (
@@ -361,25 +362,26 @@ export default function Header({ setView, currentView }: HeaderProps) {
 
 
      {/* Desktop Nav */}
-     <nav className="hidden md:flex gap-4 lg:gap-5.5 text-[14px] lg:text-[15px] items-center">
-      {/* Tombol Cari Insight (berlogo Google Search) tepat di samping menu "Tentang Saya" */}
+     <nav className="hidden md:flex gap-3.5 lg:gap-5 text-[13.5px] lg:text-[14.5px] items-center">
+      {/* Tombol Cari Insight */}
       <button
         ref={desktopSearchTriggerRef}
+        type="button"
         onClick={() => {
           setIsLanguageDropdownOpen(false);
           setIsSearchSlideOpen(!isSearchSlideOpen);
         }}
-        className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-xs font-semibold shadow-2xs transition-all cursor-pointer mr-1 lg:mr-1.5 ${
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer shrink-0 whitespace-nowrap ${
           isSearchSlideOpen
-            ? 'bg-zinc-900 text-white border-zinc-900 dark:bg-white dark:text-black dark:border-white shadow-sm'
-            : 'bg-zinc-100 hover:bg-zinc-200/90 dark:bg-zinc-800/90 dark:hover:bg-zinc-700/90 border-zinc-200/80 dark:border-zinc-700/80 text-zinc-700 dark:text-zinc-200'
+            ? 'bg-zinc-950 text-white border-zinc-950 dark:bg-white dark:text-black dark:border-white'
+            : 'bg-zinc-100/80 hover:bg-zinc-200/80 dark:bg-zinc-900/80 dark:hover:bg-zinc-800 border-zinc-200/70 dark:border-zinc-800 text-zinc-700 dark:text-zinc-200'
         }`}
         aria-label="Cari Insight & Q&A"
         title="Buka Pencarian Cepat Insight (⌘K atau /)"
       >
-        <GoogleGIcon className="w-4 h-4 shrink-0" />
-        <span className={`text-[12.5px] font-medium ${isSearchSlideOpen ? 'text-white dark:text-black' : 'text-zinc-600 dark:text-zinc-300'}`}>Cari Insight</span>
-        <kbd className={`hidden xl:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono rounded ${isSearchSlideOpen ? 'bg-white/20 text-white dark:bg-black/15 dark:text-black' : 'bg-white/80 dark:bg-zinc-900 text-zinc-400 border border-zinc-200/80 dark:border-zinc-700'}`}>/</kbd>
+        <GoogleGIcon className="w-3.5 h-3.5 shrink-0" />
+        <span className={`text-xs font-medium ${isSearchSlideOpen ? 'text-white dark:text-black' : 'text-zinc-700 dark:text-zinc-200'}`}>Cari Insight</span>
+        <kbd className={`hidden 2xl:inline-flex items-center px-1.5 py-0.5 text-[10px] font-mono rounded ${isSearchSlideOpen ? 'bg-white/20 text-white dark:bg-black/15 dark:text-black' : 'bg-white dark:bg-zinc-950 text-zinc-400 border border-zinc-200/80 dark:border-zinc-800'}`}>/</kbd>
       </button>
 
       {navLinks.map((link) => {
@@ -387,40 +389,41 @@ export default function Header({ setView, currentView }: HeaderProps) {
        return (
         <button 
          key={link.name} 
+         type="button"
          onClick={(e) => handleNavClick(e, link)} 
-         className={`transition-colors relative py-1.5 cursor-pointer ${isActive ? 'text-black dark:text-white font-semibold' : 'text-zinc-500 hover:text-black dark:text-zinc-400 dark:hover:text-white font-medium'}`}
+         className={`transition-colors relative py-1.5 cursor-pointer whitespace-nowrap shrink-0 ${isActive ? 'text-zinc-950 dark:text-white font-semibold' : 'text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white font-medium'}`}
         >
          <span>{link.name}</span>
          {isActive && (
           <motion.span
            layoutId="header-nav-indicator"
            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-           className="absolute left-0 right-0 -bottom-0.5 h-[2px] rounded-full bg-black dark:bg-white"
+           className="absolute left-0 right-0 -bottom-0.5 h-[2px] rounded-full bg-zinc-950 dark:bg-white"
           />
          )}
         </button>
        )
       })}
       
-      {/* Desktop Language Switcher (Diletakkan berdampingan dekat tombol Tema) */}
-      <div className="relative">
+      {/* Desktop Language Switcher */}
+      <div className="relative shrink-0">
         <button
           ref={desktopLangToggleRef}
+          type="button"
           onClick={() => {
             setIsSearchSlideOpen(false);
             setIsLanguageDropdownOpen(!isLanguageDropdownOpen);
           }}
-          className={`px-3 py-1.5 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+          className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border whitespace-nowrap ${
             isLanguageDropdownOpen
-              ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-              : 'border-zinc-200/80 dark:border-zinc-800 bg-zinc-100/80 hover:bg-zinc-200/80 dark:bg-zinc-800/70 dark:hover:bg-zinc-700/80 text-zinc-700 dark:text-zinc-200'
+              ? 'bg-zinc-950 text-white border-zinc-950 dark:bg-white dark:text-black dark:border-white'
+              : 'border-zinc-200/80 dark:border-zinc-800 bg-zinc-100/70 hover:bg-zinc-200/70 dark:bg-zinc-900/70 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200'
           }`}
           aria-label={t('nav.lang_toggle')}
           title={`${t('nav.lang_toggle')}: ${currentLangInfo.nativeName}`}
         >
           <Globe className="w-3.5 h-3.5 shrink-0" />
-          <span className="text-[11px] uppercase tracking-wider">{language}</span>
-          <span className="text-[12px]">{currentLangInfo.flag}</span>
+          <span className="text-[11px] uppercase tracking-wider font-mono">{language}</span>
         </button>
 
         <AnimatePresence>
@@ -489,56 +492,58 @@ export default function Header({ setView, currentView }: HeaderProps) {
       <PWAInstallButton />
 
       <button 
+       type="button"
        onClick={() => {
         setIsMobileMenuOpen(false);
         setIsLanguageDropdownOpen(false);
         setView('contact'); 
        }} 
-       className="bg-black text-white dark:bg-white dark:text-black px-5.5 py-2.5 rounded-full text-xs sm:text-[14px] font-bold hover:opacity-90 transition-opacity active:scale-95 duration-200 shadow-xs cursor-pointer"
+       className="bg-zinc-950 text-white dark:bg-white dark:text-black px-5 py-2 rounded-xl text-xs lg:text-[13.5px] font-semibold hover:opacity-90 transition-opacity active:scale-95 duration-200 cursor-pointer whitespace-nowrap shrink-0"
       >
        {t('nav.contact')}
       </button>
      </nav>
 
-     {/* Mobile Toggle Icons (Search + Theme + Hamburger) */}
-     <div className="md:hidden flex items-center gap-1.5 sm:gap-2">
-      {/* Mobile Search Icon (between Logo & Theme Toggle) */}
+     {/* Mobile Toggle Icons */}
+     <div className="md:hidden flex items-center gap-1">
       <button 
         ref={mobileSearchTriggerRef}
+        type="button"
         onClick={() => {
           setIsMobileMenuOpen(false);
           setIsLanguageDropdownOpen(false);
           setIsSearchSlideOpen(!isSearchSlideOpen);
         }} 
-        className={`p-2 rounded-full transition-colors flex items-center justify-center focus:outline-none cursor-pointer ${
+        className={`w-10 h-10 rounded-xl transition-colors flex items-center justify-center focus:outline-none cursor-pointer ${
           isSearchSlideOpen 
-            ? 'bg-blue-600 text-white shadow-xs' 
-            : 'text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-85'
+            ? 'bg-zinc-950 text-white dark:bg-white dark:text-black' 
+            : 'text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
         }`}
         aria-label="Cari Insight"
         title="Buka Pencarian Cepat Insight"
       >
-        <GoogleGIcon className="w-5 h-5 sm:w-5.5 sm:h-5.5" />
+        <GoogleGIcon className="w-4.5 h-4.5" />
       </button>
 
-      {/* Mobile Language Selector Dropdown (tepat dekat menu tema) */}
+      {/* Mobile Language Selector Dropdown */}
       <div className="relative">
         <button
           ref={mobileLangToggleRef}
+          type="button"
           onClick={() => {
             setIsMobileMenuOpen(false);
             setIsSearchSlideOpen(false);
             setIsLanguageDropdownOpen(!isLanguageDropdownOpen);
           }}
-          className={`p-2 rounded-full transition-colors flex items-center justify-center focus:outline-none cursor-pointer ${
+          className={`w-10 h-10 rounded-xl transition-colors flex items-center justify-center focus:outline-none cursor-pointer ${
             isLanguageDropdownOpen
-              ? 'bg-blue-600 text-white shadow-xs'
+              ? 'bg-zinc-950 text-white dark:bg-white dark:text-black'
               : 'text-black dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-800'
           }`}
           aria-label={t('nav.lang_toggle')}
           title={`${t('nav.lang_toggle')}: ${currentLangInfo.nativeName}`}
         >
-          <Globe className="w-5 h-5" />
+          <Globe className="w-4.5 h-4.5" />
         </button>
 
         <AnimatePresence>
@@ -563,13 +568,14 @@ export default function Header({ setView, currentView }: HeaderProps) {
                   return (
                     <button
                       key={item.code}
+                      type="button"
                       onClick={() => {
                         setLanguage(item.code);
                         setIsLanguageDropdownOpen(false);
                       }}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      className={`w-full min-h-[38px] flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                         isSelected
-                          ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-bold'
+                          ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-950 dark:text-white font-bold'
                           : 'text-zinc-600 dark:text-zinc-400 hover:text-black dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900'
                       }`}
                     >
@@ -577,7 +583,7 @@ export default function Header({ setView, currentView }: HeaderProps) {
                         <span className="text-sm">{item.flag}</span>
                         <span className="truncate">{item.nativeName}</span>
                       </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />}
+                      {isSelected && <Check className="w-3.5 h-3.5 text-zinc-950 dark:text-white shrink-0" />}
                     </button>
                   );
                 })}
@@ -587,34 +593,36 @@ export default function Header({ setView, currentView }: HeaderProps) {
         </AnimatePresence>
       </div>
 
-      {/* Mobile Direct 1-Click Theme Toggle: Light / Dark Mode */}
+      {/* Mobile Direct 1-Click Theme Toggle */}
       <button 
+        type="button"
         onClick={() => {
           setIsLanguageDropdownOpen(false);
           toggleTheme();
         }} 
-        className="text-black dark:text-white p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors flex items-center justify-center focus:outline-none cursor-pointer active:scale-95"
+        className="w-10 h-10 text-black dark:text-white rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center focus:outline-none cursor-pointer active:scale-95"
         aria-label={t('nav.theme_toggle')}
         title={`${t('nav.theme_toggle')}: ${theme === 'light' ? t('nav.theme_light') : t('nav.theme_dark')}`}
       >
         {theme === 'light' ? (
-          <Moon className="w-5.5 h-5.5 text-zinc-700" />
+          <Moon className="w-4.5 h-4.5 text-zinc-700" />
         ) : (
-          <Sun className="w-5.5 h-5.5 text-amber-400" />
+          <Sun className="w-4.5 h-4.5 text-amber-400" />
         )}
       </button>
 
       {/* Mobile Hamburger Menu Toggle */}
       <button 
        ref={mobileToggleRef}
-       className="text-black dark:text-white p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 hover:opacity-70 transition-colors focus:outline-none flex items-center justify-center cursor-pointer" 
+       type="button"
+       className="w-10 h-10 text-black dark:text-white rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors focus:outline-none flex items-center justify-center cursor-pointer" 
        onClick={() => {
          setIsLanguageDropdownOpen(false);
          setIsMobileMenuOpen(!isMobileMenuOpen);
        }}
        aria-label={isMobileMenuOpen ? "Tutup Menu" : "Buka Menu"}
       >
-       {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+       {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </button>
      </div>
     </motion.div>
@@ -624,39 +632,39 @@ export default function Header({ setView, currentView }: HeaderProps) {
      {isMobileMenuOpen && (
       <motion.div 
        ref={mobileMenuRef}
-       initial={{ opacity: 0, y: -12, scale: 0.95 }}
+       initial={{ opacity: 0, y: -12, scale: 0.96 }}
        animate={{ opacity: 1, y: 0, scale: 1 }}
-       exit={{ opacity: 0, y: -12, scale: 0.95 }}
+       exit={{ opacity: 0, y: -12, scale: 0.96 }}
        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-       className="md:hidden pointer-events-auto absolute top-[64px] sm:top-[72px] right-3 w-[calc(100vw-1.5rem)] max-w-[340px] sm:max-w-[370px] bg-white/98 dark:bg-[#121212]/98 backdrop-blur-2xl border border-zinc-200/80 dark:border-zinc-800/80 rounded-3xl p-5 sm:p-6 flex flex-col gap-1.5 shadow-2xl z-50 select-none"
+       className="md:hidden pointer-events-auto absolute top-[62px] sm:top-[70px] right-3 w-[calc(100vw-1.5rem)] max-w-[340px] sm:max-w-[370px] bg-white/98 dark:bg-[#121214]/98 backdrop-blur-2xl border border-zinc-200/80 dark:border-zinc-800/80 rounded-2xl p-4 sm:p-5 flex flex-col gap-1 shadow-2xl z-50 select-none"
       >
        {navLinks.map((link) => {
         const isActive = currentView === link.view;
         return (
          <button 
           key={link.name} 
+          type="button"
           onClick={(e) => handleNavClick(e, link)} 
-          className={`flex items-center justify-between text-left text-[14px] sm:text-[15px] tracking-tight py-3 px-3.5 rounded-2xl transition-all cursor-pointer ${
+          className={`min-h-[44px] flex items-center justify-between text-left text-sm tracking-tight py-2.5 px-3.5 rounded-xl transition-all cursor-pointer ${
             isActive 
-              ? 'bg-zinc-100 dark:bg-zinc-800 text-black dark:text-white font-bold' 
-              : 'text-zinc-600 dark:text-zinc-300 font-semibold hover:text-black dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900/60'
+              ? 'bg-zinc-100 dark:bg-zinc-800/90 text-zinc-950 dark:text-white font-semibold' 
+              : 'text-zinc-600 dark:text-zinc-300 font-medium hover:text-black dark:hover:text-white hover:bg-zinc-50 dark:hover:bg-zinc-900/60'
           }`}
          >
           <span>{link.name}</span>
-          {isActive && (
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 dark:bg-blue-400" />
-          )}
+          {isActive && <ChevronRight className="w-4 h-4 text-zinc-950 dark:text-white shrink-0" />}
          </button>
         )
        })}
 
-       <div className="pt-2 mt-1 border-t border-zinc-100 dark:border-zinc-800/80 space-y-2">
+       <div className="pt-2.5 mt-1.5 border-t border-zinc-100 dark:border-zinc-800/80 space-y-2">
          <button 
+          type="button"
           onClick={() => {
            setIsMobileMenuOpen(false);
            setView('contact'); 
           }}
-          className="w-full bg-black text-white hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 py-3.5 rounded-2xl text-[13px] sm:text-[14px] font-bold shadow-md transition-all active:scale-95 cursor-pointer"
+          className="w-full min-h-[44px] bg-zinc-950 text-white hover:bg-black dark:bg-white dark:text-black dark:hover:bg-zinc-200 py-3 rounded-xl text-sm font-semibold transition-all active:scale-95 cursor-pointer"
          >
           {t('nav.contact')}
          </button>
